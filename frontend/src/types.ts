@@ -34,3 +34,12 @@ export interface ImportURLResponse {
   duplicate: boolean;
   manual_only: boolean;
 }
+
+export interface Source {
+  id: number;
+  name: string;
+  type: string;
+  url: string;
+  enabled: boolean;
+  parser_type: string;
+}

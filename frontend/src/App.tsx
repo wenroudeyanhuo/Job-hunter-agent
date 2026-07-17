@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { importURL, listJobs, runCrawl, updateJobStatus } from "./api";
-import type { Job, JobStatus, RunSummary } from "./types";
+import { createSource, importURL, listJobs, listSources, runCrawl, updateJobStatus, updateSourceEnabled } from "./api";
+import type { Job, JobStatus, RunSummary, Source } from "./types";
 
 const statusLabels: Record<JobStatus | "all", string> = {
   all: "All",
@@ -22,6 +22,9 @@ export default function App() {
   const [running, setRunning] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importURLValue, setImportURLValue] = useState("");
+  const [sources, setSources] = useState<Source[]>([]);
+  const [sourceURLValue, setSourceURLValue] = useState("");
+  const [addingSource, setAddingSource] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [lastRun, setLastRun] = useState<RunSummary | null>(null);
@@ -32,8 +35,13 @@ export default function App() {
     setJobs(data);
   }
 
+  async function refreshSources() {
+    const data = await listSources();
+    setSources(data);
+  }
+
   useEffect(() => {
-    refresh()
+    Promise.all([refresh(), refreshSources()])
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
@@ -92,6 +100,33 @@ export default function App() {
     } finally {
       setImporting(false);
     }
+  }
+
+  async function handleAddSource(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const value = sourceURLValue.trim();
+    if (!value) {
+      setError("Paste a source URL first.");
+      return;
+    }
+    setAddingSource(true);
+    setError("");
+    setNotice("");
+    try {
+      await createSource(value);
+      setSourceURLValue("");
+      setNotice("Source added. It will be used by the next crawl run.");
+      await refreshSources();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not add source");
+    } finally {
+      setAddingSource(false);
+    }
+  }
+
+  async function toggleSource(source: Source) {
+    await updateSourceEnabled(source.id, !source.enabled);
+    setSources((current) => current.map((item) => (item.id === source.id ? { ...item, enabled: !source.enabled } : item)));
   }
 
   async function setJobStatus(id: number, next: JobStatus) {
@@ -229,6 +264,40 @@ export default function App() {
             </table>
           </div>
         </section>
+      </section>
+
+      <section className="sources-panel">
+        <div className="panel-header">
+          <h2>Sources</h2>
+          <span>{sources.filter((source) => source.enabled).length} enabled</span>
+        </div>
+        <form className="source-form" onSubmit={handleAddSource}>
+          <input
+            value={sourceURLValue}
+            onChange={(event) => setSourceURLValue(event.target.value)}
+            placeholder="Add a public recruitment source URL"
+            aria-label="Source URL"
+          />
+          <button type="submit" disabled={addingSource}>
+            {addingSource ? "Adding..." : "Add Source"}
+          </button>
+        </form>
+        <div className="source-list">
+          {sources.map((source) => (
+            <div className="source-row" key={source.id}>
+              <div>
+                <strong>{source.name}</strong>
+                <a href={source.url} target="_blank" rel="noreferrer">
+                  {source.url}
+                </a>
+              </div>
+              <button className={source.enabled ? "toggle-on" : "toggle-off"} onClick={() => toggleSource(source)}>
+                {source.enabled ? "Enabled" : "Disabled"}
+              </button>
+            </div>
+          ))}
+          {sources.length === 0 && <div className="empty-source">No saved sources yet.</div>}
+        </div>
       </section>
     </main>
   );

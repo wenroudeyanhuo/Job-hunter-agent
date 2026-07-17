@@ -1,4 +1,4 @@
-import type { ImportURLResponse, Job, JobStatus, RunSummary } from "./types";
+import type { ImportURLResponse, Job, JobStatus, RunSummary, Source } from "./types";
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -39,5 +39,24 @@ export async function importURL(url: string): Promise<ImportURLResponse> {
   return request<ImportURLResponse>("/api/jobs/import-url", {
     method: "POST",
     body: JSON.stringify({ url }),
+  });
+}
+
+export async function listSources(): Promise<Source[]> {
+  const sources = await request<Source[] | null>("/api/sources");
+  return Array.isArray(sources) ? sources : [];
+}
+
+export async function createSource(url: string, name = ""): Promise<Source> {
+  return request<Source>("/api/sources", {
+    method: "POST",
+    body: JSON.stringify({ name, url, enabled: true, type: "public_url", parser_type: "generic" }),
+  });
+}
+
+export async function updateSourceEnabled(id: number, enabled: boolean): Promise<void> {
+  await request<void>(`/api/sources/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ enabled }),
   });
 }
