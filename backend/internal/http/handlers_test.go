@@ -53,6 +53,21 @@ func TestListJobsAndUpdateStatus(t *testing.T) {
 	}
 }
 
+func TestListJobsReturnsEmptyArray(t *testing.T) {
+	_, handler := testRouter(t, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/jobs", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if rec.Body.String() != "[]" {
+		t.Fatalf("expected empty JSON array, got %q", rec.Body.String())
+	}
+}
+
 func TestRunCrawlReturnsSummary(t *testing.T) {
 	_, handler := testRouter(t, fakeRunner{summary: crawl.RunSummary{JobsCreated: 1}})
 

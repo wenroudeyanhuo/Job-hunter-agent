@@ -20,7 +20,8 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
 export async function listJobs(status?: JobStatus | "all"): Promise<Job[]> {
   const query = status && status !== "all" ? `?status=${encodeURIComponent(status)}` : "";
-  return request<Job[]>(`/api/jobs${query}`);
+  const jobs = await request<Job[] | null>(`/api/jobs${query}`);
+  return Array.isArray(jobs) ? jobs : [];
 }
 
 export async function updateJobStatus(id: number, status: JobStatus): Promise<void> {

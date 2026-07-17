@@ -99,7 +99,7 @@ func (r *Repository) ListJobs(ctx context.Context, filter ListFilter) ([]domain.
 	}
 	defer rows.Close()
 
-	var out []domain.Job
+	out := []domain.Job{}
 	for rows.Next() {
 		job, err := scanJob(rows)
 		if err != nil {
