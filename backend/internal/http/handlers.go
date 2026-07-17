@@ -154,6 +154,48 @@ func (h *Handlers) UpdateSettings(c *gin.Context) {
 	c.JSON(http.StatusOK, raw)
 }
 
+func (h *Handlers) ListSources(c *gin.Context) {
+	sources, err := h.Repo.ListSources(c.Request.Context(), false)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, sources)
+}
+
+func (h *Handlers) CreateSource(c *gin.Context) {
+	var req jobs.SourceInput
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid source payload"})
+		return
+	}
+	source, err := h.Repo.CreateSource(c.Request.Context(), req)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
+	c.JSON(http.StatusCreated, source)
+}
+
+func (h *Handlers) UpdateSource(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	var req struct {
+		Enabled *bool `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.Enabled == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "enabled is required"})
+		return
+	}
+	if err := h.Repo.UpdateSourceEnabled(c.Request.Context(), id, *req.Enabled); err != nil {
+		respondRepoError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
 func (h *Handlers) SendFeishuTest(c *gin.Context) {
 	if h.FeishuWebhookURL == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "FEISHU_WEBHOOK_URL is not configured"})

@@ -1,0 +1,195 @@
+package jobs
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"net/url"
+	"strings"
+	"time"
+)
+
+type Source struct {
+	ID         int64      `json:"id"`
+	Name       string     `json:"name"`
+	Type       string     `json:"type"`
+	URL        string     `json:"url"`
+	Enabled    bool       `json:"enabled"`
+	ParserType string     `json:"parser_type"`
+	LastRunAt  *time.Time `json:"last_run_at,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at"`
+}
+
+type SourceInput struct {
+	Name       string `json:"name"`
+	Type       string `json:"type"`
+	URL        string `json:"url"`
+	Enabled    bool   `json:"enabled"`
+	ParserType string `json:"parser_type"`
+}
+
+func (r *Repository) CreateSource(ctx context.Context, input SourceInput) (Source, error) {
+	input, err := normalizeSourceInput(input)
+	if err != nil {
+		return Source{}, err
+	}
+	result, err := r.db.ExecContext(ctx, `
+		INSERT INTO job_sources (name, type, url, enabled, parser_type)
+		VALUES (?, ?, ?, ?, ?)
+	`, input.Name, input.Type, input.URL, boolToInt(input.Enabled), input.ParserType)
+	if err != nil {
+		return Source{}, fmt.Errorf("insert source: %w", err)
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return Source{}, fmt.Errorf("read source id: %w", err)
+	}
+	return r.GetSource(ctx, id)
+}
+
+func (r *Repository) GetSource(ctx context.Context, id int64) (Source, error) {
+	row := r.db.QueryRowContext(ctx, selectSourceSQL()+` WHERE id = ?`, id)
+	source, err := scanSource(row)
+	if err != nil {
+		return Source{}, fmt.Errorf("get source %d: %w", id, err)
+	}
+	return source, nil
+}
+
+func (r *Repository) ListSources(ctx context.Context, enabledOnly bool) ([]Source, error) {
+	query := selectSourceSQL()
+	if enabledOnly {
+		query += " WHERE enabled = 1"
+	}
+	query += " ORDER BY enabled DESC, updated_at DESC, id DESC"
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("list sources: %w", err)
+	}
+	defer rows.Close()
+
+	out := []Source{}
+	for rows.Next() {
+		source, err := scanSource(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, source)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate sources: %w", err)
+	}
+	return out, nil
+}
+
+func (r *Repository) UpdateSourceEnabled(ctx context.Context, id int64, enabled bool) error {
+	result, err := r.db.ExecContext(ctx, `
+		UPDATE job_sources
+		SET enabled = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?
+	`, boolToInt(enabled), id)
+	if err != nil {
+		return fmt.Errorf("update source enabled: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("read rows affected: %w", err)
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (r *Repository) SeedPublicURLSources(ctx context.Context, urls []string) error {
+	seen := map[string]bool{}
+	for _, rawURL := range urls {
+		rawURL = strings.TrimSpace(rawURL)
+		if rawURL == "" || seen[rawURL] {
+			continue
+		}
+		seen[rawURL] = true
+		parsed, err := url.ParseRequestURI(rawURL)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+			continue
+		}
+		name := sourceNameFromURL(parsed)
+		_, err = r.db.ExecContext(ctx, `
+			INSERT INTO job_sources (name, type, url, enabled, parser_type)
+			VALUES (?, 'public_url', ?, 1, 'generic')
+			ON CONFLICT(name) DO NOTHING
+		`, name, parsed.String())
+		if err != nil {
+			return fmt.Errorf("seed source %q: %w", rawURL, err)
+		}
+	}
+	return nil
+}
+
+func normalizeSourceInput(input SourceInput) (SourceInput, error) {
+	input.Name = strings.TrimSpace(input.Name)
+	input.Type = strings.TrimSpace(input.Type)
+	input.URL = strings.TrimSpace(input.URL)
+	input.ParserType = strings.TrimSpace(input.ParserType)
+	if input.Type == "" {
+		input.Type = "public_url"
+	}
+	if input.ParserType == "" {
+		input.ParserType = "generic"
+	}
+	parsed, err := url.ParseRequestURI(input.URL)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return SourceInput{}, fmt.Errorf("source URL must be a valid http or https URL")
+	}
+	input.URL = parsed.String()
+	if input.Name == "" {
+		input.Name = sourceNameFromURL(parsed)
+	}
+	return input, nil
+}
+
+func sourceNameFromURL(parsed *url.URL) string {
+	host := strings.TrimPrefix(parsed.Hostname(), "www.")
+	if host == "" {
+		host = "source"
+	}
+	return host + " " + strings.Trim(strings.ReplaceAll(parsed.Path, "/", " "), " ")
+}
+
+func selectSourceSQL() string {
+	return `
+		SELECT id, name, type, url, enabled, parser_type, last_run_at, created_at, updated_at
+		FROM job_sources`
+}
+
+type sourceScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanSource(scanner sourceScanner) (Source, error) {
+	var source Source
+	var enabled int
+	if err := scanner.Scan(
+		&source.ID,
+		&source.Name,
+		&source.Type,
+		&source.URL,
+		&enabled,
+		&source.ParserType,
+		&source.LastRunAt,
+		&source.CreatedAt,
+		&source.UpdatedAt,
+	); err != nil {
+		return Source{}, fmt.Errorf("scan source: %w", err)
+	}
+	source.Enabled = enabled == 1
+	return source, nil
+}
+
+func boolToInt(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
+}

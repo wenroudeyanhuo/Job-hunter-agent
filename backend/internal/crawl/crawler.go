@@ -6,6 +6,7 @@ import (
 
 	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/domain"
 	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/importer"
+	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/jobs"
 )
 
 type Collector interface {
@@ -58,4 +59,36 @@ func (c PublicURLCollector) Collect(ctx context.Context) ([]domain.Job, error) {
 		jobs = append(jobs, job)
 	}
 	return jobs, nil
+}
+
+type SourceLister interface {
+	ListSources(ctx context.Context, enabledOnly bool) ([]jobs.Source, error)
+}
+
+type DBSourceCollector struct {
+	repo   SourceLister
+	client *http.Client
+}
+
+func NewDBSourceCollector(repo SourceLister, client *http.Client) DBSourceCollector {
+	return DBSourceCollector{repo: repo, client: client}
+}
+
+func (DBSourceCollector) Name() string {
+	return "db_sources"
+}
+
+func (c DBSourceCollector) Collect(ctx context.Context) ([]domain.Job, error) {
+	sources, err := c.repo.ListSources(ctx, true)
+	if err != nil {
+		return nil, err
+	}
+	urls := []string{}
+	for _, source := range sources {
+		if source.Type != "public_url" || source.URL == "" {
+			continue
+		}
+		urls = append(urls, source.URL)
+	}
+	return NewPublicURLCollector(urls, c.client).Collect(ctx)
 }

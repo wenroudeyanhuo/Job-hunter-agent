@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"database/sql"
 	"net/http"
 	"os"
@@ -37,10 +38,13 @@ func NewApplication(cfg config.Config) (*Application, error) {
 		return nil, err
 	}
 	repo := jobs.NewRepository(conn)
-	collectors := []crawl.Collector{crawl.SeedCollector{}}
 	if len(cfg.SourceURLs) > 0 {
-		collectors = append(collectors, crawl.NewPublicURLCollector(cfg.SourceURLs, nil))
+		if err := repo.SeedPublicURLSources(context.Background(), cfg.SourceURLs); err != nil {
+			_ = conn.Close()
+			return nil, err
+		}
 	}
+	collectors := []crawl.Collector{crawl.SeedCollector{}, crawl.NewDBSourceCollector(repo, nil)}
 	runner := crawl.NewRunner(repo, collectors)
 	handler := httpapi.NewRouter(&httpapi.Handlers{
 		Repo:             repo,
