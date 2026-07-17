@@ -17,7 +17,7 @@ import (
 type Application struct {
 	Handler http.Handler
 	DB      *sql.DB
-	Runner  *crawl.Runner
+	Runner  crawl.Runnable
 }
 
 func NewServer() http.Handler {
@@ -45,7 +45,8 @@ func NewApplication(cfg config.Config) (*Application, error) {
 		}
 	}
 	collectors := []crawl.Collector{crawl.SeedCollector{}, crawl.NewDBSourceCollector(repo, nil)}
-	runner := crawl.NewRunner(repo, collectors)
+	baseRunner := crawl.NewRunner(repo, collectors)
+	runner := newNotifyingRunner(baseRunner, cfg.FeishuWebhookURL)
 	handler := httpapi.NewRouter(&httpapi.Handlers{
 		Repo:             repo,
 		Runner:           runner,

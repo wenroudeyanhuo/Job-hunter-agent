@@ -17,6 +17,7 @@ Early MVP. The current version provides a Go backend foundation, SQLite persiste
 - Deduplication by application URL and normalized company/title/city.
 - Scheduled crawl runner for 09:00, 12:00, and 18:00.
 - React dashboard for reviewing jobs, filtering by status/direction, updating status, and running a crawl.
+- Feishu webhook summaries after crawl runs when `FEISHU_WEBHOOK_URL` is configured.
 
 ## What It Does
 

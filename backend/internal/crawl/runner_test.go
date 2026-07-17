@@ -46,6 +46,12 @@ func TestRunnerContinuesWhenCollectorFails(t *testing.T) {
 	if summary.JobsCreated != 1 {
 		t.Fatalf("expected 1 created job, got %d", summary.JobsCreated)
 	}
+	if len(summary.RecommendedJobs) != 1 {
+		t.Fatalf("expected one recommended job, got %d", len(summary.RecommendedJobs))
+	}
+	if summary.RecommendedJobs[0].Title != "Go Backend Engineer 2027 Campus" {
+		t.Fatalf("unexpected recommended job: %#v", summary.RecommendedJobs[0])
+	}
 
 	list, err := repo.ListJobs(ctx, jobs.ListFilter{})
 	if err != nil {

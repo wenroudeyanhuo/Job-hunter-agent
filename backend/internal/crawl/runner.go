@@ -3,22 +3,29 @@ package crawl
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/domain"
 	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/jobs"
 )
 
 type RunSummary struct {
-	SourcesTotal     int    `json:"sources_total"`
-	SourcesSuccess   int    `json:"sources_success"`
-	SourcesFailed    int    `json:"sources_failed"`
-	JobsFound        int    `json:"jobs_found"`
-	JobsCreated      int    `json:"jobs_created"`
-	JobsDuplicated   int    `json:"jobs_duplicated"`
-	ManualCheckCount int    `json:"manual_check_count"`
-	ErrorSummary     string `json:"error_summary"`
+	SourcesTotal     int          `json:"sources_total"`
+	SourcesSuccess   int          `json:"sources_success"`
+	SourcesFailed    int          `json:"sources_failed"`
+	JobsFound        int          `json:"jobs_found"`
+	JobsCreated      int          `json:"jobs_created"`
+	JobsDuplicated   int          `json:"jobs_duplicated"`
+	ManualCheckCount int          `json:"manual_check_count"`
+	ErrorSummary     string       `json:"error_summary"`
+	RecommendedJobs  []domain.Job `json:"recommended_jobs,omitempty"`
+}
+
+type Runnable interface {
+	Run(ctx context.Context, trigger string) (RunSummary, error)
 }
 
 type Runner struct {
@@ -74,7 +81,7 @@ func (r *Runner) Run(ctx context.Context, trigger string) (RunSummary, error) {
 				summary.ManualCheckCount++
 				stat.ManualCheckCount++
 			}
-			_, duplicated, err := r.repo.UpsertJob(ctx, scored.Job)
+			persisted, duplicated, err := r.repo.UpsertJob(ctx, scored.Job)
 			if err != nil {
 				errors = append(errors, fmt.Sprintf("%s upsert: %v", collector.Name(), err))
 				stat.Status = "partial_success"
@@ -87,6 +94,7 @@ func (r *Runner) Run(ctx context.Context, trigger string) (RunSummary, error) {
 			} else {
 				summary.JobsCreated++
 				stat.JobsCreated++
+				summary.RecommendedJobs = append(summary.RecommendedJobs, persisted)
 			}
 		}
 		if len(sourceStats) == 0 {
@@ -125,6 +133,9 @@ func (r *Runner) Run(ctx context.Context, trigger string) (RunSummary, error) {
 		return summary, err
 	}
 
+	sort.SliceStable(summary.RecommendedJobs, func(i, j int) bool {
+		return summary.RecommendedJobs[i].MatchScore > summary.RecommendedJobs[j].MatchScore
+	})
 	return summary, nil
 }
 

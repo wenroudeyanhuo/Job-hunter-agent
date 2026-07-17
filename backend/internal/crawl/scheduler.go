@@ -9,7 +9,7 @@ import (
 
 var DefaultScheduleSpecs = []string{"0 9 * * *", "0 12 * * *", "0 18 * * *"}
 
-func StartScheduler(ctx context.Context, runner *Runner, specs []string) (func(), error) {
+func StartScheduler(ctx context.Context, runner Runnable, specs []string) (func(), error) {
 	c := cron.New()
 	for _, spec := range specs {
 		spec := spec
