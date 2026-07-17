@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -17,6 +18,18 @@ type Repository struct {
 
 type ListFilter struct {
 	Status domain.JobStatus
+}
+
+type RunUpdate struct {
+	Status           string
+	SourcesTotal     int
+	SourcesSuccess   int
+	SourcesFailed    int
+	JobsFound        int
+	JobsCreated      int
+	JobsDuplicated   int
+	ManualCheckCount int
+	ErrorSummary     string
 }
 
 func NewRepository(db *sql.DB) *Repository {
@@ -117,6 +130,88 @@ func (r *Repository) UpdateStatus(ctx context.Context, id int64, status domain.J
 		return sql.ErrNoRows
 	}
 	return nil
+}
+
+func (r *Repository) FindDuplicate(ctx context.Context, job domain.Job) (domain.Job, bool, error) {
+	if strings.TrimSpace(job.ApplyURL) != "" {
+		existing, found, err := r.findOne(ctx, "apply_url = ?", job.ApplyURL)
+		if err != nil || found {
+			return existing, found, err
+		}
+	}
+	return r.findOne(ctx, "lower(trim(company)) = lower(trim(?)) AND lower(trim(title)) = lower(trim(?)) AND lower(trim(city)) = lower(trim(?))", job.Company, job.Title, job.City)
+}
+
+func (r *Repository) UpsertJob(ctx context.Context, job domain.Job) (domain.Job, bool, error) {
+	existing, found, err := r.FindDuplicate(ctx, job)
+	if err != nil {
+		return domain.Job{}, false, err
+	}
+	if found {
+		return existing, true, nil
+	}
+	created, err := r.CreateJob(ctx, job)
+	return created, false, err
+}
+
+func (r *Repository) CreateRun(ctx context.Context, triggerType string, startedAt time.Time) (domain.JobRun, error) {
+	if startedAt.IsZero() {
+		startedAt = time.Now().UTC()
+	}
+	result, err := r.db.ExecContext(ctx, `
+		INSERT INTO job_runs (trigger_type, started_at, status)
+		VALUES (?, ?, ?)
+	`, triggerType, startedAt, "running")
+	if err != nil {
+		return domain.JobRun{}, fmt.Errorf("create job run: %w", err)
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return domain.JobRun{}, fmt.Errorf("read job run id: %w", err)
+	}
+	return domain.JobRun{
+		ID:          id,
+		TriggerType: triggerType,
+		StartedAt:   startedAt,
+		Status:      "running",
+	}, nil
+}
+
+func (r *Repository) FinishRun(ctx context.Context, id int64, update RunUpdate) error {
+	now := time.Now().UTC()
+	result, err := r.db.ExecContext(ctx, `
+		UPDATE job_runs
+		SET finished_at = ?, status = ?, sources_total = ?, sources_success = ?,
+			sources_failed = ?, jobs_found = ?, jobs_created = ?, jobs_duplicated = ?,
+			manual_check_count = ?, error_summary = ?
+		WHERE id = ?
+	`, now, update.Status, update.SourcesTotal, update.SourcesSuccess, update.SourcesFailed,
+		update.JobsFound, update.JobsCreated, update.JobsDuplicated, update.ManualCheckCount,
+		update.ErrorSummary, id)
+	if err != nil {
+		return fmt.Errorf("finish job run: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("read rows affected: %w", err)
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (r *Repository) findOne(ctx context.Context, condition string, args ...any) (domain.Job, bool, error) {
+	query := selectJobSQL() + " WHERE " + condition + " LIMIT 1"
+	row := r.db.QueryRowContext(ctx, query, args...)
+	job, err := scanJob(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.Job{}, false, nil
+		}
+		return domain.Job{}, false, err
+	}
+	return job, true, nil
 }
 
 type jobScanner interface {

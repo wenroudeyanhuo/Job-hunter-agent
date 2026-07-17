@@ -34,3 +34,19 @@ type Job struct {
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 }
+
+type JobRun struct {
+	ID               int64
+	TriggerType      string
+	StartedAt        time.Time
+	FinishedAt       *time.Time
+	Status           string
+	SourcesTotal     int
+	SourcesSuccess   int
+	SourcesFailed    int
+	JobsFound        int
+	JobsCreated      int
+	JobsDuplicated   int
+	ManualCheckCount int
+	ErrorSummary     string
+}
