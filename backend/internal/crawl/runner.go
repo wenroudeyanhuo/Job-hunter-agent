@@ -51,27 +51,57 @@ func (r *Runner) Run(ctx context.Context, trigger string) (RunSummary, error) {
 		if err != nil {
 			summary.SourcesFailed++
 			errors = append(errors, fmt.Sprintf("%s: %v", collector.Name(), err))
+			_, _ = r.repo.CreateRunSourceResult(ctx, jobs.RunSourceResultInput{
+				JobRunID:     run.ID,
+				SourceName:   collector.Name(),
+				Status:       "failed",
+				ErrorMessage: err.Error(),
+			})
 			continue
 		}
 		summary.SourcesSuccess++
 		summary.JobsFound += len(collected)
+		sourceStats := map[string]*jobs.RunSourceResultInput{}
 		for _, rawJob := range collected {
+			stat := sourceStat(sourceStats, run.ID, collector.Name(), rawJob.SourceName, rawJob.SourceURL)
+			stat.JobsFound++
 			scored := jobs.ScoreJob(rawJob)
 			if scored.HardFiltered {
+				stat.JobsFiltered++
 				continue
 			}
 			if scored.Job.Status == "manual_check" {
 				summary.ManualCheckCount++
+				stat.ManualCheckCount++
 			}
 			_, duplicated, err := r.repo.UpsertJob(ctx, scored.Job)
 			if err != nil {
 				errors = append(errors, fmt.Sprintf("%s upsert: %v", collector.Name(), err))
+				stat.Status = "partial_success"
+				stat.ErrorMessage = appendErrorMessage(stat.ErrorMessage, err.Error())
 				continue
 			}
 			if duplicated {
 				summary.JobsDuplicated++
+				stat.JobsDuplicated++
 			} else {
 				summary.JobsCreated++
+				stat.JobsCreated++
+			}
+		}
+		if len(sourceStats) == 0 {
+			sourceStats[collector.Name()] = &jobs.RunSourceResultInput{
+				JobRunID:   run.ID,
+				SourceName: collector.Name(),
+				Status:     "success",
+			}
+		}
+		for _, stat := range sourceStats {
+			if stat.Status == "" {
+				stat.Status = "success"
+			}
+			if _, err := r.repo.CreateRunSourceResult(ctx, *stat); err != nil {
+				errors = append(errors, fmt.Sprintf("%s source result: %v", collector.Name(), err))
 			}
 		}
 	}
@@ -96,6 +126,31 @@ func (r *Runner) Run(ctx context.Context, trigger string) (RunSummary, error) {
 	}
 
 	return summary, nil
+}
+
+func sourceStat(stats map[string]*jobs.RunSourceResultInput, runID int64, collectorName string, sourceName string, sourceURL string) *jobs.RunSourceResultInput {
+	if sourceName == "" {
+		sourceName = collectorName
+	}
+	key := sourceName + "\x00" + sourceURL
+	stat, ok := stats[key]
+	if !ok {
+		stat = &jobs.RunSourceResultInput{
+			JobRunID:   runID,
+			SourceName: sourceName,
+			SourceURL:  sourceURL,
+			Status:     "success",
+		}
+		stats[key] = stat
+	}
+	return stat
+}
+
+func appendErrorMessage(existing string, next string) string {
+	if strings.TrimSpace(existing) == "" {
+		return next
+	}
+	return existing + "; " + next
 }
 
 func (r *Runner) tryLock() bool {

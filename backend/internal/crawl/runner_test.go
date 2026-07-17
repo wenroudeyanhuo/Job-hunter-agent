@@ -57,6 +57,20 @@ func TestRunnerContinuesWhenCollectorFails(t *testing.T) {
 	if list[0].MatchScore == 0 {
 		t.Fatal("expected job to be scored")
 	}
+	runs, err := repo.ListRuns(ctx)
+	if err != nil {
+		t.Fatalf("list runs: %v", err)
+	}
+	if len(runs) != 1 {
+		t.Fatalf("expected one run, got %d", len(runs))
+	}
+	sourceResults, err := repo.ListRunSources(ctx, runs[0].ID)
+	if err != nil {
+		t.Fatalf("list run source results: %v", err)
+	}
+	if len(sourceResults) != 2 {
+		t.Fatalf("expected two source results, got %d", len(sourceResults))
+	}
 }
 
 type fakeCollector struct {

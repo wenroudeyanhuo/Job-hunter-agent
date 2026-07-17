@@ -50,3 +50,18 @@ type JobRun struct {
 	ManualCheckCount int        `json:"manual_check_count"`
 	ErrorSummary     string     `json:"error_summary"`
 }
+
+type JobRunSource struct {
+	ID               int64     `json:"id"`
+	JobRunID         int64     `json:"job_run_id"`
+	SourceName       string    `json:"source_name"`
+	SourceURL        string    `json:"source_url"`
+	Status           string    `json:"status"`
+	JobsFound        int       `json:"jobs_found"`
+	JobsCreated      int       `json:"jobs_created"`
+	JobsDuplicated   int       `json:"jobs_duplicated"`
+	JobsFiltered     int       `json:"jobs_filtered"`
+	ManualCheckCount int       `json:"manual_check_count"`
+	ErrorMessage     string    `json:"error_message"`
+	CreatedAt        time.Time `json:"created_at"`
+}

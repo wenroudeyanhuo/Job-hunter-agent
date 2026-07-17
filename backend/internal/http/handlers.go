@@ -135,6 +135,19 @@ func (h *Handlers) ListRuns(c *gin.Context) {
 	c.JSON(http.StatusOK, runs)
 }
 
+func (h *Handlers) ListRunSources(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	results, err := h.Repo.ListRunSources(c.Request.Context(), id)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, results)
+}
+
 func (h *Handlers) GetSettings(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"target_cities":     []string{"Shenzhen"},

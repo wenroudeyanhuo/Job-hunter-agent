@@ -330,7 +330,8 @@ td {
   text-align: center;
 }
 
-.sources-panel {
+.sources-panel,
+.runs-panel {
   margin-top: 16px;
   overflow: hidden;
 }
@@ -416,6 +417,106 @@ td {
   font-size: 14px;
 }
 
+.runs-panel {
+  border: 1px solid #e3e8f2;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.runs-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+}
+
+.run-list {
+  border-right: 1px solid #edf1f7;
+}
+
+.run-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 0;
+  border-bottom: 1px solid #edf1f7;
+  background: #fff;
+  color: #18212f;
+  padding: 13px 16px;
+  text-align: left;
+}
+
+.run-row strong,
+.run-row small {
+  display: block;
+}
+
+.run-row strong {
+  font-size: 14px;
+  text-transform: capitalize;
+}
+
+.run-row small,
+.run-counts {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.selected-run {
+  background: #f0f7ff;
+}
+
+.run-detail {
+  min-height: 140px;
+}
+
+.run-source-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  gap: 16px;
+  border-bottom: 1px solid #edf1f7;
+  padding: 13px 16px;
+}
+
+.run-source-row strong,
+.run-source-row a,
+.run-source-row small {
+  display: block;
+}
+
+.run-source-row strong {
+  font-size: 14px;
+}
+
+.run-source-row a,
+.run-source-row small {
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+
+.source-error {
+  color: #9f1d1d;
+}
+
+.run-source-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.run-source-metrics span {
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #475569;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 @media (max-width: 860px) {
   .app-shell {
     padding: 18px;
@@ -437,8 +538,22 @@ td {
   }
 
   .source-form,
-  .source-row {
+  .source-row,
+  .run-source-row {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .runs-layout,
+  .run-source-row {
+    grid-template-columns: 1fr;
+  }
+
+  .run-list {
+    border-right: 0;
+  }
+
+  .run-source-metrics {
+    justify-content: flex-start;
   }
 }

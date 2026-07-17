@@ -1,6 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
-import { createSource, importURL, listJobs, listSources, runCrawl, updateJobStatus, updateSourceEnabled } from "./api";
-import type { Job, JobStatus, RunSummary, Source } from "./types";
+import {
+  createSource,
+  importURL,
+  listJobs,
+  listRunSources,
+  listRuns,
+  listSources,
+  runCrawl,
+  updateJobStatus,
+  updateSourceEnabled,
+} from "./api";
+import type { Job, JobRun, JobRunSource, JobStatus, RunSummary, Source } from "./types";
 
 const statusLabels: Record<JobStatus | "all", string> = {
   all: "All",
@@ -23,6 +33,9 @@ export default function App() {
   const [importing, setImporting] = useState(false);
   const [importURLValue, setImportURLValue] = useState("");
   const [sources, setSources] = useState<Source[]>([]);
+  const [runs, setRuns] = useState<JobRun[]>([]);
+  const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
+  const [runSources, setRunSources] = useState<JobRunSource[]>([]);
   const [sourceURLValue, setSourceURLValue] = useState("");
   const [addingSource, setAddingSource] = useState(false);
   const [error, setError] = useState("");
@@ -40,8 +53,17 @@ export default function App() {
     setSources(data);
   }
 
+  async function refreshRuns() {
+    const data = await listRuns();
+    setRuns(data);
+    if (selectedRunId === null && data.length > 0) {
+      setSelectedRunId(data[0].id);
+      setRunSources(await listRunSources(data[0].id));
+    }
+  }
+
   useEffect(() => {
-    Promise.all([refresh(), refreshSources()])
+    Promise.all([refresh(), refreshSources(), refreshRuns()])
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
@@ -67,6 +89,7 @@ export default function App() {
       const summary = await runCrawl();
       setLastRun(summary);
       await refresh();
+      await refreshRuns();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Run failed");
     } finally {
@@ -127,6 +150,11 @@ export default function App() {
   async function toggleSource(source: Source) {
     await updateSourceEnabled(source.id, !source.enabled);
     setSources((current) => current.map((item) => (item.id === source.id ? { ...item, enabled: !source.enabled } : item)));
+  }
+
+  async function selectRun(runId: number) {
+    setSelectedRunId(runId);
+    setRunSources(await listRunSources(runId));
   }
 
   async function setJobStatus(id: number, next: JobStatus) {
@@ -297,6 +325,57 @@ export default function App() {
             </div>
           ))}
           {sources.length === 0 && <div className="empty-source">No saved sources yet.</div>}
+        </div>
+      </section>
+
+      <section className="runs-panel">
+        <div className="panel-header">
+          <h2>Crawl Runs</h2>
+          <span>{runs.length} recorded</span>
+        </div>
+        <div className="runs-layout">
+          <div className="run-list">
+            {runs.map((run) => (
+              <button
+                className={run.id === selectedRunId ? "run-row selected-run" : "run-row"}
+                key={run.id}
+                onClick={() => selectRun(run.id)}
+              >
+                <span>
+                  <strong>{run.status}</strong>
+                  <small>{new Date(run.started_at).toLocaleString()}</small>
+                </span>
+                <span className="run-counts">
+                  +{run.jobs_created} / dup {run.jobs_duplicated} / fail {run.sources_failed}
+                </span>
+              </button>
+            ))}
+            {runs.length === 0 && <div className="empty-source">No crawl runs yet.</div>}
+          </div>
+          <div className="run-detail">
+            {runSources.map((source) => (
+              <div className="run-source-row" key={source.id}>
+                <div>
+                  <strong>{source.source_name || "source"}</strong>
+                  {source.source_url && (
+                    <a href={source.source_url} target="_blank" rel="noreferrer">
+                      {source.source_url}
+                    </a>
+                  )}
+                  {source.error_message && <small className="source-error">{source.error_message}</small>}
+                </div>
+                <div className="run-source-metrics">
+                  <span>{source.status}</span>
+                  <span>found {source.jobs_found}</span>
+                  <span>new {source.jobs_created}</span>
+                  <span>dup {source.jobs_duplicated}</span>
+                  <span>filtered {source.jobs_filtered}</span>
+                  <span>manual {source.manual_check_count}</span>
+                </div>
+              </div>
+            ))}
+            {selectedRunId !== null && runSources.length === 0 && <div className="empty-source">No source results for this run.</div>}
+          </div>
         </div>
       </section>
     </main>

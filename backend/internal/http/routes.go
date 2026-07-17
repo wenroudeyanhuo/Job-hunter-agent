@@ -23,6 +23,7 @@ func NewRouter(handlers *Handlers) http.Handler {
 	api.PATCH("/jobs/:id/notes", handlers.UpdateJobNotes)
 	api.POST("/crawl/run", handlers.RunCrawl)
 	api.GET("/crawl/runs", handlers.ListRuns)
+	api.GET("/crawl/runs/:id/sources", handlers.ListRunSources)
 	api.GET("/settings", handlers.GetSettings)
 	api.PATCH("/settings", handlers.UpdateSettings)
 	api.GET("/sources", handlers.ListSources)
