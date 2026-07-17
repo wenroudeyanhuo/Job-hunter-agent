@@ -1,0 +1,49 @@
+# OS/editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# Go
+bin/
+*.exe
+*.test
+*.out
+coverage.out
+vendor/
+
+# Node / React / Vite
+node_modules/
+dist/
+build/
+.vite/
+coverage/
+
+# Local database and runtime data
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+data/
+tmp/
+temp/
+
+# Generated files
+*.heapsnapshot
+playwright-report/
+test-results/
+
+# Private planning/spec notes
+docs/superpowers/specs/
+docs/superpowers/plans/
