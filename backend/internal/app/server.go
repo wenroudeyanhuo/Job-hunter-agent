@@ -37,7 +37,11 @@ func NewApplication(cfg config.Config) (*Application, error) {
 		return nil, err
 	}
 	repo := jobs.NewRepository(conn)
-	runner := crawl.NewRunner(repo, []crawl.Collector{crawl.SeedCollector{}})
+	collectors := []crawl.Collector{crawl.SeedCollector{}}
+	if len(cfg.SourceURLs) > 0 {
+		collectors = append(collectors, crawl.NewPublicURLCollector(cfg.SourceURLs, nil))
+	}
+	runner := crawl.NewRunner(repo, collectors)
 	handler := httpapi.NewRouter(&httpapi.Handlers{
 		Repo:             repo,
 		Runner:           runner,
