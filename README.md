@@ -63,7 +63,10 @@ APP_ADDR=:8080
 APP_DB_PATH=data/job-hunter-agent.db
 FEISHU_WEBHOOK_URL=
 DISABLE_SCHEDULER=0
+SOURCE_URLS=
 ```
+
+`SOURCE_URLS` can contain comma-separated or newline-separated public recruitment URLs. Manual and scheduled crawl runs import these URLs, score them, deduplicate them, and store them in the local database.
 
 ### Backend
 
