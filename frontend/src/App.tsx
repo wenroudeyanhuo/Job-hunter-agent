@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { listJobs, runCrawl, updateJobStatus } from "./api";
+import { importURL, listJobs, runCrawl, updateJobStatus } from "./api";
 import type { Job, JobStatus, RunSummary } from "./types";
 
 const statusLabels: Record<JobStatus | "all", string> = {
@@ -20,7 +20,10 @@ export default function App() {
   const [direction, setDirection] = useState("all");
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importURLValue, setImportURLValue] = useState("");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [lastRun, setLastRun] = useState<RunSummary | null>(null);
 
   async function refresh(nextStatus = status) {
@@ -63,6 +66,34 @@ export default function App() {
     }
   }
 
+  async function handleImportURL(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const value = importURLValue.trim();
+    if (!value) {
+      setError("Paste a recruitment URL first.");
+      return;
+    }
+    setImporting(true);
+    setError("");
+    setNotice("");
+    try {
+      const result = await importURL(value);
+      setImportURLValue("");
+      setNotice(
+        result.duplicate
+          ? "This link was already tracked. Existing job is shown in the list."
+          : result.manual_only
+            ? "Saved for manual check because the page could not be fully read."
+            : "Imported and scored the link.",
+      );
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Import failed");
+    } finally {
+      setImporting(false);
+    }
+  }
+
   async function setJobStatus(id: number, next: JobStatus) {
     await updateJobStatus(id, next);
     setJobs((current) => current.map((job) => (job.id === id ? { ...job, status: next } : job)));
@@ -96,6 +127,19 @@ export default function App() {
         </section>
       )}
 
+      <form className="import-bar" onSubmit={handleImportURL}>
+        <input
+          value={importURLValue}
+          onChange={(event) => setImportURLValue(event.target.value)}
+          placeholder="Paste a recruitment URL"
+          aria-label="Recruitment URL"
+        />
+        <button type="submit" disabled={importing}>
+          {importing ? "Importing..." : "Import URL"}
+        </button>
+      </form>
+
+      {notice && <div className="notice-banner">{notice}</div>}
       {error && <div className="error-banner">{error}</div>}
 
       <section className="workspace">

@@ -28,3 +28,9 @@ export interface RunSummary {
   manual_check_count: number;
   error_summary: string;
 }
+
+export interface ImportURLResponse {
+  job: Job;
+  duplicate: boolean;
+  manual_only: boolean;
+}

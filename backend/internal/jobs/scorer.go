@@ -42,7 +42,7 @@ func ScoreJob(input domain.Job) ScoreResult {
 		reasons = append(reasons, "High-priority algorithm or AI application role")
 	}
 
-	if hasAny(text, "tencent", "bytedance", "huawei", "alibaba", "baidu", "meituan", "kuaishou", "oppo", "vivo", "honor", "dji", "ai", "cloud", "fintech", "腾讯", "字节", "华为", "阿里", "百度", "美团", "快手", "大疆", "金融科技") {
+	if hasAny(text, "tencent", "bytedance", "huawei", "alibaba", "baidu", "meituan", "kuaishou", "oppo", "vivo", "honor", "dji", "ai company", "ai lab", "cloud", "fintech", "腾讯", "字节", "华为", "阿里", "百度", "美团", "快手", "大疆", "人工智能", "金融科技") {
 		score += 15
 		reasons = append(reasons, "Preferred company category")
 	}

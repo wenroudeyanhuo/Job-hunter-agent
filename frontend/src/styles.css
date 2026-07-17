@@ -110,6 +110,8 @@ h2 {
 }
 
 .run-strip,
+.import-bar,
+.notice-banner,
 .error-banner {
   display: flex;
   flex-wrap: wrap;
@@ -124,6 +126,37 @@ h2 {
   border: 1px solid #d9e8ff;
   background: #edf6ff;
   color: #1e4d87;
+}
+
+.import-bar {
+  align-items: center;
+  border: 1px solid #dbe4f0;
+  background: #fff;
+}
+
+.import-bar input {
+  flex: 1 1 320px;
+  min-width: 0;
+  border: 1px solid #cfd8e6;
+  border-radius: 6px;
+  color: #18212f;
+  padding: 10px 12px;
+  font: inherit;
+}
+
+.import-bar button {
+  border: 0;
+  border-radius: 6px;
+  background: #1f2937;
+  color: #fff;
+  padding: 10px 14px;
+  font-weight: 760;
+}
+
+.notice-banner {
+  border: 1px solid #d6efe3;
+  background: #effaf4;
+  color: #17623b;
 }
 
 .error-banner {
