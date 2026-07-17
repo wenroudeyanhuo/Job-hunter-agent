@@ -32,6 +32,19 @@ type RunUpdate struct {
 	ErrorSummary     string
 }
 
+type RunSourceResultInput struct {
+	JobRunID         int64
+	SourceName       string
+	SourceURL        string
+	Status           string
+	JobsFound        int
+	JobsCreated      int
+	JobsDuplicated   int
+	JobsFiltered     int
+	ManualCheckCount int
+	ErrorMessage     string
+}
+
 func NewRepository(db *sql.DB) *Repository {
 	return &Repository{db: db}
 }
@@ -261,6 +274,58 @@ func (r *Repository) ListRuns(ctx context.Context) ([]domain.JobRun, error) {
 	return out, nil
 }
 
+func (r *Repository) CreateRunSourceResult(ctx context.Context, input RunSourceResultInput) (domain.JobRunSource, error) {
+	if input.Status == "" {
+		input.Status = "success"
+	}
+	result, err := r.db.ExecContext(ctx, `
+		INSERT INTO job_run_sources (
+			job_run_id, source_name, source_url, status, jobs_found, jobs_created,
+			jobs_duplicated, jobs_filtered, manual_check_count, error_message
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, input.JobRunID, input.SourceName, input.SourceURL, input.Status, input.JobsFound,
+		input.JobsCreated, input.JobsDuplicated, input.JobsFiltered, input.ManualCheckCount,
+		input.ErrorMessage)
+	if err != nil {
+		return domain.JobRunSource{}, fmt.Errorf("create run source result: %w", err)
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return domain.JobRunSource{}, fmt.Errorf("read run source result id: %w", err)
+	}
+	return r.GetRunSourceResult(ctx, id)
+}
+
+func (r *Repository) GetRunSourceResult(ctx context.Context, id int64) (domain.JobRunSource, error) {
+	row := r.db.QueryRowContext(ctx, selectRunSourceSQL()+` WHERE id = ?`, id)
+	result, err := scanRunSource(row)
+	if err != nil {
+		return domain.JobRunSource{}, fmt.Errorf("get run source result %d: %w", id, err)
+	}
+	return result, nil
+}
+
+func (r *Repository) ListRunSources(ctx context.Context, runID int64) ([]domain.JobRunSource, error) {
+	rows, err := r.db.QueryContext(ctx, selectRunSourceSQL()+` WHERE job_run_id = ? ORDER BY id ASC`, runID)
+	if err != nil {
+		return nil, fmt.Errorf("list run source results: %w", err)
+	}
+	defer rows.Close()
+
+	out := []domain.JobRunSource{}
+	for rows.Next() {
+		result, err := scanRunSource(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, result)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate run source results: %w", err)
+	}
+	return out, nil
+}
+
 func (r *Repository) findOne(ctx context.Context, condition string, args ...any) (domain.Job, bool, error) {
 	query := selectJobSQL() + " WHERE " + condition + " LIMIT 1"
 	row := r.db.QueryRowContext(ctx, query, args...)
@@ -276,6 +341,34 @@ func (r *Repository) findOne(ctx context.Context, condition string, args ...any)
 
 type jobScanner interface {
 	Scan(dest ...any) error
+}
+
+func selectRunSourceSQL() string {
+	return `
+		SELECT id, job_run_id, source_name, source_url, status, jobs_found, jobs_created,
+			jobs_duplicated, jobs_filtered, manual_check_count, error_message, created_at
+		FROM job_run_sources`
+}
+
+func scanRunSource(scanner jobScanner) (domain.JobRunSource, error) {
+	var result domain.JobRunSource
+	if err := scanner.Scan(
+		&result.ID,
+		&result.JobRunID,
+		&result.SourceName,
+		&result.SourceURL,
+		&result.Status,
+		&result.JobsFound,
+		&result.JobsCreated,
+		&result.JobsDuplicated,
+		&result.JobsFiltered,
+		&result.ManualCheckCount,
+		&result.ErrorMessage,
+		&result.CreatedAt,
+	); err != nil {
+		return domain.JobRunSource{}, fmt.Errorf("scan run source result: %w", err)
+	}
+	return result, nil
 }
 
 func selectJobSQL() string {

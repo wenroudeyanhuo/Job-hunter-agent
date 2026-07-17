@@ -63,6 +63,24 @@ CREATE TABLE IF NOT EXISTS job_runs (
     error_summary TEXT NOT NULL DEFAULT ''
 );
 
+CREATE TABLE IF NOT EXISTS job_run_sources (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_run_id INTEGER NOT NULL,
+    source_name TEXT NOT NULL DEFAULT '',
+    source_url TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL,
+    jobs_found INTEGER NOT NULL DEFAULT 0,
+    jobs_created INTEGER NOT NULL DEFAULT 0,
+    jobs_duplicated INTEGER NOT NULL DEFAULT 0,
+    jobs_filtered INTEGER NOT NULL DEFAULT 0,
+    manual_check_count INTEGER NOT NULL DEFAULT 0,
+    error_message TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(job_run_id) REFERENCES job_runs(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_job_run_sources_run_id ON job_run_sources(job_run_id);
+
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL,

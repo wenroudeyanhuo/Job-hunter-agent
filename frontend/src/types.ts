@@ -29,6 +29,28 @@ export interface RunSummary {
   error_summary: string;
 }
 
+export interface JobRun extends RunSummary {
+  id: number;
+  trigger_type: string;
+  started_at: string;
+  finished_at?: string;
+  status: string;
+}
+
+export interface JobRunSource {
+  id: number;
+  job_run_id: number;
+  source_name: string;
+  source_url: string;
+  status: string;
+  jobs_found: number;
+  jobs_created: number;
+  jobs_duplicated: number;
+  jobs_filtered: number;
+  manual_check_count: number;
+  error_message: string;
+}
+
 export interface ImportURLResponse {
   job: Job;
   duplicate: boolean;
