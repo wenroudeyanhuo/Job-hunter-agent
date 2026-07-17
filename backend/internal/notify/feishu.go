@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/crawl"
@@ -13,6 +14,10 @@ import (
 )
 
 func BuildFeishuSummary(summary crawl.RunSummary, jobs []domain.Job) string {
+	jobs = append([]domain.Job(nil), jobs...)
+	sort.SliceStable(jobs, func(i, j int) bool {
+		return jobs[i].MatchScore > jobs[j].MatchScore
+	})
 	strongMatches := 0
 	for _, job := range jobs {
 		if job.MatchScore >= 70 {
