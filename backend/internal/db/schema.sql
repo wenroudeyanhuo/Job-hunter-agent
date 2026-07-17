@@ -1,0 +1,70 @@
+CREATE TABLE IF NOT EXISTS jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company TEXT NOT NULL,
+    title TEXT NOT NULL,
+    city TEXT NOT NULL DEFAULT '',
+    direction_tags TEXT NOT NULL DEFAULT '[]',
+    description TEXT NOT NULL DEFAULT '',
+    source_name TEXT NOT NULL DEFAULT '',
+    source_url TEXT NOT NULL DEFAULT '',
+    apply_url TEXT NOT NULL DEFAULT '',
+    published_at TIMESTAMP NULL,
+    deadline_at TIMESTAMP NULL,
+    discovered_at TIMESTAMP NOT NULL,
+    match_score INTEGER NOT NULL DEFAULT 0,
+    recommend_reasons TEXT NOT NULL DEFAULT '[]',
+    penalty_reasons TEXT NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'new',
+    notes TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
+CREATE INDEX IF NOT EXISTS idx_jobs_company_title_city ON jobs(company, title, city);
+CREATE INDEX IF NOT EXISTS idx_jobs_discovered_at ON jobs(discovered_at);
+
+CREATE TABLE IF NOT EXISTS companies (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    aliases TEXT NOT NULL DEFAULT '[]',
+    category TEXT NOT NULL DEFAULT '',
+    priority INTEGER NOT NULL DEFAULT 0,
+    notes TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS job_sources (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    type TEXT NOT NULL,
+    url TEXT NOT NULL DEFAULT '',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    parser_type TEXT NOT NULL DEFAULT 'generic',
+    last_run_at TIMESTAMP NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS job_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    trigger_type TEXT NOT NULL,
+    started_at TIMESTAMP NOT NULL,
+    finished_at TIMESTAMP NULL,
+    status TEXT NOT NULL,
+    sources_total INTEGER NOT NULL DEFAULT 0,
+    sources_success INTEGER NOT NULL DEFAULT 0,
+    sources_failed INTEGER NOT NULL DEFAULT 0,
+    jobs_found INTEGER NOT NULL DEFAULT 0,
+    jobs_created INTEGER NOT NULL DEFAULT 0,
+    jobs_duplicated INTEGER NOT NULL DEFAULT 0,
+    manual_check_count INTEGER NOT NULL DEFAULT 0,
+    error_summary TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
