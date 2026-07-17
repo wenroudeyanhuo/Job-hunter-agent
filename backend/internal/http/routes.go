@@ -1,0 +1,30 @@
+package httpapi
+
+import (
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+)
+
+func NewRouter(handlers *Handlers) http.Handler {
+	gin.SetMode(gin.ReleaseMode)
+	router := gin.New()
+	router.Use(gin.Recovery())
+
+	router.GET("/healthz", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
+
+	api := router.Group("/api")
+	api.GET("/jobs", handlers.ListJobs)
+	api.GET("/jobs/:id", handlers.GetJob)
+	api.PATCH("/jobs/:id/status", handlers.UpdateJobStatus)
+	api.PATCH("/jobs/:id/notes", handlers.UpdateJobNotes)
+	api.POST("/crawl/run", handlers.RunCrawl)
+	api.GET("/crawl/runs", handlers.ListRuns)
+	api.GET("/settings", handlers.GetSettings)
+	api.PATCH("/settings", handlers.UpdateSettings)
+	api.POST("/notifications/feishu/test", handlers.SendFeishuTest)
+
+	return router
+}

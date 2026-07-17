@@ -132,6 +132,25 @@ func (r *Repository) UpdateStatus(ctx context.Context, id int64, status domain.J
 	return nil
 }
 
+func (r *Repository) UpdateNotes(ctx context.Context, id int64, notes string) error {
+	result, err := r.db.ExecContext(ctx, `
+		UPDATE jobs
+		SET notes = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?
+	`, notes, id)
+	if err != nil {
+		return fmt.Errorf("update job notes: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("read rows affected: %w", err)
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 func (r *Repository) FindDuplicate(ctx context.Context, job domain.Job) (domain.Job, bool, error) {
 	if strings.TrimSpace(job.ApplyURL) != "" {
 		existing, found, err := r.findOne(ctx, "apply_url = ?", job.ApplyURL)
@@ -199,6 +218,47 @@ func (r *Repository) FinishRun(ctx context.Context, id int64, update RunUpdate) 
 		return sql.ErrNoRows
 	}
 	return nil
+}
+
+func (r *Repository) ListRuns(ctx context.Context) ([]domain.JobRun, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, trigger_type, started_at, finished_at, status, sources_total,
+			sources_success, sources_failed, jobs_found, jobs_created, jobs_duplicated,
+			manual_check_count, error_summary
+		FROM job_runs
+		ORDER BY started_at DESC, id DESC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("list job runs: %w", err)
+	}
+	defer rows.Close()
+
+	var out []domain.JobRun
+	for rows.Next() {
+		var run domain.JobRun
+		if err := rows.Scan(
+			&run.ID,
+			&run.TriggerType,
+			&run.StartedAt,
+			&run.FinishedAt,
+			&run.Status,
+			&run.SourcesTotal,
+			&run.SourcesSuccess,
+			&run.SourcesFailed,
+			&run.JobsFound,
+			&run.JobsCreated,
+			&run.JobsDuplicated,
+			&run.ManualCheckCount,
+			&run.ErrorSummary,
+		); err != nil {
+			return nil, fmt.Errorf("scan job run: %w", err)
+		}
+		out = append(out, run)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate job runs: %w", err)
+	}
+	return out, nil
 }
 
 func (r *Repository) findOne(ctx context.Context, condition string, args ...any) (domain.Job, bool, error) {
