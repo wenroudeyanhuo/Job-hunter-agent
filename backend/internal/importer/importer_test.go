@@ -60,3 +60,27 @@ func TestImportURLRejectsInvalidURL(t *testing.T) {
 		t.Fatal("expected invalid URL error")
 	}
 }
+
+func TestDiscoverLinksFindsRecruitmentAnchors(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<html><body>
+<a href="/jobs/backend-go">Go Backend Engineer 2027 Campus</a>
+<a href="/about">About us</a>
+<a href="/jobs/backend-go#apply">Duplicate apply link</a>
+<a href="mailto:hr@example.com">Email HR</a>
+</body></html>`))
+	}))
+	defer server.Close()
+
+	links, err := DiscoverLinks(context.Background(), server.URL, server.Client(), 10)
+	if err != nil {
+		t.Fatalf("discover links: %v", err)
+	}
+
+	if len(links) != 1 {
+		t.Fatalf("expected one recruitment link, got %d: %#v", len(links), links)
+	}
+	if links[0] != server.URL+"/jobs/backend-go" {
+		t.Fatalf("unexpected link %q", links[0])
+	}
+}

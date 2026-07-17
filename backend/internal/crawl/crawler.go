@@ -9,6 +9,8 @@ import (
 	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/jobs"
 )
 
+const discoveredLinksPerSource = 10
+
 type Collector interface {
 	Name() string
 	Collect(ctx context.Context) ([]domain.Job, error)
@@ -39,6 +41,7 @@ func (PublicURLCollector) Name() string {
 
 func (c PublicURLCollector) Collect(ctx context.Context) ([]domain.Job, error) {
 	jobs := []domain.Job{}
+	seen := map[string]struct{}{}
 	for _, sourceURL := range c.urls {
 		job, err := importer.ImportURL(ctx, sourceURL, c.client)
 		if err != nil {
@@ -56,9 +59,38 @@ func (c PublicURLCollector) Collect(ctx context.Context) ([]domain.Job, error) {
 		if job.SourceName == "" {
 			job.SourceName = "public_urls"
 		}
-		jobs = append(jobs, job)
+		jobs = appendUniqueJob(jobs, seen, job)
+
+		links, err := importer.DiscoverLinks(ctx, sourceURL, c.client, discoveredLinksPerSource)
+		if err != nil {
+			continue
+		}
+		for _, link := range links {
+			discoveredJob, err := importer.ImportURL(ctx, link, c.client)
+			if err != nil {
+				continue
+			}
+			if discoveredJob.SourceName == "" {
+				discoveredJob.SourceName = job.SourceName
+			}
+			jobs = appendUniqueJob(jobs, seen, discoveredJob)
+		}
 	}
 	return jobs, nil
+}
+
+func appendUniqueJob(jobs []domain.Job, seen map[string]struct{}, job domain.Job) []domain.Job {
+	key := job.ApplyURL
+	if key == "" {
+		key = job.SourceURL
+	}
+	if key != "" {
+		if _, ok := seen[key]; ok {
+			return jobs
+		}
+		seen[key] = struct{}{}
+	}
+	return append(jobs, job)
 }
 
 type SourceLister interface {
