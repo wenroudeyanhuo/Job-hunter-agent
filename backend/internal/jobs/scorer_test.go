@@ -83,3 +83,17 @@ func TestScoreJobHardFiltersUnclearInternConversion(t *testing.T) {
 		t.Fatal("expected unclear conversion internship to be hard filtered")
 	}
 }
+
+func TestScoreJobDoesNotTreatDomainAsAICompany(t *testing.T) {
+	result := ScoreJob(domain.Job{
+		Company:  "Example",
+		Title:    "Example Domain",
+		ApplyURL: "https://example.com",
+	})
+
+	for _, reason := range result.Job.RecommendReasons {
+		if reason == "Preferred company category" {
+			t.Fatalf("did not expect preferred company category for generic domain: %#v", result.Job.RecommendReasons)
+		}
+	}
+}

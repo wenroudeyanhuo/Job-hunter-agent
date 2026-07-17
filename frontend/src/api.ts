@@ -1,4 +1,4 @@
-import type { Job, JobStatus, RunSummary } from "./types";
+import type { ImportURLResponse, Job, JobStatus, RunSummary } from "./types";
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -33,4 +33,11 @@ export async function updateJobStatus(id: number, status: JobStatus): Promise<vo
 
 export async function runCrawl(): Promise<RunSummary> {
   return request<RunSummary>("/api/crawl/run", { method: "POST" });
+}
+
+export async function importURL(url: string): Promise<ImportURLResponse> {
+  return request<ImportURLResponse>("/api/jobs/import-url", {
+    method: "POST",
+    body: JSON.stringify({ url }),
+  });
 }

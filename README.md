@@ -63,7 +63,7 @@ npm install
 npm run dev
 ```
 
-The frontend dev server proxies `/api` and `/healthz` to `http://localhost:8080`.
+The dashboard is available at `http://localhost:5173` by default. The frontend dev server proxies `/api` and `/healthz` to the backend at `http://localhost:8080`.
 
 Build check:
 

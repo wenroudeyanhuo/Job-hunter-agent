@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/crawl"
 	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/domain"
+	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/importer"
 	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/jobs"
 	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/notify"
 )
@@ -45,6 +46,37 @@ func (h *Handlers) GetJob(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, job)
+}
+
+func (h *Handlers) ImportURL(c *gin.Context) {
+	var req struct {
+		URL string `json:"url"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.URL == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "url is required"})
+		return
+	}
+	imported, err := importer.ImportURL(c.Request.Context(), req.URL, http.DefaultClient)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
+	manualOnly := imported.Status == domain.StatusManualCheck
+	scored := jobs.ScoreJob(imported)
+	if scored.HardFiltered {
+		scored.Job.Status = domain.StatusManualCheck
+		scored.Job.PenaltyReasons = append(scored.Job.PenaltyReasons, scored.HardFilterReason)
+	}
+	created, duplicate, err := h.Repo.UpsertJob(c.Request.Context(), scored.Job)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{
+		"job":         created,
+		"duplicate":   duplicate,
+		"manual_only": manualOnly,
+	})
 }
 
 func (h *Handlers) UpdateJobStatus(c *gin.Context) {
