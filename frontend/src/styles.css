@@ -164,6 +164,17 @@ h2 {
   font-size: 14px;
 }
 
+.agent-action button {
+  margin-top: 9px;
+  border: 1px solid #1769e0;
+  border-radius: 6px;
+  background: #fff;
+  color: #1769e0;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 760;
+}
+
 .metric {
   min-height: 88px;
   border: 1px solid #e3e8f2;
