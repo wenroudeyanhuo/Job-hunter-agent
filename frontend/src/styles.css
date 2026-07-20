@@ -291,6 +291,12 @@ h2 {
   font-weight: 760;
 }
 
+.import-bar .secondary-action {
+  border: 1px solid #cfd8e6;
+  background: #fff;
+  color: #334155;
+}
+
 .notice-banner {
   border: 1px solid #d6efe3;
   background: #effaf4;

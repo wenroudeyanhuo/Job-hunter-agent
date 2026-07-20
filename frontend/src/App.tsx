@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  cleanupLandingPages,
   createSource,
   getAgentBriefing,
   getSettings,
@@ -46,6 +47,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [cleaningLandingPages, setCleaningLandingPages] = useState(false);
   const [importURLValue, setImportURLValue] = useState("");
   const [sources, setSources] = useState<Source[]>([]);
   const [runs, setRuns] = useState<JobRun[]>([]);
@@ -214,6 +216,27 @@ export default function App() {
     }
   }
 
+  async function handleCleanupLandingPages() {
+    setCleaningLandingPages(true);
+    setError("");
+    setNotice("");
+    try {
+      const result = await cleanupLandingPages();
+      setNotice(
+        result.ignored > 0
+          ? `Moved ${result.ignored} recruitment landing pages to ignored.`
+          : "No recruitment landing pages needed cleanup.",
+      );
+      await refresh();
+      await refreshBriefing();
+      await refreshAgentEvents();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Cleanup failed");
+    } finally {
+      setCleaningLandingPages(false);
+    }
+  }
+
   async function handleAddSource(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const value = sourceURLValue.trim();
@@ -361,6 +384,9 @@ export default function App() {
         />
         <button type="submit" disabled={importing}>
           {importing ? "Importing..." : "Import URL"}
+        </button>
+        <button type="button" className="secondary-action" onClick={handleCleanupLandingPages} disabled={cleaningLandingPages}>
+          {cleaningLandingPages ? "Cleaning..." : "Clean landing pages"}
         </button>
       </form>
 

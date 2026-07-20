@@ -1,6 +1,7 @@
 import type {
   AgentBriefing,
   AgentEvent,
+  CleanupLandingPagesResponse,
   ImportURLResponse,
   Job,
   JobRun,
@@ -72,6 +73,10 @@ export async function importURL(url: string): Promise<ImportURLResponse> {
     method: "POST",
     body: JSON.stringify({ url }),
   });
+}
+
+export async function cleanupLandingPages(): Promise<CleanupLandingPagesResponse> {
+  return request<CleanupLandingPagesResponse>("/api/jobs/cleanup-landing-pages", { method: "POST" });
 }
 
 export async function listSources(): Promise<Source[]> {

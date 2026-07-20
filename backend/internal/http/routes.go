@@ -19,6 +19,7 @@ func NewRouter(handlers *Handlers) http.Handler {
 	api.GET("/agent/briefing", handlers.GetAgentBriefing)
 	api.GET("/agent/events", handlers.ListAgentEvents)
 	api.GET("/jobs", handlers.ListJobs)
+	api.POST("/jobs/cleanup-landing-pages", handlers.CleanupLandingPages)
 	api.POST("/jobs/import-url", handlers.ImportURL)
 	api.GET("/jobs/:id", handlers.GetJob)
 	api.PATCH("/jobs/:id/status", handlers.UpdateJobStatus)

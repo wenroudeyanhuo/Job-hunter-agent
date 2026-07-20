@@ -87,6 +87,64 @@ func TestRunCrawlReturnsSummary(t *testing.T) {
 	}
 }
 
+func TestCleanupLandingPagesIgnoresOnlyNonJobPages(t *testing.T) {
+	repo, handler := testRouter(t, nil)
+	landing, err := repo.CreateJob(context.Background(), domain.Job{
+		Company:        "Career",
+		Title:          "华为应届生_实习生_留学生_海外本地最新招聘信息-华为校园招聘",
+		Description:    "校园招聘官网",
+		ApplyURL:       "https://career.example.com/",
+		SourceURL:      "https://career.example.com/",
+		Status:         domain.StatusNew,
+		PenaltyReasons: []string{"Unclear city"},
+	})
+	if err != nil {
+		t.Fatalf("seed landing page: %v", err)
+	}
+	concrete, err := repo.CreateJob(context.Background(), domain.Job{
+		Company:     "Tencent",
+		Title:       "Go Backend Engineer 2027 Campus - Shenzhen",
+		Description: "Job description and requirements for Go backend microservices.",
+		ApplyURL:    "https://careers.example.com/jobs/backend-go",
+		SourceURL:   "https://careers.example.com/jobs/backend-go",
+		Status:      domain.StatusNew,
+	})
+	if err != nil {
+		t.Fatalf("seed concrete job: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/jobs/cleanup-landing-pages", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Ignored int `json:"ignored"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Ignored != 1 {
+		t.Fatalf("expected one ignored landing page, got %#v", response)
+	}
+
+	landingAfter, err := repo.GetJob(context.Background(), landing.ID)
+	if err != nil {
+		t.Fatalf("get landing: %v", err)
+	}
+	if landingAfter.Status != domain.StatusIgnored {
+		t.Fatalf("expected landing ignored, got %q", landingAfter.Status)
+	}
+	concreteAfter, err := repo.GetJob(context.Background(), concrete.ID)
+	if err != nil {
+		t.Fatalf("get concrete: %v", err)
+	}
+	if concreteAfter.Status != domain.StatusNew {
+		t.Fatalf("expected concrete job to stay new, got %q", concreteAfter.Status)
+	}
+}
+
 func testRouter(t *testing.T, runner CrawlRunner) (*jobs.Repository, http.Handler) {
 	t.Helper()
 	conn, err := db.Open(":memory:")
