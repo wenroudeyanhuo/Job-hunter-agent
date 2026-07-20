@@ -126,6 +126,37 @@ func (h *Handlers) ImportURL(c *gin.Context) {
 	})
 }
 
+func (h *Handlers) CleanupLandingPages(c *gin.Context) {
+	jobList, err := h.Repo.ListJobs(c.Request.Context(), jobs.ListFilter{})
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	updated := 0
+	for _, job := range jobList {
+		if job.Status == domain.StatusIgnored || job.Status == domain.StatusApplied || job.Status == domain.StatusInterested {
+			continue
+		}
+		if importer.LooksLikeConcreteJobPosting(job) {
+			continue
+		}
+		if err := h.Repo.UpdateStatus(c.Request.Context(), job.ID, domain.StatusIgnored); err != nil {
+			respondRepoError(c, err)
+			return
+		}
+		updated++
+	}
+
+	h.recordAgentEvent(c, jobs.AgentEventInput{
+		Type:    "landing_pages_cleaned",
+		Title:   "Cleaned recruitment landing pages",
+		Summary: "I moved " + strconv.Itoa(updated) + " non-job recruitment pages to ignored.",
+		Level:   "info",
+	})
+	c.JSON(http.StatusOK, gin.H{"ignored": updated})
+}
+
 func (h *Handlers) UpdateJobStatus(c *gin.Context) {
 	id, ok := parseID(c)
 	if !ok {

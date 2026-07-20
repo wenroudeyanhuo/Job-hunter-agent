@@ -57,6 +57,10 @@ export interface ImportURLResponse {
   manual_only: boolean;
 }
 
+export interface CleanupLandingPagesResponse {
+  ignored: number;
+}
+
 export interface Source {
   id: number;
   name: string;
