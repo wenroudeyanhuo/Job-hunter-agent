@@ -1,4 +1,15 @@
-import type { ImportURLResponse, Job, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source } from "./types";
+import type {
+  ImportURLResponse,
+  Job,
+  JobRun,
+  JobRunSource,
+  JobStatus,
+  RecommendedCrawlResponse,
+  RunSummary,
+  SeedSourcesResult,
+  Settings,
+  Source,
+} from "./types";
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -62,6 +73,14 @@ export async function createSource(url: string, name = ""): Promise<Source> {
     method: "POST",
     body: JSON.stringify({ name, url, enabled: true, type: "public_url", parser_type: "generic" }),
   });
+}
+
+export async function seedRecommendedSources(): Promise<SeedSourcesResult> {
+  return request<SeedSourcesResult>("/api/sources/recommended", { method: "POST" });
+}
+
+export async function runRecommendedCrawl(): Promise<RecommendedCrawlResponse> {
+  return request<RecommendedCrawlResponse>("/api/crawl/recommended", { method: "POST" });
 }
 
 export async function updateSourceEnabled(id: number, enabled: boolean): Promise<void> {
