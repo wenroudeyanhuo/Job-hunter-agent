@@ -93,6 +93,12 @@ func BuildAgentBriefing(jobList []domain.Job, sources []Source, runs []domain.Jo
 	if briefing.Metrics.LowConfidenceJobs > 0 {
 		briefing.Tone = "needs_review"
 		briefing.NextActions = append(briefing.NextActions, AgentNextAction{
+			Action:   "cleanup_landing_pages",
+			Label:    "Clean landing pages",
+			Reason:   "I can move obvious recruitment portals out of the active opportunity list before you review jobs.",
+			Priority: 89,
+		})
+		briefing.NextActions = append(briefing.NextActions, AgentNextAction{
 			Action:   "review_low_confidence",
 			Label:    "Review low-confidence pages",
 			Reason:   "Some collected pages look like hiring portals or listing pages instead of concrete jobs.",

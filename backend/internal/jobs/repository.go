@@ -103,6 +103,9 @@ func (r *Repository) ListJobs(ctx context.Context, filter ListFilter) ([]domain.
 	if filter.Status != "" {
 		query += " WHERE status = ?"
 		args = append(args, string(filter.Status))
+	} else {
+		query += " WHERE status != ?"
+		args = append(args, string(domain.StatusIgnored))
 	}
 	query += " ORDER BY match_score DESC, discovered_at DESC, id DESC"
 

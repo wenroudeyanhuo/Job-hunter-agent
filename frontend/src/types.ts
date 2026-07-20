@@ -26,6 +26,7 @@ export interface RunSummary {
   jobs_created: number;
   jobs_duplicated: number;
   manual_check_count: number;
+  landing_pages_ignored: number;
   error_summary: string;
 }
 

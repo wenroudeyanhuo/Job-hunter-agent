@@ -151,6 +151,9 @@ export default function App() {
         await refresh("manual_check");
         setNotice("Showing low-confidence pages that need a human decision.");
         return;
+      case "cleanup_landing_pages":
+        await handleCleanupLandingPages();
+        return;
       case "review_strong_matches":
         setStatus("all");
         setDirection("all");
@@ -175,6 +178,7 @@ export default function App() {
     try {
       const summary = await runCrawl();
       setLastRun(summary);
+      setNotice(`Crawl finished. Created ${summary.jobs_created} jobs and cleaned ${summary.landing_pages_ignored} landing pages.`);
       await refresh();
       await refreshRuns();
       await refreshBriefing();
@@ -295,7 +299,9 @@ export default function App() {
     try {
       const result = await runRecommendedCrawl();
       setLastRun(result.summary);
-      setNotice(`Recommended crawl finished. Added ${result.sources.created} sources and created ${result.summary.jobs_created} jobs.`);
+      setNotice(
+        `Recommended crawl finished. Added ${result.sources.created} sources, created ${result.summary.jobs_created} jobs, and cleaned ${result.summary.landing_pages_ignored} landing pages.`,
+      );
       await refreshSources();
       await refresh();
       await refreshRuns();
@@ -372,6 +378,7 @@ export default function App() {
           <span>Duplicated {lastRun.jobs_duplicated}</span>
           <span>Failed sources {lastRun.sources_failed}</span>
           <span>Manual check {lastRun.manual_check_count}</span>
+          <span>Cleaned {lastRun.landing_pages_ignored}</span>
         </section>
       )}
 

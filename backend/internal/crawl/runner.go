@@ -13,15 +13,16 @@ import (
 )
 
 type RunSummary struct {
-	SourcesTotal     int          `json:"sources_total"`
-	SourcesSuccess   int          `json:"sources_success"`
-	SourcesFailed    int          `json:"sources_failed"`
-	JobsFound        int          `json:"jobs_found"`
-	JobsCreated      int          `json:"jobs_created"`
-	JobsDuplicated   int          `json:"jobs_duplicated"`
-	ManualCheckCount int          `json:"manual_check_count"`
-	ErrorSummary     string       `json:"error_summary"`
-	RecommendedJobs  []domain.Job `json:"recommended_jobs,omitempty"`
+	SourcesTotal        int          `json:"sources_total"`
+	SourcesSuccess      int          `json:"sources_success"`
+	SourcesFailed       int          `json:"sources_failed"`
+	JobsFound           int          `json:"jobs_found"`
+	JobsCreated         int          `json:"jobs_created"`
+	JobsDuplicated      int          `json:"jobs_duplicated"`
+	ManualCheckCount    int          `json:"manual_check_count"`
+	LandingPagesIgnored int          `json:"landing_pages_ignored"`
+	ErrorSummary        string       `json:"error_summary"`
+	RecommendedJobs     []domain.Job `json:"recommended_jobs,omitempty"`
 }
 
 type Runnable interface {

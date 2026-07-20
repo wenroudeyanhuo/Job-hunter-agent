@@ -127,13 +127,32 @@ func (h *Handlers) ImportURL(c *gin.Context) {
 }
 
 func (h *Handlers) CleanupLandingPages(c *gin.Context) {
-	jobList, err := h.Repo.ListJobs(c.Request.Context(), jobs.ListFilter{})
+	result, err := h.cleanupLandingPages(c.Request.Context())
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 
-	updated := 0
+	h.recordAgentEvent(c, jobs.AgentEventInput{
+		Type:    "landing_pages_cleaned",
+		Title:   "Cleaned recruitment landing pages",
+		Summary: "I moved " + strconv.Itoa(result.Ignored) + " non-job recruitment pages to ignored.",
+		Level:   "info",
+	})
+	c.JSON(http.StatusOK, gin.H{"ignored": result.Ignored})
+}
+
+type landingPageCleanupResult struct {
+	Ignored int
+}
+
+func (h *Handlers) cleanupLandingPages(ctx context.Context) (landingPageCleanupResult, error) {
+	jobList, err := h.Repo.ListJobs(ctx, jobs.ListFilter{})
+	if err != nil {
+		return landingPageCleanupResult{}, err
+	}
+
+	result := landingPageCleanupResult{}
 	for _, job := range jobList {
 		if job.Status == domain.StatusIgnored || job.Status == domain.StatusApplied || job.Status == domain.StatusInterested {
 			continue
@@ -141,20 +160,12 @@ func (h *Handlers) CleanupLandingPages(c *gin.Context) {
 		if importer.LooksLikeConcreteJobPosting(job) {
 			continue
 		}
-		if err := h.Repo.UpdateStatus(c.Request.Context(), job.ID, domain.StatusIgnored); err != nil {
-			respondRepoError(c, err)
-			return
+		if err := h.Repo.UpdateStatus(ctx, job.ID, domain.StatusIgnored); err != nil {
+			return landingPageCleanupResult{}, err
 		}
-		updated++
+		result.Ignored++
 	}
-
-	h.recordAgentEvent(c, jobs.AgentEventInput{
-		Type:    "landing_pages_cleaned",
-		Title:   "Cleaned recruitment landing pages",
-		Summary: "I moved " + strconv.Itoa(updated) + " non-job recruitment pages to ignored.",
-		Level:   "info",
-	})
-	c.JSON(http.StatusOK, gin.H{"ignored": updated})
+	return result, nil
 }
 
 func (h *Handlers) UpdateJobStatus(c *gin.Context) {
@@ -207,6 +218,12 @@ func (h *Handlers) RunCrawl(c *gin.Context) {
 		respondError(c, http.StatusConflict, err)
 		return
 	}
+	cleanup, err := h.cleanupLandingPages(c.Request.Context())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	summary.LandingPagesIgnored = cleanup.Ignored
 	h.recordCrawlEvent(c, "crawl_completed", "Manual crawl completed", summary)
 	c.JSON(http.StatusOK, summary)
 }
@@ -222,6 +239,12 @@ func (h *Handlers) RunRecommendedCrawl(c *gin.Context) {
 		respondError(c, http.StatusConflict, err)
 		return
 	}
+	cleanup, err := h.cleanupLandingPages(c.Request.Context())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	summary.LandingPagesIgnored = cleanup.Ignored
 	h.recordCrawlEvent(c, "recommended_crawl_completed", "Recommended crawl completed", summary)
 	c.JSON(http.StatusOK, gin.H{
 		"seeded":  seeded.Created,
@@ -388,10 +411,14 @@ func (h *Handlers) recordCrawlEvent(c *gin.Context, eventType string, title stri
 	if summary.SourcesFailed > 0 {
 		level = "warning"
 	}
+	cleaned := ""
+	if summary.LandingPagesIgnored > 0 {
+		cleaned = " I also moved " + strconv.Itoa(summary.LandingPagesIgnored) + " recruitment landing pages to ignored."
+	}
 	h.recordAgentEvent(c, jobs.AgentEventInput{
 		Type:    eventType,
 		Title:   title,
-		Summary: "Created " + strconv.Itoa(summary.JobsCreated) + " jobs, found " + strconv.Itoa(summary.JobsDuplicated) + " duplicates, and flagged " + strconv.Itoa(summary.ManualCheckCount) + " for review.",
+		Summary: "Created " + strconv.Itoa(summary.JobsCreated) + " jobs, found " + strconv.Itoa(summary.JobsDuplicated) + " duplicates, and flagged " + strconv.Itoa(summary.ManualCheckCount) + " for review." + cleaned,
 		Level:   level,
 	})
 }
