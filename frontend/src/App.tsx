@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   createSource,
+  getAgentBriefing,
   getSettings,
   importURL,
   listJobs,
@@ -14,7 +15,7 @@ import {
   updateSettings,
   updateSourceEnabled,
 } from "./api";
-import type { Job, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source } from "./types";
+import type { AgentBriefing, Job, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source } from "./types";
 
 const statusLabels: Record<JobStatus | "all", string> = {
   all: "All",
@@ -58,6 +59,7 @@ export default function App() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [lastRun, setLastRun] = useState<RunSummary | null>(null);
+  const [briefing, setBriefing] = useState<AgentBriefing | null>(null);
 
   async function refresh(nextStatus = status) {
     setError("");
@@ -86,8 +88,13 @@ export default function App() {
     setSettingsDraft(settingsToDraft(nextSettings));
   }
 
+  async function refreshBriefing() {
+    const data = await getAgentBriefing();
+    setBriefing(data);
+  }
+
   useEffect(() => {
-    Promise.all([refresh(), refreshSources(), refreshRuns(), refreshSettings()])
+    Promise.all([refresh(), refreshSources(), refreshRuns(), refreshSettings(), refreshBriefing()])
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
@@ -114,6 +121,7 @@ export default function App() {
       setLastRun(summary);
       await refresh();
       await refreshRuns();
+      await refreshBriefing();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Run failed");
     } finally {
@@ -142,6 +150,7 @@ export default function App() {
             : "Imported and scored the link.",
       );
       await refresh();
+      await refreshBriefing();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Import failed");
     } finally {
@@ -164,6 +173,7 @@ export default function App() {
       setSourceURLValue("");
       setNotice("Source added. It will be used by the next crawl run.");
       await refreshSources();
+      await refreshBriefing();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not add source");
     } finally {
@@ -174,6 +184,7 @@ export default function App() {
   async function toggleSource(source: Source) {
     await updateSourceEnabled(source.id, !source.enabled);
     setSources((current) => current.map((item) => (item.id === source.id ? { ...item, enabled: !source.enabled } : item)));
+    await refreshBriefing();
   }
 
   async function handleSeedRecommendedSources() {
@@ -188,6 +199,7 @@ export default function App() {
           : "Recommended sources were already added.",
       );
       await refreshSources();
+      await refreshBriefing();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not add recommended sources");
     } finally {
@@ -206,6 +218,7 @@ export default function App() {
       await refreshSources();
       await refresh();
       await refreshRuns();
+      await refreshBriefing();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Recommended crawl failed");
     } finally {
@@ -244,6 +257,7 @@ export default function App() {
   async function setJobStatus(id: number, next: JobStatus) {
     await updateJobStatus(id, next);
     setJobs((current) => current.map((job) => (job.id === id ? { ...job, status: next } : job)));
+    await refreshBriefing();
   }
 
   return (
@@ -264,6 +278,8 @@ export default function App() {
         <Metric label="Visible now" value={visibleJobs.length} />
         <Metric label="Next runs" value={settings.crawl_schedule.join(" / ")} />
       </section>
+
+      {briefing && <AgentBriefingPanel briefing={briefing} />}
 
       {lastRun && (
         <section className="run-strip">
@@ -511,6 +527,37 @@ export default function App() {
         </div>
       </section>
     </main>
+  );
+}
+
+function AgentBriefingPanel({ briefing }: { briefing: AgentBriefing }) {
+  return (
+    <section className={`agent-briefing agent-${briefing.tone}`}>
+      <div>
+        <div className="agent-kicker">Agent Briefing</div>
+        <h2>{briefing.headline}</h2>
+        <div className="agent-highlights">
+          {briefing.highlights.length > 0 ? (
+            briefing.highlights.map((highlight) => <span key={highlight}>{highlight}</span>)
+          ) : (
+            <span>Waiting for the next crawl signal.</span>
+          )}
+        </div>
+      </div>
+      <div className="agent-metrics">
+        <Metric label="Strong" value={briefing.metrics.strong_matches} />
+        <Metric label="Manual" value={briefing.metrics.manual_check_jobs} />
+        <Metric label="Sources" value={briefing.metrics.enabled_sources} />
+      </div>
+      <div className="agent-actions">
+        {briefing.next_actions.map((action) => (
+          <div className="agent-action" key={action.action}>
+            <strong>{action.label}</strong>
+            <span>{action.reason}</span>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 

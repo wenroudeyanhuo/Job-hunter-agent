@@ -1,4 +1,5 @@
 import type {
+  AgentBriefing,
   ImportURLResponse,
   Job,
   JobRun,
@@ -33,6 +34,10 @@ export async function listJobs(status?: JobStatus | "all"): Promise<Job[]> {
   const query = status && status !== "all" ? `?status=${encodeURIComponent(status)}` : "";
   const jobs = await request<Job[] | null>(`/api/jobs${query}`);
   return Array.isArray(jobs) ? jobs : [];
+}
+
+export async function getAgentBriefing(): Promise<AgentBriefing> {
+  return request<AgentBriefing>("/api/agent/briefing");
 }
 
 export async function updateJobStatus(id: number, status: JobStatus): Promise<void> {

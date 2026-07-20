@@ -88,6 +88,82 @@ h2 {
   margin-bottom: 16px;
 }
 
+.agent-briefing {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(260px, 0.8fr) minmax(320px, 1fr);
+  gap: 14px;
+  align-items: stretch;
+  border: 1px solid #d8e2ef;
+  border-radius: 8px;
+  background: #fff;
+  margin-bottom: 16px;
+  padding: 16px;
+}
+
+.agent-kicker {
+  color: #1769e0;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.agent-briefing h2 {
+  margin-top: 6px;
+  font-size: 20px;
+  line-height: 1.25;
+}
+
+.agent-highlights {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.agent-highlights span,
+.agent-action span {
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.agent-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.agent-metrics .metric {
+  min-height: 76px;
+  padding: 12px;
+}
+
+.agent-metrics .metric strong {
+  font-size: 20px;
+}
+
+.agent-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.agent-action {
+  border-left: 3px solid #1769e0;
+  background: #f8fafc;
+  padding: 10px 12px;
+}
+
+.agent-action strong,
+.agent-action span {
+  display: block;
+}
+
+.agent-action strong {
+  color: #18212f;
+  font-size: 14px;
+}
+
 .metric {
   min-height: 88px;
   border: 1px solid #e3e8f2;
@@ -593,8 +669,13 @@ td {
   }
 
   .summary-grid,
+  .agent-briefing,
   .workspace {
     grid-template-columns: 1fr;
+  }
+
+  .agent-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .primary-button,
