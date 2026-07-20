@@ -37,9 +37,9 @@ type SeedSourcesResult struct {
 
 func RecommendedSources() []SourceInput {
 	return []SourceInput{
-		{Name: "Tencent Careers", URL: "https://careers.tencent.com/", Enabled: true},
+		{Name: "Tencent Careers", URL: "https://careers.tencent.com/", Enabled: true, ParserType: "tencent_api"},
 		{Name: "Huawei Careers", URL: "https://career.huawei.com/reccampportal/portal5/index.html", Enabled: true},
-		{Name: "ByteDance Jobs", URL: "https://jobs.bytedance.com/campus/", Enabled: true},
+		{Name: "ByteDance Jobs", URL: "https://jobs.bytedance.com/campus/", Enabled: true, ParserType: "bytedance_api"},
 		{Name: "Alibaba Campus", URL: "https://talent.alibaba.com/campus/home", Enabled: true},
 		{Name: "Meituan Campus", URL: "https://campus.meituan.com/", Enabled: true},
 		{Name: "DJI Careers", URL: "https://we.dji.com/zh-CN/campus", Enabled: true},
