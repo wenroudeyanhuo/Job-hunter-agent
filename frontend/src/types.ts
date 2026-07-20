@@ -112,3 +112,12 @@ export interface AgentNextAction {
   reason: string;
   priority: number;
 }
+
+export interface AgentEvent {
+  id: number;
+  type: string;
+  title: string;
+  summary: string;
+  level: string;
+  created_at: string;
+}

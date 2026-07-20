@@ -4,6 +4,7 @@ import {
   getAgentBriefing,
   getSettings,
   importURL,
+  listAgentEvents,
   listJobs,
   listRunSources,
   listRuns,
@@ -15,7 +16,7 @@ import {
   updateSettings,
   updateSourceEnabled,
 } from "./api";
-import type { AgentBriefing, Job, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source } from "./types";
+import type { AgentBriefing, AgentEvent, Job, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source } from "./types";
 
 const statusLabels: Record<JobStatus | "all", string> = {
   all: "All",
@@ -61,6 +62,7 @@ export default function App() {
   const [notice, setNotice] = useState("");
   const [lastRun, setLastRun] = useState<RunSummary | null>(null);
   const [briefing, setBriefing] = useState<AgentBriefing | null>(null);
+  const [agentEvents, setAgentEvents] = useState<AgentEvent[]>([]);
 
   async function refresh(nextStatus = status) {
     setError("");
@@ -94,8 +96,13 @@ export default function App() {
     setBriefing(data);
   }
 
+  async function refreshAgentEvents() {
+    const data = await listAgentEvents();
+    setAgentEvents(data);
+  }
+
   useEffect(() => {
-    Promise.all([refresh(), refreshSources(), refreshRuns(), refreshSettings(), refreshBriefing()])
+    Promise.all([refresh(), refreshSources(), refreshRuns(), refreshSettings(), refreshBriefing(), refreshAgentEvents()])
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
@@ -158,6 +165,7 @@ export default function App() {
       await refresh();
       await refreshRuns();
       await refreshBriefing();
+      await refreshAgentEvents();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Run failed");
     } finally {
@@ -187,6 +195,7 @@ export default function App() {
       );
       await refresh();
       await refreshBriefing();
+      await refreshAgentEvents();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Import failed");
     } finally {
@@ -210,6 +219,7 @@ export default function App() {
       setNotice("Source added. It will be used by the next crawl run.");
       await refreshSources();
       await refreshBriefing();
+      await refreshAgentEvents();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not add source");
     } finally {
@@ -236,6 +246,7 @@ export default function App() {
       );
       await refreshSources();
       await refreshBriefing();
+      await refreshAgentEvents();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not add recommended sources");
     } finally {
@@ -255,6 +266,7 @@ export default function App() {
       await refresh();
       await refreshRuns();
       await refreshBriefing();
+      await refreshAgentEvents();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Recommended crawl failed");
     } finally {
@@ -294,6 +306,7 @@ export default function App() {
     await updateJobStatus(id, next);
     setJobs((current) => current.map((job) => (job.id === id ? { ...job, status: next } : job)));
     await refreshBriefing();
+    await refreshAgentEvents();
   }
 
   return (
@@ -316,6 +329,8 @@ export default function App() {
       </section>
 
       {briefing && <AgentBriefingPanel briefing={briefing} onAction={handleAgentAction} busy={running || recommendedRunning} />}
+
+      <AgentActivityLog events={agentEvents} />
 
       {lastRun && (
         <section className="run-strip">
@@ -610,6 +625,29 @@ function AgentBriefingPanel({
             </button>
           </div>
         ))}
+      </div>
+    </section>
+  );
+}
+
+function AgentActivityLog({ events }: { events: AgentEvent[] }) {
+  return (
+    <section className="activity-panel">
+      <div className="panel-header">
+        <h2>Activity Log</h2>
+        <span>{events.length} recent</span>
+      </div>
+      <div className="activity-list">
+        {events.map((event) => (
+          <div className={`activity-row activity-${event.level}`} key={event.id}>
+            <div>
+              <strong>{event.title}</strong>
+              <span>{event.summary}</span>
+            </div>
+            <time>{new Date(event.created_at).toLocaleString()}</time>
+          </div>
+        ))}
+        {events.length === 0 && <div className="empty-source">No agent activity recorded yet.</div>}
       </div>
     </section>
   );
