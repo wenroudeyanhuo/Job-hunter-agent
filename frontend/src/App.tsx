@@ -7,22 +7,25 @@ import {
   getSettings,
   importURL,
   listAgentEvents,
+  listAgentTasks,
   listCompanies,
   listJobs,
   listRunSources,
   listRuns,
   listSources,
+  refreshAgentTasks,
   runCrawl,
   runRecommendedCrawl,
   sendFeishuReport,
   sendFeishuTest,
   seedRecommendedSources,
+  updateAgentTaskStatus,
   updateJobStatus,
   updateCompanyEnabled,
   updateSettings,
   updateSourceEnabled,
 } from "./api";
-import type { AgentBriefing, AgentDutyReport, AgentEvent, Company, Job, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source } from "./types";
+import type { AgentBriefing, AgentDutyReport, AgentEvent, AgentTask, Company, Job, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source } from "./types";
 
 const statusLabels: Record<JobStatus | "all", string> = {
   all: "All",
@@ -112,6 +115,8 @@ export default function App() {
   const [briefing, setBriefing] = useState<AgentBriefing | null>(null);
   const [dutyReport, setDutyReport] = useState<AgentDutyReport | null>(null);
   const [agentEvents, setAgentEvents] = useState<AgentEvent[]>([]);
+  const [agentTasks, setAgentTasks] = useState<AgentTask[]>([]);
+  const [refreshingTasks, setRefreshingTasks] = useState(false);
 
   async function refresh(nextStatus = status) {
     setError("");
@@ -160,8 +165,13 @@ export default function App() {
     setAgentEvents(data);
   }
 
+  async function refreshTasks() {
+    const data = await listAgentTasks();
+    setAgentTasks(data);
+  }
+
   useEffect(() => {
-    Promise.all([refresh(), refreshSources(), refreshCompanies(), refreshRuns(), refreshSettings(), refreshBriefing(), refreshDutyReport(), refreshAgentEvents()])
+    Promise.all([refresh(), refreshSources(), refreshCompanies(), refreshRuns(), refreshSettings(), refreshBriefing(), refreshDutyReport(), refreshAgentEvents(), refreshTasks()])
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
@@ -308,6 +318,7 @@ export default function App() {
       await refreshBriefing();
       await refreshDutyReport();
       await refreshAgentEvents();
+      await refreshTasks();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Run failed");
     } finally {
@@ -339,6 +350,7 @@ export default function App() {
       await refreshBriefing();
       await refreshDutyReport();
       await refreshAgentEvents();
+      await refreshTasks();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Import failed");
     } finally {
@@ -361,6 +373,7 @@ export default function App() {
       await refreshBriefing();
       await refreshDutyReport();
       await refreshAgentEvents();
+      await refreshTasks();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Cleanup failed");
     } finally {
@@ -399,6 +412,7 @@ export default function App() {
     setSources((current) => current.map((item) => (item.id === source.id ? { ...item, enabled: !source.enabled } : item)));
     await refreshBriefing();
     await refreshDutyReport();
+    await refreshTasks();
   }
 
   async function toggleCompany(company: Company) {
@@ -408,6 +422,7 @@ export default function App() {
     await refreshBriefing();
     await refreshDutyReport();
     await refreshAgentEvents();
+    await refreshTasks();
   }
 
   async function handleSeedRecommendedSources() {
@@ -426,6 +441,7 @@ export default function App() {
       await refreshBriefing();
       await refreshDutyReport();
       await refreshAgentEvents();
+      await refreshTasks();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not add recommended sources");
     } finally {
@@ -450,6 +466,7 @@ export default function App() {
       await refreshBriefing();
       await refreshDutyReport();
       await refreshAgentEvents();
+      await refreshTasks();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Recommended crawl failed");
     } finally {
@@ -475,6 +492,7 @@ export default function App() {
       setSettingsDraft(settingsToDraft(nextSettings));
       setNotice("Settings saved. Future crawl and scoring steps can use these preferences.");
       await refreshDutyReport();
+      await refreshTasks();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save settings");
     } finally {
@@ -505,11 +523,37 @@ export default function App() {
       await sendFeishuReport();
       setNotice("Feishu duty report sent.");
       await refreshAgentEvents();
+      await refreshDutyReport();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not send Feishu duty report");
     } finally {
       setSendingFeishuReport(false);
     }
+  }
+
+  async function handleRefreshAgentTasks() {
+    setRefreshingTasks(true);
+    setError("");
+    setNotice("");
+    try {
+      const tasks = await refreshAgentTasks();
+      setAgentTasks(tasks);
+      setNotice("Daily tasks refreshed from the current recruiting pipeline.");
+      await refreshDutyReport();
+      await refreshAgentEvents();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not refresh daily tasks");
+    } finally {
+      setRefreshingTasks(false);
+    }
+  }
+
+  async function handleTaskDone(task: AgentTask) {
+    await updateAgentTaskStatus(task.id, "done");
+    setAgentTasks((current) => current.map((item) => (item.id === task.id ? { ...item, status: "done" } : item)));
+    setNotice("Task completed.");
+    await refreshDutyReport();
+    await refreshAgentEvents();
   }
 
   async function selectRun(runId: number) {
@@ -523,6 +567,7 @@ export default function App() {
     await refreshBriefing();
     await refreshDutyReport();
     await refreshAgentEvents();
+    await refreshTasks();
   }
 
   return (
@@ -558,6 +603,15 @@ export default function App() {
           </section>
 
           <ProductReadinessPanel items={readinessItems} busy={running || seedingSources || recommendedRunning} />
+
+          <AgentTasksPanel
+            tasks={agentTasks}
+            onAction={handleAgentAction}
+            onComplete={handleTaskDone}
+            onRefresh={handleRefreshAgentTasks}
+            refreshing={refreshingTasks}
+            busy={running || recommendedRunning}
+          />
 
           {briefing && <AgentBriefingPanel briefing={briefing} onAction={handleAgentAction} busy={running || recommendedRunning} />}
 
@@ -667,7 +721,7 @@ export default function App() {
                           {job.title}
                         </a>
                         {job.penalty_reasons.length > 0 && <small className="penalty-line">{job.penalty_reasons.slice(0, 2).join(" | ")}</small>}
-                        <small>{job.recommend_reasons.slice(0, 2).join(" · ") || "No reasons yet"}</small>
+                        <small>{job.recommend_reasons.slice(0, 2).join(" / ") || "No reasons yet"}</small>
                       </div>
                     </td>
                     <td>{job.city || "Unknown"}</td>
@@ -997,8 +1051,8 @@ function AgentDutyReportPanel({
           <h3>Needs Your Decision</h3>
           {topDecision.map((item) => (
             <div className="decision-item" key={`${item.job_id}-${item.job_title}`}>
-              <strong>{item.company} · {item.job_title}</strong>
-              <span>{item.city} · score {item.score}</span>
+              <strong>{item.company} / {item.job_title}</strong>
+              <span>{item.city} / score {item.score}</span>
               <small>{item.reason}</small>
             </div>
           ))}
@@ -1009,8 +1063,8 @@ function AgentDutyReportPanel({
           {sourceIssues.map((issue) => (
             <div className={`source-issue issue-${issue.status}`} key={issue.source_id || issue.url}>
               <strong>{issue.name}</strong>
-              <span>{sourceHealthLabels[issue.status] || issue.status} · {issue.reason}</span>
-              <small>found {issue.last_found_count} · failures {issue.consecutive_failures}</small>
+              <span>{sourceHealthLabels[issue.status] || issue.status} / {issue.reason}</span>
+              <small>found {issue.last_found_count} / failures {issue.consecutive_failures}</small>
             </div>
           ))}
           {sourceIssues.length === 0 && <div className="empty-source">Sources look stable.</div>}
@@ -1021,6 +1075,8 @@ function AgentDutyReportPanel({
         <span>{report.summary.strong_matches} strong</span>
         <span>{report.summary.manual_check} manual</span>
         <span>{report.summary.source_issues} source issues</span>
+        <span>{report.summary.open_tasks} open tasks</span>
+        <span>{report.summary.done_tasks} done</span>
       </div>
     </section>
   );
@@ -1044,6 +1100,60 @@ function AgentActivityLog({ events }: { events: AgentEvent[] }) {
           </div>
         ))}
         {events.length === 0 && <div className="empty-source">No agent activity recorded yet.</div>}
+      </div>
+    </section>
+  );
+}
+
+function AgentTasksPanel({
+  tasks,
+  onAction,
+  onComplete,
+  onRefresh,
+  refreshing,
+  busy,
+}: {
+  tasks: AgentTask[];
+  onAction: (action: string) => void | Promise<void>;
+  onComplete: (task: AgentTask) => void | Promise<void>;
+  onRefresh: () => void | Promise<void>;
+  refreshing: boolean;
+  busy: boolean;
+}) {
+  const openTasks = tasks.filter((task) => task.status !== "done");
+  const doneTasks = tasks.length - openTasks.length;
+  return (
+    <section className="tasks-panel">
+      <div className="panel-header">
+        <h2>Daily Tasks</h2>
+        <span>{openTasks.length} open / {doneTasks} done</span>
+      </div>
+      <div className="tasks-toolbar">
+        <span>{tasks.length > 0 ? `Work date ${tasks[0].task_date}` : "No task queue generated yet"}</span>
+        <button type="button" onClick={onRefresh} disabled={refreshing || busy}>
+          {refreshing ? "Refreshing..." : "Refresh Tasks"}
+        </button>
+      </div>
+      <div className="task-list">
+        {tasks.map((task) => (
+          <div className={task.status === "done" ? "task-row task-done" : "task-row"} key={task.id}>
+            <div>
+              <strong>{task.title}</strong>
+              <span>{task.detail}</span>
+            </div>
+            <div className="task-actions">
+              {task.action && (
+                <button type="button" onClick={() => onAction(task.action)} disabled={busy}>
+                  Open
+                </button>
+              )}
+              <button type="button" onClick={() => onComplete(task)} disabled={task.status === "done"}>
+                {task.status === "done" ? "Done" : "Complete"}
+              </button>
+            </div>
+          </div>
+        ))}
+        {tasks.length === 0 && <div className="empty-source">Refresh tasks after setting companies and running a crawl.</div>}
       </div>
     </section>
   );

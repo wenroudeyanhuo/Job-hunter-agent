@@ -2,6 +2,7 @@ import type {
   AgentBriefing,
   AgentDutyReport,
   AgentEvent,
+  AgentTask,
   Company,
   CleanupLandingPagesResponse,
   ImportURLResponse,
@@ -51,6 +52,23 @@ export async function getAgentDutyReport(): Promise<AgentDutyReport> {
 export async function listAgentEvents(): Promise<AgentEvent[]> {
   const events = await request<AgentEvent[] | null>("/api/agent/events");
   return Array.isArray(events) ? events : [];
+}
+
+export async function listAgentTasks(): Promise<AgentTask[]> {
+  const tasks = await request<AgentTask[] | null>("/api/agent/tasks");
+  return Array.isArray(tasks) ? tasks : [];
+}
+
+export async function refreshAgentTasks(): Promise<AgentTask[]> {
+  const tasks = await request<AgentTask[] | null>("/api/agent/tasks/refresh", { method: "POST" });
+  return Array.isArray(tasks) ? tasks : [];
+}
+
+export async function updateAgentTaskStatus(id: number, status: "open" | "done"): Promise<void> {
+  await request<void>(`/api/agent/tasks/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
 }
 
 export async function listCompanies(): Promise<Company[]> {

@@ -134,6 +134,7 @@ export interface AgentDutyReport {
   todays_work: AgentWorkItem[];
   needs_decision: AgentDecisionItem[];
   source_issues: AgentSourceIssue[];
+  tasks: AgentTask[];
   next_best_action: AgentReportAction;
   latest_run?: JobRun;
 }
@@ -144,6 +145,26 @@ export interface AgentDutySummary {
   manual_check: number;
   source_issues: number;
   new_jobs: number;
+  open_tasks: number;
+  done_tasks: number;
+}
+
+export interface AgentTask {
+  id: number;
+  task_date: string;
+  kind: string;
+  title: string;
+  detail: string;
+  status: "open" | "done" | string;
+  priority: number;
+  count: number;
+  subject_id: number;
+  job_id: number;
+  source_id: number;
+  action: string;
+  created_at: string;
+  updated_at: string;
+  completed_at?: string;
 }
 
 export interface AgentWorkItem {

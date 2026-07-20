@@ -482,6 +482,83 @@ h2 {
   font-weight: 760;
 }
 
+.tasks-panel {
+  overflow: hidden;
+  border: 1px solid #d8e2ef;
+  border-radius: 8px;
+  background: #fff;
+  margin-bottom: 16px;
+}
+
+.tasks-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid #edf1f7;
+  background: #f8fafc;
+  padding: 10px 16px;
+}
+
+.tasks-toolbar span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.tasks-toolbar button,
+.task-actions button {
+  border: 1px solid #cfd8e6;
+  border-radius: 6px;
+  background: #fff;
+  color: #334155;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.task-list {
+  display: grid;
+}
+
+.task-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  border-top: 1px solid #edf1f7;
+  box-shadow: inset 3px 0 0 #1769e0;
+  padding: 13px 16px;
+}
+
+.task-row strong,
+.task-row span {
+  display: block;
+}
+
+.task-row strong {
+  color: #18212f;
+  font-size: 14px;
+}
+
+.task-row span {
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.task-done {
+  box-shadow: inset 3px 0 0 #167145;
+  opacity: 0.72;
+}
+
+.task-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .run-strip {
   border: 1px solid #d9e8ff;
   background: #edf6ff;
@@ -1103,10 +1180,16 @@ td {
   .company-toolbar,
   .source-row,
   .activity-row,
+  .tasks-toolbar,
+  .task-row,
   .settings-grid,
   .run-source-row {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .task-row {
+    grid-template-columns: 1fr;
   }
 
   .settings-grid {

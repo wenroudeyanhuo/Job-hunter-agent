@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/crawl"
@@ -61,6 +62,55 @@ func (h *Handlers) ListAgentEvents(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, events)
+}
+
+func (h *Handlers) ListAgentTasks(c *gin.Context) {
+	tasks, err := h.Repo.ListAgentTasks(c.Request.Context(), time.Now().UTC().Format("2006-01-02"))
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, tasks)
+}
+
+func (h *Handlers) RefreshAgentTasks(c *gin.Context) {
+	tasks, err := h.Repo.SyncAgentTasks(c.Request.Context(), time.Now().UTC())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	h.recordAgentEvent(c, jobs.AgentEventInput{
+		Type:    "agent_tasks_refreshed",
+		Title:   "Refreshed daily tasks",
+		Summary: "I rebuilt today's recruiting work queue from jobs, sources, and crawl history.",
+		Level:   "info",
+	})
+	c.JSON(http.StatusOK, tasks)
+}
+
+func (h *Handlers) UpdateAgentTask(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	var req struct {
+		Status string `json:"status"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.Status) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "status is required"})
+		return
+	}
+	if err := h.Repo.UpdateAgentTaskStatus(c.Request.Context(), id, req.Status); err != nil {
+		respondRepoError(c, err)
+		return
+	}
+	h.recordAgentEvent(c, jobs.AgentEventInput{
+		Type:    "agent_task_updated",
+		Title:   "Updated daily task",
+		Summary: "You marked task #" + strconv.FormatInt(id, 10) + " as " + req.Status + ".",
+		Level:   "info",
+	})
+	c.Status(http.StatusNoContent)
 }
 
 func (h *Handlers) ListJobs(c *gin.Context) {
@@ -236,6 +286,7 @@ func (h *Handlers) RunCrawl(c *gin.Context) {
 	}
 	summary.LandingPagesIgnored = cleanup.Ignored
 	h.recordCrawlEvent(c, "crawl_completed", "Manual crawl completed", summary)
+	h.refreshAgentTasksAfterCrawl(c)
 	c.JSON(http.StatusOK, summary)
 }
 
@@ -257,6 +308,7 @@ func (h *Handlers) RunRecommendedCrawl(c *gin.Context) {
 	}
 	summary.LandingPagesIgnored = cleanup.Ignored
 	h.recordCrawlEvent(c, "recommended_crawl_completed", "Recommended crawl completed", summary)
+	h.refreshAgentTasksAfterCrawl(c)
 	c.JSON(http.StatusOK, gin.H{
 		"seeded":  seeded.Created,
 		"sources": seeded,
@@ -485,7 +537,20 @@ func (h *Handlers) buildDutyReport(ctx context.Context) (jobs.AgentDutyReport, e
 	if err != nil {
 		return jobs.AgentDutyReport{}, err
 	}
-	return jobs.BuildAgentDutyReport(jobList, sources, runs), nil
+	report := jobs.BuildAgentDutyReport(jobList, sources, runs)
+	tasks, err := h.Repo.ListAgentTasks(ctx, time.Now().UTC().Format("2006-01-02"))
+	if err != nil {
+		return jobs.AgentDutyReport{}, err
+	}
+	report.Tasks = tasks
+	for _, task := range tasks {
+		if task.Status == jobs.AgentTaskStatusDone {
+			report.Summary.DoneTasks++
+		} else {
+			report.Summary.OpenTasks++
+		}
+	}
+	return report, nil
 }
 
 func buildFeishuReportText(report jobs.AgentDutyReport) string {
@@ -497,6 +562,22 @@ func buildFeishuReportText(report jobs.AgentDutyReport) string {
 	b.WriteString(fmt.Sprintf("- Strong matches: %d\n", report.Summary.StrongMatches))
 	b.WriteString(fmt.Sprintf("- Manual check: %d\n", report.Summary.ManualCheck))
 	b.WriteString(fmt.Sprintf("- Source issues: %d\n", report.Summary.SourceIssues))
+	b.WriteString(fmt.Sprintf("- Open tasks: %d\n", report.Summary.OpenTasks))
+	b.WriteString(fmt.Sprintf("- Done tasks: %d\n", report.Summary.DoneTasks))
+	if len(report.Tasks) > 0 {
+		b.WriteString("\nDaily tasks:\n")
+		written := 0
+		for _, task := range report.Tasks {
+			if task.Status == jobs.AgentTaskStatusDone {
+				continue
+			}
+			b.WriteString(fmt.Sprintf("- %s: %s\n", task.Title, task.Detail))
+			written++
+			if written >= 5 {
+				break
+			}
+		}
+	}
 	if len(report.TodaysWork) > 0 {
 		b.WriteString("\nToday's work:\n")
 		for _, item := range report.TodaysWork {
@@ -583,6 +664,12 @@ func (h *Handlers) recordCrawlEvent(c *gin.Context, eventType string, title stri
 
 func (h *Handlers) recordAgentEvent(c *gin.Context, input jobs.AgentEventInput) {
 	if _, err := h.Repo.CreateAgentEvent(c.Request.Context(), input); err != nil {
+		_ = c.Error(err)
+	}
+}
+
+func (h *Handlers) refreshAgentTasksAfterCrawl(c *gin.Context) {
+	if _, err := h.Repo.SyncAgentTasks(c.Request.Context(), time.Now().UTC()); err != nil {
 		_ = c.Error(err)
 	}
 }

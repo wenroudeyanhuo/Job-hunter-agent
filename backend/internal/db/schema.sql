@@ -107,3 +107,24 @@ CREATE TABLE IF NOT EXISTS agent_events (
 );
 
 CREATE INDEX IF NOT EXISTS idx_agent_events_created_at ON agent_events(created_at);
+
+CREATE TABLE IF NOT EXISTS agent_tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_date TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    title TEXT NOT NULL,
+    detail TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'open',
+    priority INTEGER NOT NULL DEFAULT 0,
+    count INTEGER NOT NULL DEFAULT 1,
+    subject_id INTEGER NOT NULL DEFAULT 0,
+    job_id INTEGER NOT NULL DEFAULT 0,
+    source_id INTEGER NOT NULL DEFAULT 0,
+    action TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP NULL,
+    UNIQUE(task_date, kind, subject_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_tasks_date_status ON agent_tasks(task_date, status, priority);
