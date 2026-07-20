@@ -174,3 +174,40 @@ func TestScoreJobWithSettingsHardFiltersExcludedKeywords(t *testing.T) {
 		t.Fatalf("unexpected hard filter reason %q", result.HardFilterReason)
 	}
 }
+
+func TestScoreJobMarksGenericCareerHomeForManualCheck(t *testing.T) {
+	result := ScoreJob(domain.Job{
+		Company:     "Tencent",
+		Title:       "Tencent Careers",
+		Description: "Explore career opportunities and learn about our company culture.",
+		ApplyURL:    "https://careers.tencent.com/",
+		SourceURL:   "https://careers.tencent.com/",
+	})
+
+	if result.HardFiltered {
+		t.Fatalf("expected generic career page to stay reviewable: %s", result.HardFilterReason)
+	}
+	if result.Job.Status != domain.StatusManualCheck {
+		t.Fatalf("expected generic career page to need manual_check, got %q", result.Job.Status)
+	}
+	if !contains(result.Job.PenaltyReasons, "Low confidence job posting") {
+		t.Fatalf("expected low confidence penalty, got %#v", result.Job.PenaltyReasons)
+	}
+}
+
+func TestScoreJobKeepsConcretePostingAsNew(t *testing.T) {
+	result := ScoreJob(domain.Job{
+		Company:     "Tencent",
+		Title:       "Go Backend Engineer 2027 Campus - Shenzhen",
+		City:        "Shenzhen",
+		Description: "Campus recruitment role building backend microservices with Go. Apply online before the deadline.",
+		ApplyURL:    "https://careers.tencent.com/job/123",
+	})
+
+	if result.Job.Status != domain.StatusNew {
+		t.Fatalf("expected concrete posting to stay new, got %q with penalties %#v", result.Job.Status, result.Job.PenaltyReasons)
+	}
+	if contains(result.Job.PenaltyReasons, "Low confidence job posting") {
+		t.Fatalf("did not expect low confidence penalty: %#v", result.Job.PenaltyReasons)
+	}
+}

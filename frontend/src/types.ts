@@ -101,6 +101,7 @@ export interface AgentMetrics {
   total_jobs: number;
   strong_matches: number;
   manual_check_jobs: number;
+  low_confidence_jobs: number;
   interested_jobs: number;
   applied_jobs: number;
   enabled_sources: number;

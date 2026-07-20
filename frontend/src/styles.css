@@ -425,6 +425,10 @@ td {
   line-height: 1.35;
 }
 
+.role-cell .penalty-line {
+  color: #9f1d1d;
+}
+
 .tags {
   display: flex;
   flex-wrap: wrap;

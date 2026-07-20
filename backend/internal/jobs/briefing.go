@@ -17,12 +17,13 @@ type AgentBriefing struct {
 }
 
 type AgentMetrics struct {
-	TotalJobs       int `json:"total_jobs"`
-	StrongMatches   int `json:"strong_matches"`
-	ManualCheckJobs int `json:"manual_check_jobs"`
-	InterestedJobs  int `json:"interested_jobs"`
-	AppliedJobs     int `json:"applied_jobs"`
-	EnabledSources  int `json:"enabled_sources"`
+	TotalJobs         int `json:"total_jobs"`
+	StrongMatches     int `json:"strong_matches"`
+	ManualCheckJobs   int `json:"manual_check_jobs"`
+	LowConfidenceJobs int `json:"low_confidence_jobs"`
+	InterestedJobs    int `json:"interested_jobs"`
+	AppliedJobs       int `json:"applied_jobs"`
+	EnabledSources    int `json:"enabled_sources"`
 }
 
 type AgentNextAction struct {
@@ -50,6 +51,9 @@ func BuildAgentBriefing(jobList []domain.Job, sources []Source, runs []domain.Jo
 		briefing.Metrics.TotalJobs++
 		if job.MatchScore >= 70 {
 			briefing.Metrics.StrongMatches++
+		}
+		if containsString(job.PenaltyReasons, "Low confidence job posting") {
+			briefing.Metrics.LowConfidenceJobs++
 		}
 		switch job.Status {
 		case domain.StatusManualCheck:
@@ -84,6 +88,15 @@ func BuildAgentBriefing(jobList []domain.Job, sources []Source, runs []domain.Jo
 			Label:    "Review manual-check jobs",
 			Reason:   "Some pages look relevant but need your decision before I treat them as strong opportunities.",
 			Priority: 90,
+		})
+	}
+	if briefing.Metrics.LowConfidenceJobs > 0 {
+		briefing.Tone = "needs_review"
+		briefing.NextActions = append(briefing.NextActions, AgentNextAction{
+			Action:   "review_low_confidence",
+			Label:    "Review low-confidence pages",
+			Reason:   "Some collected pages look like hiring portals or listing pages instead of concrete jobs.",
+			Priority: 88,
 		})
 	}
 	if briefing.Metrics.StrongMatches > briefing.Metrics.InterestedJobs+briefing.Metrics.AppliedJobs {

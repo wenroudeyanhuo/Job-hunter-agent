@@ -42,7 +42,7 @@ export default function App() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [status, setStatus] = useState<JobStatus | "all">("all");
   const [direction, setDirection] = useState("all");
-  const [scoreView, setScoreView] = useState<"all" | "strong">("all");
+  const [scoreView, setScoreView] = useState<"all" | "strong" | "low_confidence">("all");
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -110,7 +110,11 @@ export default function App() {
   const visibleJobs = useMemo(() => {
     return jobs.filter((job) => {
       const directionMatches = direction === "all" || job.direction_tags.includes(direction);
-      const scoreMatches = scoreView === "all" || job.match_score >= 70;
+      const lowConfidence = job.penalty_reasons.includes("Low confidence job posting");
+      const scoreMatches =
+        scoreView === "all" ||
+        (scoreView === "strong" && job.match_score >= 70) ||
+        (scoreView === "low_confidence" && lowConfidence);
       return directionMatches && scoreMatches;
     });
   }, [jobs, direction, scoreView]);
@@ -137,6 +141,13 @@ export default function App() {
         setScoreView("all");
         await handleStatusFilter("manual_check");
         setNotice("Showing jobs that need manual review.");
+        return;
+      case "review_low_confidence":
+        setStatus("manual_check");
+        setDirection("all");
+        setScoreView("low_confidence");
+        await refresh("manual_check");
+        setNotice("Showing low-confidence pages that need a human decision.");
         return;
       case "review_strong_matches":
         setStatus("all");
@@ -381,9 +392,10 @@ export default function App() {
           </label>
           <label>
             Score
-            <select value={scoreView} onChange={(event) => setScoreView(event.target.value as "all" | "strong")}>
+            <select value={scoreView} onChange={(event) => setScoreView(event.target.value as "all" | "strong" | "low_confidence")}>
               <option value="all">All</option>
               <option value="strong">Strong matches</option>
+              <option value="low_confidence">Low confidence</option>
             </select>
           </label>
         </aside>
@@ -418,6 +430,7 @@ export default function App() {
                         <a href={job.apply_url || job.source_url} target="_blank" rel="noreferrer">
                           {job.title}
                         </a>
+                        {job.penalty_reasons.length > 0 && <small className="penalty-line">{job.penalty_reasons.slice(0, 2).join(" | ")}</small>}
                         <small>{job.recommend_reasons.slice(0, 2).join(" · ") || "No reasons yet"}</small>
                       </div>
                     </td>
@@ -613,6 +626,7 @@ function AgentBriefingPanel({
       <div className="agent-metrics">
         <Metric label="Strong" value={briefing.metrics.strong_matches} />
         <Metric label="Manual" value={briefing.metrics.manual_check_jobs} />
+        <Metric label="Low conf" value={briefing.metrics.low_confidence_jobs} />
         <Metric label="Sources" value={briefing.metrics.enabled_sources} />
       </div>
       <div className="agent-actions">
