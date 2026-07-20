@@ -45,7 +45,7 @@ func RecommendedSources() []SourceInput {
 		{Name: "DJI Careers", URL: "https://we.dji.com/zh-CN/campus", Enabled: true},
 		{Name: "Kuaishou Campus", URL: "https://campus.kuaishou.cn/", Enabled: true},
 		{Name: "Baidu Talent", URL: "https://talent.baidu.com/jobs/list", Enabled: true},
-		{Name: "OPPO Careers", URL: "https://careers.oppo.com/", Enabled: true},
+		{Name: "OPPO Careers", URL: "https://careers.oppo.com/", Enabled: true, ParserType: "oppo_api"},
 		{Name: "vivo Careers", URL: "https://hr.vivo.com/", Enabled: true},
 		{Name: "Honor Careers", URL: "https://career.hihonor.com/", Enabled: true},
 	}
@@ -106,10 +106,25 @@ func (r *Repository) createSourceIfMissing(ctx context.Context, input SourceInpu
 	if err != nil {
 		return false, err
 	}
+	var existingID int64
+	err = r.db.QueryRowContext(ctx, `SELECT id FROM job_sources WHERE name = ?`, input.Name).Scan(&existingID)
+	if err == nil {
+		_, err = r.db.ExecContext(ctx, `
+			UPDATE job_sources
+			SET type = ?, url = ?, parser_type = ?, updated_at = CURRENT_TIMESTAMP
+			WHERE id = ?
+		`, input.Type, input.URL, input.ParserType, existingID)
+		if err != nil {
+			return false, fmt.Errorf("refresh source %q: %w", input.Name, err)
+		}
+		return false, nil
+	}
+	if err != sql.ErrNoRows {
+		return false, fmt.Errorf("find source %q: %w", input.Name, err)
+	}
 	result, err := r.db.ExecContext(ctx, `
 		INSERT INTO job_sources (name, type, url, enabled, parser_type)
 		VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT(name) DO NOTHING
 	`, input.Name, input.Type, input.URL, boolToInt(input.Enabled), input.ParserType)
 	if err != nil {
 		return false, fmt.Errorf("insert source: %w", err)

@@ -99,3 +99,39 @@ func TestRepositorySeedRecommendedSources(t *testing.T) {
 		t.Fatalf("expected second seed to dedupe, got %#v", second)
 	}
 }
+
+func TestRepositorySeedRecommendedSourcesRefreshesExistingParserTypes(t *testing.T) {
+	ctx := context.Background()
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	repo := NewRepository(conn)
+
+	if _, err := repo.CreateSource(ctx, SourceInput{
+		Name:       "OPPO Careers",
+		URL:        "https://careers.oppo.com/",
+		Enabled:    true,
+		ParserType: "generic",
+	}); err != nil {
+		t.Fatalf("create existing OPPO source: %v", err)
+	}
+
+	if _, err := repo.SeedRecommendedSources(ctx); err != nil {
+		t.Fatalf("seed recommended sources: %v", err)
+	}
+
+	sources, err := repo.ListSources(ctx, false)
+	if err != nil {
+		t.Fatalf("list sources: %v", err)
+	}
+	for _, source := range sources {
+		if source.Name == "OPPO Careers" {
+			if source.ParserType != "oppo_api" {
+				t.Fatalf("expected OPPO parser to be refreshed, got %q", source.ParserType)
+			}
+			return
+		}
+	}
+	t.Fatal("expected OPPO Careers source")
+}

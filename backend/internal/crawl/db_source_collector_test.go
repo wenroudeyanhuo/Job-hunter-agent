@@ -125,3 +125,46 @@ func TestDBSourceCollectorKeepsGoingWhenOfficialParserFails(t *testing.T) {
 		t.Fatalf("expected parser failure description, got %q", collected[0].Description)
 	}
 }
+
+func TestDBSourceCollectorUsesOPPOParserType(t *testing.T) {
+	sourceServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{
+			"code": 0,
+			"data": {
+				"records": [{
+					"idProjPosition": 1740,
+					"positionName": "Senior NLP Engineer",
+					"workCityName": "Shenzhen",
+					"positionDesc": "Research lightweight pre-trained models.",
+					"positionRequire": "Machine learning background."
+				}],
+				"total": 1
+			},
+			"msg": "success"
+		}`))
+	}))
+	defer sourceServer.Close()
+
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	repo := jobs.NewRepository(conn)
+	if _, err := repo.CreateSource(context.Background(), jobs.SourceInput{
+		Name:       "OPPO Careers",
+		URL:        sourceServer.URL,
+		Enabled:    true,
+		ParserType: "oppo_api",
+	}); err != nil {
+		t.Fatalf("create source: %v", err)
+	}
+
+	collector := NewDBSourceCollector(repo, sourceServer.Client())
+	collected, err := collector.Collect(context.Background())
+	if err != nil {
+		t.Fatalf("collect: %v", err)
+	}
+	if len(collected) != 1 || collected[0].Company != "OPPO" {
+		t.Fatalf("expected OPPO job, got %#v", collected)
+	}
+}
