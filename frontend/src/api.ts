@@ -2,6 +2,8 @@ import type {
   AgentBriefing,
   AgentDutyReport,
   AgentEvent,
+  AgentTask,
+  Company,
   CleanupLandingPagesResponse,
   ImportURLResponse,
   Job,
@@ -50,6 +52,28 @@ export async function getAgentDutyReport(): Promise<AgentDutyReport> {
 export async function listAgentEvents(): Promise<AgentEvent[]> {
   const events = await request<AgentEvent[] | null>("/api/agent/events");
   return Array.isArray(events) ? events : [];
+}
+
+export async function listAgentTasks(): Promise<AgentTask[]> {
+  const tasks = await request<AgentTask[] | null>("/api/agent/tasks");
+  return Array.isArray(tasks) ? tasks : [];
+}
+
+export async function refreshAgentTasks(): Promise<AgentTask[]> {
+  const tasks = await request<AgentTask[] | null>("/api/agent/tasks/refresh", { method: "POST" });
+  return Array.isArray(tasks) ? tasks : [];
+}
+
+export async function updateAgentTaskStatus(id: number, status: "open" | "done"): Promise<void> {
+  await request<void>(`/api/agent/tasks/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+}
+
+export async function listCompanies(): Promise<Company[]> {
+  const companies = await request<Company[] | null>("/api/companies");
+  return Array.isArray(companies) ? companies : [];
 }
 
 export async function updateJobStatus(id: number, status: JobStatus): Promise<void> {
@@ -111,13 +135,28 @@ export async function updateSourceEnabled(id: number, enabled: boolean): Promise
   });
 }
 
+export async function updateCompanyEnabled(id: number, enabled: boolean): Promise<void> {
+  await request<void>(`/api/companies/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ enabled }),
+  });
+}
+
 export async function getSettings(): Promise<Settings> {
   return request<Settings>("/api/settings");
 }
 
-export async function updateSettings(settings: Pick<Settings, "target_cities" | "target_directions" | "excluded_keywords" | "crawl_schedule">): Promise<Settings> {
+export async function updateSettings(settings: Pick<Settings, "target_cities" | "target_directions" | "excluded_keywords" | "crawl_schedule" | "feishu_webhook_url">): Promise<Settings> {
   return request<Settings>("/api/settings", {
     method: "PATCH",
     body: JSON.stringify(settings),
   });
+}
+
+export async function sendFeishuTest(): Promise<void> {
+  await request<void>("/api/notifications/feishu/test", { method: "POST" });
+}
+
+export async function sendFeishuReport(): Promise<void> {
+  await request<void>("/api/notifications/feishu/report", { method: "POST" });
 }

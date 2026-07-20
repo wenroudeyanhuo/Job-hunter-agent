@@ -19,6 +19,9 @@ func NewRouter(handlers *Handlers) http.Handler {
 	api.GET("/agent/briefing", handlers.GetAgentBriefing)
 	api.GET("/agent/report", handlers.GetAgentDutyReport)
 	api.GET("/agent/events", handlers.ListAgentEvents)
+	api.GET("/agent/tasks", handlers.ListAgentTasks)
+	api.POST("/agent/tasks/refresh", handlers.RefreshAgentTasks)
+	api.PATCH("/agent/tasks/:id", handlers.UpdateAgentTask)
 	api.GET("/jobs", handlers.ListJobs)
 	api.POST("/jobs/cleanup-landing-pages", handlers.CleanupLandingPages)
 	api.POST("/jobs/import-url", handlers.ImportURL)
@@ -30,12 +33,15 @@ func NewRouter(handlers *Handlers) http.Handler {
 	api.GET("/crawl/runs/:id/sources", handlers.ListRunSources)
 	api.GET("/settings", handlers.GetSettings)
 	api.PATCH("/settings", handlers.UpdateSettings)
+	api.GET("/companies", handlers.ListCompanies)
+	api.PATCH("/companies/:id", handlers.UpdateCompany)
 	api.GET("/sources", handlers.ListSources)
 	api.POST("/sources/recommended", handlers.SeedRecommendedSources)
 	api.POST("/sources", handlers.CreateSource)
 	api.PATCH("/sources/:id", handlers.UpdateSource)
 	api.POST("/crawl/recommended", handlers.RunRecommendedCrawl)
 	api.POST("/notifications/feishu/test", handlers.SendFeishuTest)
+	api.POST("/notifications/feishu/report", handlers.SendFeishuReport)
 
 	return router
 }

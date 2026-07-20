@@ -46,7 +46,7 @@ func NewApplication(cfg config.Config) (*Application, error) {
 	}
 	collectors := []crawl.Collector{crawl.SeedCollector{}, crawl.NewDBSourceCollector(repo, nil)}
 	baseRunner := crawl.NewRunner(repo, collectors)
-	runner := newNotifyingRunner(baseRunner, cfg.FeishuWebhookURL)
+	runner := newNotifyingRunner(baseRunner, repo, cfg.FeishuWebhookURL)
 	handler := httpapi.NewRouter(&httpapi.Handlers{
 		Repo:             repo,
 		Runner:           runner,

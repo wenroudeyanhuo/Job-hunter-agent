@@ -7,18 +7,25 @@ import {
   getSettings,
   importURL,
   listAgentEvents,
+  listAgentTasks,
+  listCompanies,
   listJobs,
   listRunSources,
   listRuns,
   listSources,
+  refreshAgentTasks,
   runCrawl,
   runRecommendedCrawl,
+  sendFeishuReport,
+  sendFeishuTest,
   seedRecommendedSources,
+  updateAgentTaskStatus,
   updateJobStatus,
+  updateCompanyEnabled,
   updateSettings,
   updateSourceEnabled,
 } from "./api";
-import type { AgentBriefing, AgentDutyReport, AgentEvent, Job, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source } from "./types";
+import type { AgentBriefing, AgentDutyReport, AgentEvent, AgentTask, Company, Job, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source } from "./types";
 
 const statusLabels: Record<JobStatus | "all", string> = {
   all: "All",
@@ -70,6 +77,7 @@ const defaultSettings: Settings = {
   target_directions: ["frontend", "backend", "java", "go", "algorithm", "ai_application"],
   excluded_keywords: ["outsourcing", "training", "bootcamp"],
   crawl_schedule: ["09:00", "12:00", "18:00"],
+  feishu_webhook_url: "",
   feishu_configured: false,
   updated_at: "",
 };
@@ -86,6 +94,7 @@ export default function App() {
   const [cleaningLandingPages, setCleaningLandingPages] = useState(false);
   const [importURLValue, setImportURLValue] = useState("");
   const [sources, setSources] = useState<Source[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [runs, setRuns] = useState<JobRun[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
   const [runSources, setRunSources] = useState<JobRunSource[]>([]);
@@ -98,12 +107,16 @@ export default function App() {
   const [settings, setSettings] = useState<Settings>(defaultSettings);
   const [settingsDraft, setSettingsDraft] = useState(settingsToDraft(defaultSettings));
   const [savingSettings, setSavingSettings] = useState(false);
+  const [testingFeishu, setTestingFeishu] = useState(false);
+  const [sendingFeishuReport, setSendingFeishuReport] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [lastRun, setLastRun] = useState<RunSummary | null>(null);
   const [briefing, setBriefing] = useState<AgentBriefing | null>(null);
   const [dutyReport, setDutyReport] = useState<AgentDutyReport | null>(null);
   const [agentEvents, setAgentEvents] = useState<AgentEvent[]>([]);
+  const [agentTasks, setAgentTasks] = useState<AgentTask[]>([]);
+  const [refreshingTasks, setRefreshingTasks] = useState(false);
 
   async function refresh(nextStatus = status) {
     setError("");
@@ -114,6 +127,11 @@ export default function App() {
   async function refreshSources() {
     const data = await listSources();
     setSources(data);
+  }
+
+  async function refreshCompanies() {
+    const data = await listCompanies();
+    setCompanies(data);
   }
 
   async function refreshRuns() {
@@ -147,8 +165,13 @@ export default function App() {
     setAgentEvents(data);
   }
 
+  async function refreshTasks() {
+    const data = await listAgentTasks();
+    setAgentTasks(data);
+  }
+
   useEffect(() => {
-    Promise.all([refresh(), refreshSources(), refreshRuns(), refreshSettings(), refreshBriefing(), refreshDutyReport(), refreshAgentEvents()])
+    Promise.all([refresh(), refreshSources(), refreshCompanies(), refreshRuns(), refreshSettings(), refreshBriefing(), refreshDutyReport(), refreshAgentEvents(), refreshTasks()])
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
@@ -166,12 +189,22 @@ export default function App() {
   }, [jobs, direction, scoreView]);
 
   const strongMatches = jobs.filter((job) => job.match_score >= 70).length;
-  const enabledSources = sources.filter((source) => source.enabled).length;
+  const enabledCompanies = companies.filter((company) => company.enabled).length;
   const companyCategories = useMemo(() => {
     const categories = new Set<string>();
+    companies.forEach((company) => categories.add(company.category || "general"));
     sources.forEach((source) => categories.add(source.category || "general"));
     return ["all", ...Array.from(categories).sort()];
-  }, [sources]);
+  }, [companies, sources]);
+  const visibleCompanies = useMemo(() => {
+    const query = companyQuery.trim().toLowerCase();
+    return companies.filter((company) => {
+      const category = company.category || "general";
+      const categoryMatches = companyCategoryFilter === "all" || category === companyCategoryFilter;
+      const queryMatches = query === "" || company.name.toLowerCase().includes(query) || category.toLowerCase().includes(query);
+      return categoryMatches && queryMatches;
+    });
+  }, [companies, companyCategoryFilter, companyQuery]);
   const visibleSources = useMemo(() => {
     const query = companyQuery.trim().toLowerCase();
     return sources.filter((source) => {
@@ -185,6 +218,40 @@ export default function App() {
       return categoryMatches && queryMatches;
     });
   }, [sources, companyCategoryFilter, companyQuery]);
+  const readinessItems = [
+    {
+      id: "company_scope",
+      label: "Company scope",
+      detail: companies.length > 0 ? `${enabledCompanies} enabled companies` : "No company pool yet",
+      done: companies.length > 0 && enabledCompanies > 0,
+      actionLabel: companies.length > 0 ? "Manage" : "Add companies",
+      action: () => setActiveView("companies"),
+    },
+    {
+      id: "preferences",
+      label: "Preferences",
+      detail: `${settings.target_cities.join(", ")} / ${settings.target_directions.length} directions`,
+      done: settings.target_cities.length > 0 && settings.target_directions.length > 0,
+      actionLabel: "Edit",
+      action: () => setActiveView("settings"),
+    },
+    {
+      id: "crawl_history",
+      label: "Crawl history",
+      detail: runs.length > 0 ? `${runs.length} recorded runs` : "No crawl run yet",
+      done: runs.length > 0,
+      actionLabel: runs.length > 0 ? "View runs" : "Run crawl",
+      action: runs.length > 0 ? () => setActiveView("runs") : handleRunCrawl,
+    },
+    {
+      id: "feishu",
+      label: "Feishu",
+      detail: settings.feishu_configured ? "Webhook configured" : "Webhook not configured",
+      done: settings.feishu_configured,
+      actionLabel: "Settings",
+      action: () => setActiveView("settings"),
+    },
+  ];
 
   async function handleStatusFilter(next: JobStatus | "all") {
     setStatus(next);
@@ -251,6 +318,7 @@ export default function App() {
       await refreshBriefing();
       await refreshDutyReport();
       await refreshAgentEvents();
+      await refreshTasks();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Run failed");
     } finally {
@@ -282,6 +350,7 @@ export default function App() {
       await refreshBriefing();
       await refreshDutyReport();
       await refreshAgentEvents();
+      await refreshTasks();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Import failed");
     } finally {
@@ -304,6 +373,7 @@ export default function App() {
       await refreshBriefing();
       await refreshDutyReport();
       await refreshAgentEvents();
+      await refreshTasks();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Cleanup failed");
     } finally {
@@ -326,6 +396,7 @@ export default function App() {
       setSourceURLValue("");
       setNotice("Source added. It will be used by the next crawl run.");
       await refreshSources();
+      await refreshCompanies();
       await refreshBriefing();
       await refreshDutyReport();
       await refreshAgentEvents();
@@ -341,6 +412,17 @@ export default function App() {
     setSources((current) => current.map((item) => (item.id === source.id ? { ...item, enabled: !source.enabled } : item)));
     await refreshBriefing();
     await refreshDutyReport();
+    await refreshTasks();
+  }
+
+  async function toggleCompany(company: Company) {
+    await updateCompanyEnabled(company.id, !company.enabled);
+    setCompanies((current) => current.map((item) => (item.id === company.id ? { ...item, enabled: !company.enabled } : item)));
+    await refreshSources();
+    await refreshBriefing();
+    await refreshDutyReport();
+    await refreshAgentEvents();
+    await refreshTasks();
   }
 
   async function handleSeedRecommendedSources() {
@@ -355,9 +437,11 @@ export default function App() {
           : "Recommended sources were already added.",
       );
       await refreshSources();
+      await refreshCompanies();
       await refreshBriefing();
       await refreshDutyReport();
       await refreshAgentEvents();
+      await refreshTasks();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not add recommended sources");
     } finally {
@@ -376,11 +460,13 @@ export default function App() {
         `Recommended crawl finished. Added ${result.sources.created} sources, created ${result.summary.jobs_created} jobs, and cleaned ${result.summary.landing_pages_ignored} landing pages.`,
       );
       await refreshSources();
+      await refreshCompanies();
       await refresh();
       await refreshRuns();
       await refreshBriefing();
       await refreshDutyReport();
       await refreshAgentEvents();
+      await refreshTasks();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Recommended crawl failed");
     } finally {
@@ -399,17 +485,75 @@ export default function App() {
         target_directions: parseSettingsList(settingsDraft.target_directions),
         excluded_keywords: parseSettingsList(settingsDraft.excluded_keywords),
         crawl_schedule: parseSettingsList(settingsDraft.crawl_schedule),
+        feishu_webhook_url: settingsDraft.feishu_webhook_url.trim(),
       });
       const nextSettings = normalizeSettings(saved);
       setSettings(nextSettings);
       setSettingsDraft(settingsToDraft(nextSettings));
       setNotice("Settings saved. Future crawl and scoring steps can use these preferences.");
       await refreshDutyReport();
+      await refreshTasks();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save settings");
     } finally {
       setSavingSettings(false);
     }
+  }
+
+  async function handleSendFeishuTest() {
+    setTestingFeishu(true);
+    setError("");
+    setNotice("");
+    try {
+      await sendFeishuTest();
+      setNotice("Feishu test notification sent.");
+      await refreshSettings();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not send Feishu test notification");
+    } finally {
+      setTestingFeishu(false);
+    }
+  }
+
+  async function handleSendFeishuReport() {
+    setSendingFeishuReport(true);
+    setError("");
+    setNotice("");
+    try {
+      await sendFeishuReport();
+      setNotice("Feishu duty report sent.");
+      await refreshAgentEvents();
+      await refreshDutyReport();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not send Feishu duty report");
+    } finally {
+      setSendingFeishuReport(false);
+    }
+  }
+
+  async function handleRefreshAgentTasks() {
+    setRefreshingTasks(true);
+    setError("");
+    setNotice("");
+    try {
+      const tasks = await refreshAgentTasks();
+      setAgentTasks(tasks);
+      setNotice("Daily tasks refreshed from the current recruiting pipeline.");
+      await refreshDutyReport();
+      await refreshAgentEvents();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not refresh daily tasks");
+    } finally {
+      setRefreshingTasks(false);
+    }
+  }
+
+  async function handleTaskDone(task: AgentTask) {
+    await updateAgentTaskStatus(task.id, "done");
+    setAgentTasks((current) => current.map((item) => (item.id === task.id ? { ...item, status: "done" } : item)));
+    setNotice("Task completed.");
+    await refreshDutyReport();
+    await refreshAgentEvents();
   }
 
   async function selectRun(runId: number) {
@@ -423,6 +567,7 @@ export default function App() {
     await refreshBriefing();
     await refreshDutyReport();
     await refreshAgentEvents();
+    await refreshTasks();
   }
 
   return (
@@ -453,13 +598,33 @@ export default function App() {
           <section className="summary-grid">
             <Metric label="Tracked jobs" value={jobs.length} />
             <Metric label="Strong matches" value={strongMatches} />
-            <Metric label="Enabled companies" value={enabledSources} />
+            <Metric label="Enabled companies" value={enabledCompanies} />
             <Metric label="Next runs" value={settings.crawl_schedule.join(" / ")} />
           </section>
 
+          <ProductReadinessPanel items={readinessItems} busy={running || seedingSources || recommendedRunning} />
+
+          <AgentTasksPanel
+            tasks={agentTasks}
+            onAction={handleAgentAction}
+            onComplete={handleTaskDone}
+            onRefresh={handleRefreshAgentTasks}
+            refreshing={refreshingTasks}
+            busy={running || recommendedRunning}
+          />
+
           {briefing && <AgentBriefingPanel briefing={briefing} onAction={handleAgentAction} busy={running || recommendedRunning} />}
 
-          {dutyReport && <AgentDutyReportPanel report={dutyReport} onAction={handleAgentAction} busy={running || recommendedRunning} />}
+          {dutyReport && (
+            <AgentDutyReportPanel
+              report={dutyReport}
+              onAction={handleAgentAction}
+              onSendFeishu={handleSendFeishuReport}
+              busy={running || recommendedRunning}
+              sendingFeishu={sendingFeishuReport}
+              feishuReady={settings.feishu_configured}
+            />
+          )}
 
           <AgentActivityLog events={agentEvents} />
 
@@ -556,7 +721,7 @@ export default function App() {
                           {job.title}
                         </a>
                         {job.penalty_reasons.length > 0 && <small className="penalty-line">{job.penalty_reasons.slice(0, 2).join(" | ")}</small>}
-                        <small>{job.recommend_reasons.slice(0, 2).join(" · ") || "No reasons yet"}</small>
+                        <small>{job.recommend_reasons.slice(0, 2).join(" / ") || "No reasons yet"}</small>
                       </div>
                     </td>
                     <td>{job.city || "Unknown"}</td>
@@ -596,7 +761,7 @@ export default function App() {
       <section className="sources-panel">
         <div className="panel-header">
           <h2>Companies</h2>
-          <span>{enabledSources} enabled / {sources.length} total</span>
+          <span>{enabledCompanies} enabled / {companies.length} total</span>
         </div>
         <div className="company-toolbar">
           <input
@@ -612,6 +777,25 @@ export default function App() {
               </option>
             ))}
           </select>
+        </div>
+        <div className="company-grid">
+          {visibleCompanies.map((company) => (
+            <div className="company-card" key={company.id}>
+              <div>
+                <strong>{company.name}</strong>
+                <div className="source-meta">
+                  <span>{categoryLabels[company.category] || company.category || "General"}</span>
+                  <span>{company.source_count} sources</span>
+                  {company.broken_count > 0 && <span>{company.broken_count} broken</span>}
+                  {company.warning_count > 0 && <span>{company.warning_count} warning</span>}
+                </div>
+              </div>
+              <button className={company.enabled ? "toggle-on" : "toggle-off"} onClick={() => toggleCompany(company)}>
+                {company.enabled ? "Enabled" : "Disabled"}
+              </button>
+            </div>
+          ))}
+          {visibleCompanies.length === 0 && <div className="empty-source">No companies match the current filters.</div>}
         </div>
         <div className="source-actions">
           <button type="button" onClick={handleSeedRecommendedSources} disabled={seedingSources || recommendedRunning}>
@@ -658,7 +842,7 @@ export default function App() {
               </button>
             </div>
           ))}
-          {visibleSources.length === 0 && <div className="empty-source">No companies match the current filters.</div>}
+          {visibleSources.length === 0 && <div className="empty-source">No source entries match the current filters.</div>}
         </div>
       </section>
       )}
@@ -698,8 +882,19 @@ export default function App() {
               onChange={(event) => setSettingsDraft((current) => ({ ...current, crawl_schedule: event.target.value }))}
             />
           </label>
+          <label className="settings-wide">
+            Feishu bot webhook
+            <input
+              value={settingsDraft.feishu_webhook_url}
+              onChange={(event) => setSettingsDraft((current) => ({ ...current, feishu_webhook_url: event.target.value }))}
+              placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..."
+            />
+          </label>
           <button type="submit" disabled={savingSettings}>
             {savingSettings ? "Saving..." : "Save Settings"}
+          </button>
+          <button type="button" className="secondary-settings-action" onClick={handleSendFeishuTest} disabled={testingFeishu || !settings.feishu_configured}>
+            {testingFeishu ? "Sending..." : "Send Feishu Test"}
           </button>
         </form>
       </section>
@@ -808,11 +1003,17 @@ function AgentBriefingPanel({
 function AgentDutyReportPanel({
   report,
   onAction,
+  onSendFeishu,
   busy,
+  sendingFeishu,
+  feishuReady,
 }: {
   report: AgentDutyReport;
   onAction: (action: string) => void | Promise<void>;
+  onSendFeishu: () => void | Promise<void>;
   busy: boolean;
+  sendingFeishu: boolean;
+  feishuReady: boolean;
 }) {
   const topDecision = report.needs_decision.slice(0, 3);
   const sourceIssues = report.source_issues.slice(0, 3);
@@ -823,9 +1024,14 @@ function AgentDutyReportPanel({
           <h2>Today's Work</h2>
           <span>{report.headline}</span>
         </div>
-        <button type="button" onClick={() => onAction(report.next_best_action.action)} disabled={busy}>
-          {report.next_best_action.label}
-        </button>
+        <div className="duty-actions">
+          <button type="button" onClick={() => onAction(report.next_best_action.action)} disabled={busy}>
+            {report.next_best_action.label}
+          </button>
+          <button type="button" className="secondary-duty-action" onClick={onSendFeishu} disabled={sendingFeishu || !feishuReady}>
+            {sendingFeishu ? "Sending..." : "Send to Feishu"}
+          </button>
+        </div>
       </div>
       <div className="duty-grid">
         <div className="duty-column">
@@ -845,8 +1051,8 @@ function AgentDutyReportPanel({
           <h3>Needs Your Decision</h3>
           {topDecision.map((item) => (
             <div className="decision-item" key={`${item.job_id}-${item.job_title}`}>
-              <strong>{item.company} · {item.job_title}</strong>
-              <span>{item.city} · score {item.score}</span>
+              <strong>{item.company} / {item.job_title}</strong>
+              <span>{item.city} / score {item.score}</span>
               <small>{item.reason}</small>
             </div>
           ))}
@@ -857,8 +1063,8 @@ function AgentDutyReportPanel({
           {sourceIssues.map((issue) => (
             <div className={`source-issue issue-${issue.status}`} key={issue.source_id || issue.url}>
               <strong>{issue.name}</strong>
-              <span>{sourceHealthLabels[issue.status] || issue.status} · {issue.reason}</span>
-              <small>found {issue.last_found_count} · failures {issue.consecutive_failures}</small>
+              <span>{sourceHealthLabels[issue.status] || issue.status} / {issue.reason}</span>
+              <small>found {issue.last_found_count} / failures {issue.consecutive_failures}</small>
             </div>
           ))}
           {sourceIssues.length === 0 && <div className="empty-source">Sources look stable.</div>}
@@ -869,6 +1075,8 @@ function AgentDutyReportPanel({
         <span>{report.summary.strong_matches} strong</span>
         <span>{report.summary.manual_check} manual</span>
         <span>{report.summary.source_issues} source issues</span>
+        <span>{report.summary.open_tasks} open tasks</span>
+        <span>{report.summary.done_tasks} done</span>
       </div>
     </section>
   );
@@ -897,12 +1105,105 @@ function AgentActivityLog({ events }: { events: AgentEvent[] }) {
   );
 }
 
+function AgentTasksPanel({
+  tasks,
+  onAction,
+  onComplete,
+  onRefresh,
+  refreshing,
+  busy,
+}: {
+  tasks: AgentTask[];
+  onAction: (action: string) => void | Promise<void>;
+  onComplete: (task: AgentTask) => void | Promise<void>;
+  onRefresh: () => void | Promise<void>;
+  refreshing: boolean;
+  busy: boolean;
+}) {
+  const openTasks = tasks.filter((task) => task.status !== "done");
+  const doneTasks = tasks.length - openTasks.length;
+  return (
+    <section className="tasks-panel">
+      <div className="panel-header">
+        <h2>Daily Tasks</h2>
+        <span>{openTasks.length} open / {doneTasks} done</span>
+      </div>
+      <div className="tasks-toolbar">
+        <span>{tasks.length > 0 ? `Work date ${tasks[0].task_date}` : "No task queue generated yet"}</span>
+        <button type="button" onClick={onRefresh} disabled={refreshing || busy}>
+          {refreshing ? "Refreshing..." : "Refresh Tasks"}
+        </button>
+      </div>
+      <div className="task-list">
+        {tasks.map((task) => (
+          <div className={task.status === "done" ? "task-row task-done" : "task-row"} key={task.id}>
+            <div>
+              <strong>{task.title}</strong>
+              <span>{task.detail}</span>
+            </div>
+            <div className="task-actions">
+              {task.action && (
+                <button type="button" onClick={() => onAction(task.action)} disabled={busy}>
+                  Open
+                </button>
+              )}
+              <button type="button" onClick={() => onComplete(task)} disabled={task.status === "done"}>
+                {task.status === "done" ? "Done" : "Complete"}
+              </button>
+            </div>
+          </div>
+        ))}
+        {tasks.length === 0 && <div className="empty-source">Refresh tasks after setting companies and running a crawl.</div>}
+      </div>
+    </section>
+  );
+}
+
+function ProductReadinessPanel({
+  items,
+  busy,
+}: {
+  items: Array<{
+    id: string;
+    label: string;
+    detail: string;
+    done: boolean;
+    actionLabel: string;
+    action: () => void | Promise<void>;
+  }>;
+  busy: boolean;
+}) {
+  const complete = items.filter((item) => item.done).length;
+  return (
+    <section className="readiness-panel">
+      <div className="panel-header">
+        <h2>Product Readiness</h2>
+        <span>{complete} / {items.length} ready</span>
+      </div>
+      <div className="readiness-grid">
+        {items.map((item) => (
+          <div className={item.done ? "readiness-item ready" : "readiness-item"} key={item.id}>
+            <div>
+              <strong>{item.label}</strong>
+              <span>{item.detail}</span>
+            </div>
+            <button type="button" onClick={item.action} disabled={busy}>
+              {item.actionLabel}
+            </button>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function settingsToDraft(settings: Settings) {
   return {
     target_cities: safeSettingsList(settings.target_cities, defaultSettings.target_cities).join("\n"),
     target_directions: safeSettingsList(settings.target_directions, defaultSettings.target_directions).join("\n"),
     excluded_keywords: safeSettingsList(settings.excluded_keywords, defaultSettings.excluded_keywords).join("\n"),
     crawl_schedule: safeSettingsList(settings.crawl_schedule, defaultSettings.crawl_schedule).join("\n"),
+    feishu_webhook_url: settings.feishu_webhook_url || "",
   };
 }
 
@@ -912,6 +1213,7 @@ function normalizeSettings(settings: Partial<Settings>): Settings {
     target_directions: safeSettingsList(settings.target_directions, defaultSettings.target_directions),
     excluded_keywords: safeSettingsList(settings.excluded_keywords, defaultSettings.excluded_keywords),
     crawl_schedule: safeSettingsList(settings.crawl_schedule, defaultSettings.crawl_schedule),
+    feishu_webhook_url: settings.feishu_webhook_url || "",
     feishu_configured: Boolean(settings.feishu_configured),
     updated_at: settings.updated_at || "",
   };
@@ -928,7 +1230,7 @@ function safeSettingsList(values: unknown, fallback: string[]) {
 function parseSettingsList(value: string) {
   const seen = new Set<string>();
   return value
-    .split(/[\n,，]/)
+    .split(/\r?\n|,|;|\//)
     .map((item) => item.trim())
     .filter((item) => {
       const key = item.toLowerCase();

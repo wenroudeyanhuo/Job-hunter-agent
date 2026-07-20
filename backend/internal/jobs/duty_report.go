@@ -15,6 +15,7 @@ type AgentDutyReport struct {
 	TodaysWork     []AgentWorkItem     `json:"todays_work"`
 	NeedsDecision  []AgentDecisionItem `json:"needs_decision"`
 	SourceIssues   []AgentSourceIssue  `json:"source_issues"`
+	Tasks          []AgentTask         `json:"tasks"`
 	NextBestAction AgentReportAction   `json:"next_best_action"`
 	LatestRun      *domain.JobRun      `json:"latest_run,omitempty"`
 }
@@ -25,6 +26,8 @@ type AgentDutySummary struct {
 	ManualCheck   int `json:"manual_check"`
 	SourceIssues  int `json:"source_issues"`
 	NewJobs       int `json:"new_jobs"`
+	OpenTasks     int `json:"open_tasks"`
+	DoneTasks     int `json:"done_tasks"`
 }
 
 type AgentWorkItem struct {

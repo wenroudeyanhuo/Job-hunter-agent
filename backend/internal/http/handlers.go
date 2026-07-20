@@ -3,8 +3,11 @@ package httpapi
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/crawl"
@@ -44,22 +47,12 @@ func (h *Handlers) GetAgentBriefing(c *gin.Context) {
 }
 
 func (h *Handlers) GetAgentDutyReport(c *gin.Context) {
-	jobList, err := h.Repo.ListJobs(c.Request.Context(), jobs.ListFilter{})
+	report, err := h.buildDutyReport(c.Request.Context())
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
-	sources, err := h.Repo.ListSources(c.Request.Context(), false)
-	if err != nil {
-		respondError(c, http.StatusInternalServerError, err)
-		return
-	}
-	runs, err := h.Repo.ListRuns(c.Request.Context())
-	if err != nil {
-		respondError(c, http.StatusInternalServerError, err)
-		return
-	}
-	c.JSON(http.StatusOK, jobs.BuildAgentDutyReport(jobList, sources, runs))
+	c.JSON(http.StatusOK, report)
 }
 
 func (h *Handlers) ListAgentEvents(c *gin.Context) {
@@ -69,6 +62,55 @@ func (h *Handlers) ListAgentEvents(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, events)
+}
+
+func (h *Handlers) ListAgentTasks(c *gin.Context) {
+	tasks, err := h.Repo.ListAgentTasks(c.Request.Context(), time.Now().UTC().Format("2006-01-02"))
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, tasks)
+}
+
+func (h *Handlers) RefreshAgentTasks(c *gin.Context) {
+	tasks, err := h.Repo.SyncAgentTasks(c.Request.Context(), time.Now().UTC())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	h.recordAgentEvent(c, jobs.AgentEventInput{
+		Type:    "agent_tasks_refreshed",
+		Title:   "Refreshed daily tasks",
+		Summary: "I rebuilt today's recruiting work queue from jobs, sources, and crawl history.",
+		Level:   "info",
+	})
+	c.JSON(http.StatusOK, tasks)
+}
+
+func (h *Handlers) UpdateAgentTask(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	var req struct {
+		Status string `json:"status"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.Status) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "status is required"})
+		return
+	}
+	if err := h.Repo.UpdateAgentTaskStatus(c.Request.Context(), id, req.Status); err != nil {
+		respondRepoError(c, err)
+		return
+	}
+	h.recordAgentEvent(c, jobs.AgentEventInput{
+		Type:    "agent_task_updated",
+		Title:   "Updated daily task",
+		Summary: "You marked task #" + strconv.FormatInt(id, 10) + " as " + req.Status + ".",
+		Level:   "info",
+	})
+	c.Status(http.StatusNoContent)
 }
 
 func (h *Handlers) ListJobs(c *gin.Context) {
@@ -244,6 +286,7 @@ func (h *Handlers) RunCrawl(c *gin.Context) {
 	}
 	summary.LandingPagesIgnored = cleanup.Ignored
 	h.recordCrawlEvent(c, "crawl_completed", "Manual crawl completed", summary)
+	h.refreshAgentTasksAfterCrawl(c)
 	c.JSON(http.StatusOK, summary)
 }
 
@@ -265,6 +308,7 @@ func (h *Handlers) RunRecommendedCrawl(c *gin.Context) {
 	}
 	summary.LandingPagesIgnored = cleanup.Ignored
 	h.recordCrawlEvent(c, "recommended_crawl_completed", "Recommended crawl completed", summary)
+	h.refreshAgentTasksAfterCrawl(c)
 	c.JSON(http.StatusOK, gin.H{
 		"seeded":  seeded.Created,
 		"sources": seeded,
@@ -300,7 +344,7 @@ func (h *Handlers) GetSettings(c *gin.Context) {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
-	c.JSON(http.StatusOK, settingsResponse(settings, h.FeishuWebhookURL != ""))
+	c.JSON(http.StatusOK, h.settingsResponse(settings))
 }
 
 func (h *Handlers) UpdateSettings(c *gin.Context) {
@@ -314,17 +358,19 @@ func (h *Handlers) UpdateSettings(c *gin.Context) {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
-	c.JSON(http.StatusOK, settingsResponse(settings, h.FeishuWebhookURL != ""))
+	c.JSON(http.StatusOK, h.settingsResponse(settings))
 }
 
-func settingsResponse(settings jobs.Settings, feishuConfigured bool) gin.H {
+func (h *Handlers) settingsResponse(settings jobs.Settings) gin.H {
+	webhookURL := strings.TrimSpace(settings.FeishuWebhookURL)
 	return gin.H{
-		"target_cities":     settings.TargetCities,
-		"target_directions": settings.TargetDirections,
-		"excluded_keywords": settings.ExcludedKeywords,
-		"crawl_schedule":    settings.CrawlSchedule,
-		"feishu_configured": feishuConfigured,
-		"updated_at":        settings.UpdatedAt,
+		"target_cities":      settings.TargetCities,
+		"target_directions":  settings.TargetDirections,
+		"excluded_keywords":  settings.ExcludedKeywords,
+		"crawl_schedule":     settings.CrawlSchedule,
+		"feishu_webhook_url": webhookURL,
+		"feishu_configured":  webhookURL != "" || strings.TrimSpace(h.FeishuWebhookURL) != "",
+		"updated_at":         settings.UpdatedAt,
 	}
 }
 
@@ -335,6 +381,40 @@ func (h *Handlers) ListSources(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, sources)
+}
+
+func (h *Handlers) ListCompanies(c *gin.Context) {
+	companies, err := h.Repo.ListCompanies(c.Request.Context())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, companies)
+}
+
+func (h *Handlers) UpdateCompany(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	var req struct {
+		Enabled *bool `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.Enabled == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "enabled is required"})
+		return
+	}
+	if err := h.Repo.UpdateCompanyEnabled(c.Request.Context(), id, *req.Enabled); err != nil {
+		respondRepoError(c, err)
+		return
+	}
+	h.recordAgentEvent(c, jobs.AgentEventInput{
+		Type:    "company_scope_updated",
+		Title:   "Updated company scope",
+		Summary: "You " + enabledVerb(*req.Enabled) + " company #" + strconv.FormatInt(id, 10) + " for future crawls.",
+		Level:   "info",
+	})
+	c.Status(http.StatusNoContent)
 }
 
 func (h *Handlers) CreateSource(c *gin.Context) {
@@ -349,6 +429,13 @@ func (h *Handlers) CreateSource(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, source)
+}
+
+func enabledVerb(enabled bool) string {
+	if enabled {
+		return "enabled"
+	}
+	return "disabled"
 }
 
 func (h *Handlers) SeedRecommendedSources(c *gin.Context) {
@@ -392,16 +479,149 @@ func (h *Handlers) UpdateSource(c *gin.Context) {
 }
 
 func (h *Handlers) SendFeishuTest(c *gin.Context) {
-	if h.FeishuWebhookURL == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "FEISHU_WEBHOOK_URL is not configured"})
+	webhookURL, err := h.effectiveFeishuWebhookURL(c.Request.Context())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
-	err := notify.SendFeishuWebhook(c.Request.Context(), h.FeishuWebhookURL, "Job Hunter Agent test notification")
+	if webhookURL == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Feishu webhook URL is not configured"})
+		return
+	}
+	err = notify.SendFeishuWebhook(c.Request.Context(), webhookURL, "Job Hunter Agent test notification")
 	if err != nil {
 		respondError(c, http.StatusBadGateway, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "sent"})
+}
+
+func (h *Handlers) SendFeishuReport(c *gin.Context) {
+	webhookURL, err := h.effectiveFeishuWebhookURL(c.Request.Context())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	if webhookURL == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Feishu webhook URL is not configured"})
+		return
+	}
+	report, err := h.buildDutyReport(c.Request.Context())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	if err := notify.SendFeishuWebhook(c.Request.Context(), webhookURL, buildFeishuReportText(report)); err != nil {
+		respondError(c, http.StatusBadGateway, err)
+		return
+	}
+	h.recordAgentEvent(c, jobs.AgentEventInput{
+		Type:    "feishu_report_sent",
+		Title:   "Sent duty report to Feishu",
+		Summary: "I sent the current work queue, decisions, and source issues to your Feishu bot.",
+		Level:   "success",
+	})
+	c.JSON(http.StatusOK, gin.H{"status": "sent"})
+}
+
+func (h *Handlers) buildDutyReport(ctx context.Context) (jobs.AgentDutyReport, error) {
+	jobList, err := h.Repo.ListJobs(ctx, jobs.ListFilter{})
+	if err != nil {
+		return jobs.AgentDutyReport{}, err
+	}
+	sources, err := h.Repo.ListSources(ctx, false)
+	if err != nil {
+		return jobs.AgentDutyReport{}, err
+	}
+	runs, err := h.Repo.ListRuns(ctx)
+	if err != nil {
+		return jobs.AgentDutyReport{}, err
+	}
+	report := jobs.BuildAgentDutyReport(jobList, sources, runs)
+	tasks, err := h.Repo.ListAgentTasks(ctx, time.Now().UTC().Format("2006-01-02"))
+	if err != nil {
+		return jobs.AgentDutyReport{}, err
+	}
+	report.Tasks = tasks
+	for _, task := range tasks {
+		if task.Status == jobs.AgentTaskStatusDone {
+			report.Summary.DoneTasks++
+		} else {
+			report.Summary.OpenTasks++
+		}
+	}
+	return report, nil
+}
+
+func buildFeishuReportText(report jobs.AgentDutyReport) string {
+	var b strings.Builder
+	b.WriteString("Job Hunter Agent duty report\n\n")
+	b.WriteString(report.Headline)
+	b.WriteString("\n\nSummary:\n")
+	b.WriteString(fmt.Sprintf("- New jobs: %d\n", report.Summary.NewJobs))
+	b.WriteString(fmt.Sprintf("- Strong matches: %d\n", report.Summary.StrongMatches))
+	b.WriteString(fmt.Sprintf("- Manual check: %d\n", report.Summary.ManualCheck))
+	b.WriteString(fmt.Sprintf("- Source issues: %d\n", report.Summary.SourceIssues))
+	b.WriteString(fmt.Sprintf("- Open tasks: %d\n", report.Summary.OpenTasks))
+	b.WriteString(fmt.Sprintf("- Done tasks: %d\n", report.Summary.DoneTasks))
+	if len(report.Tasks) > 0 {
+		b.WriteString("\nDaily tasks:\n")
+		written := 0
+		for _, task := range report.Tasks {
+			if task.Status == jobs.AgentTaskStatusDone {
+				continue
+			}
+			b.WriteString(fmt.Sprintf("- %s: %s\n", task.Title, task.Detail))
+			written++
+			if written >= 5 {
+				break
+			}
+		}
+	}
+	if len(report.TodaysWork) > 0 {
+		b.WriteString("\nToday's work:\n")
+		for _, item := range report.TodaysWork {
+			b.WriteString(fmt.Sprintf("- %s (%d): %s\n", item.Title, item.Count, item.Detail))
+		}
+	}
+	if len(report.NeedsDecision) > 0 {
+		b.WriteString("\nNeeds your decision:\n")
+		limit := len(report.NeedsDecision)
+		if limit > 5 {
+			limit = 5
+		}
+		for i := 0; i < limit; i++ {
+			item := report.NeedsDecision[i]
+			b.WriteString(fmt.Sprintf("- %s - %s - %s - score %d\n", item.Company, item.JobTitle, item.City, item.Score))
+		}
+	}
+	if len(report.SourceIssues) > 0 {
+		b.WriteString("\nSource issues:\n")
+		limit := len(report.SourceIssues)
+		if limit > 5 {
+			limit = 5
+		}
+		for i := 0; i < limit; i++ {
+			issue := report.SourceIssues[i]
+			b.WriteString(fmt.Sprintf("- %s: %s, %s\n", issue.Name, issue.Status, issue.Reason))
+		}
+	}
+	b.WriteString("\nNext best action: ")
+	b.WriteString(report.NextBestAction.Label)
+	b.WriteString(" - ")
+	b.WriteString(report.NextBestAction.Reason)
+	return b.String()
+}
+
+func (h *Handlers) effectiveFeishuWebhookURL(ctx context.Context) (string, error) {
+	settings, err := h.Repo.GetSettings(ctx)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(settings.FeishuWebhookURL) != "" {
+		return strings.TrimSpace(settings.FeishuWebhookURL), nil
+	}
+	return strings.TrimSpace(h.FeishuWebhookURL), nil
 }
 
 func parseID(c *gin.Context) (int64, bool) {
@@ -444,6 +664,12 @@ func (h *Handlers) recordCrawlEvent(c *gin.Context, eventType string, title stri
 
 func (h *Handlers) recordAgentEvent(c *gin.Context, input jobs.AgentEventInput) {
 	if _, err := h.Repo.CreateAgentEvent(c.Request.Context(), input); err != nil {
+		_ = c.Error(err)
+	}
+}
+
+func (h *Handlers) refreshAgentTasksAfterCrawl(c *gin.Context) {
+	if _, err := h.Repo.SyncAgentTasks(c.Request.Context(), time.Now().UTC()); err != nil {
 		_ = c.Error(err)
 	}
 }

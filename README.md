@@ -17,7 +17,8 @@ Early MVP. The current version provides a Go backend foundation, SQLite persiste
 - Deduplication by application URL and normalized company/title/city.
 - Scheduled crawl runner for 09:00, 12:00, and 18:00.
 - React dashboard for reviewing jobs, filtering by status/direction, updating status, and running a crawl.
-- Feishu webhook summaries after crawl runs when `FEISHU_WEBHOOK_URL` is configured.
+- Daily agent task queue generated from recommended jobs, manual decisions, source issues, and crawl history.
+- Feishu webhook summaries after crawl runs when a webhook is configured in Settings or `FEISHU_WEBHOOK_URL`.
 
 ## What It Does
 
@@ -25,6 +26,7 @@ Early MVP. The current version provides a Go backend foundation, SQLite persiste
 - Scores jobs for Shenzhen-focused frontend, backend, Java, Go, algorithm, and AI application development roles.
 - Filters obvious outsourcing, training, low-quality, and unclear-conversion internship content.
 - Provides a local dashboard for reviewing jobs and updating status.
+- Generates a daily task queue for recommended jobs, human decisions, unhealthy sources, and crawl setup.
 - Supports manual crawl runs and scheduled runs at 09:00, 12:00, and 18:00.
 - Can send Feishu incoming webhook notifications.
 
@@ -69,6 +71,8 @@ SOURCE_URLS=
 
 `SOURCE_URLS` can contain comma-separated or newline-separated public recruitment URLs. Manual and scheduled crawl runs import these URLs, score them, deduplicate them, and store them in the local database.
 
+`FEISHU_WEBHOOK_URL` is optional. Open-source users can also open the dashboard, go to Settings, paste their own Feishu incoming bot webhook URL, save it, and send a test notification. A saved dashboard webhook takes priority over the environment variable and does not require restarting the backend.
+
 ### Backend
 
 Requires Go 1.25 or newer.
@@ -106,6 +110,19 @@ cd frontend
 npm run build
 ```
 
+### First Run Checklist
+
+After the backend and frontend are running:
+
+1. Open `http://localhost:5173`.
+2. Go to Companies and add the recommended company pool.
+3. Go to Settings and adjust cities, directions, excluded keywords, crawl schedule, and your optional Feishu webhook.
+4. Use Send Feishu Test if a webhook is configured.
+5. Go back to Dashboard and run a crawl.
+6. Review Opportunities, mark promising jobs as Interested or Applied, and ignore low-quality matches.
+7. Refresh Daily Tasks on the Dashboard to turn the current pipeline into an actionable work queue.
+8. Use Send to Feishu from the duty report when you want the assistant to push the current task queue and summary to your bot.
+
 ## Local Data
 
 By default, the backend stores SQLite data under:
@@ -122,7 +139,7 @@ Local databases, logs, build outputs, private planning docs, and environment fil
 - Add the first real public-source collector.
 - Add source configuration in the dashboard.
 - Improve parsing for company, role, city, deadline, and application URL.
-- Add Feishu summary sending after crawl runs.
+- Refine daily agent tasks with richer completion reasons and follow-up reminders.
 - Add job detail view with notes and application metadata.
 - Add optional Feishu Base or spreadsheet sync.
 - Explore resume matching and assisted application workflows after the collection pipeline is reliable.
