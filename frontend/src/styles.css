@@ -345,6 +345,28 @@ td {
   padding: 14px 16px;
 }
 
+.source-actions {
+  display: flex;
+  gap: 10px;
+  border-bottom: 1px solid #edf1f7;
+  padding: 14px 16px 0;
+}
+
+.source-actions button {
+  border: 1px solid #d5deeb;
+  border-radius: 6px;
+  background: #fff;
+  color: #334155;
+  padding: 9px 12px;
+  font-weight: 760;
+}
+
+.source-actions .strong-action {
+  border-color: #1769e0;
+  background: #1769e0;
+  color: #fff;
+}
+
 .source-form input {
   flex: 1 1 320px;
   min-width: 0;
@@ -581,6 +603,7 @@ td {
   }
 
   .source-form,
+  .source-actions,
   .source-row,
   .settings-grid,
   .run-source-row {

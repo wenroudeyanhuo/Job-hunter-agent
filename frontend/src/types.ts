@@ -74,3 +74,15 @@ export interface Settings {
   feishu_configured: boolean;
   updated_at: string;
 }
+
+export interface SeedSourcesResult {
+  total: number;
+  created: number;
+  duplicated: number;
+}
+
+export interface RecommendedCrawlResponse {
+  seeded: number;
+  sources: SeedSourcesResult;
+  summary: RunSummary;
+}

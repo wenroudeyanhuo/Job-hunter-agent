@@ -29,6 +29,28 @@ type SourceInput struct {
 	ParserType string `json:"parser_type"`
 }
 
+type SeedSourcesResult struct {
+	Total      int `json:"total"`
+	Created    int `json:"created"`
+	Duplicated int `json:"duplicated"`
+}
+
+func RecommendedSources() []SourceInput {
+	return []SourceInput{
+		{Name: "Tencent Careers", URL: "https://careers.tencent.com/", Enabled: true},
+		{Name: "Huawei Careers", URL: "https://career.huawei.com/reccampportal/portal5/index.html", Enabled: true},
+		{Name: "ByteDance Jobs", URL: "https://jobs.bytedance.com/campus/", Enabled: true},
+		{Name: "Alibaba Campus", URL: "https://talent.alibaba.com/campus/home", Enabled: true},
+		{Name: "Meituan Campus", URL: "https://campus.meituan.com/", Enabled: true},
+		{Name: "DJI Careers", URL: "https://we.dji.com/zh-CN/campus", Enabled: true},
+		{Name: "Kuaishou Campus", URL: "https://campus.kuaishou.cn/", Enabled: true},
+		{Name: "Baidu Talent", URL: "https://talent.baidu.com/jobs/list", Enabled: true},
+		{Name: "OPPO Careers", URL: "https://careers.oppo.com/", Enabled: true},
+		{Name: "vivo Careers", URL: "https://hr.vivo.com/", Enabled: true},
+		{Name: "Honor Careers", URL: "https://career.hihonor.com/", Enabled: true},
+	}
+}
+
 func (r *Repository) CreateSource(ctx context.Context, input SourceInput) (Source, error) {
 	input, err := normalizeSourceInput(input)
 	if err != nil {
@@ -48,6 +70,28 @@ func (r *Repository) CreateSource(ctx context.Context, input SourceInput) (Sourc
 	return r.GetSource(ctx, id)
 }
 
+func (r *Repository) SeedRecommendedSources(ctx context.Context) (SeedSourcesResult, error) {
+	result := SeedSourcesResult{Total: len(RecommendedSources())}
+	for _, source := range RecommendedSources() {
+		if source.Type == "" {
+			source.Type = "public_url"
+		}
+		if source.ParserType == "" {
+			source.ParserType = "generic"
+		}
+		created, err := r.createSourceIfMissing(ctx, source)
+		if err != nil {
+			return SeedSourcesResult{}, err
+		}
+		if created {
+			result.Created++
+		} else {
+			result.Duplicated++
+		}
+	}
+	return result, nil
+}
+
 func (r *Repository) GetSource(ctx context.Context, id int64) (Source, error) {
 	row := r.db.QueryRowContext(ctx, selectSourceSQL()+` WHERE id = ?`, id)
 	source, err := scanSource(row)
@@ -55,6 +99,26 @@ func (r *Repository) GetSource(ctx context.Context, id int64) (Source, error) {
 		return Source{}, fmt.Errorf("get source %d: %w", id, err)
 	}
 	return source, nil
+}
+
+func (r *Repository) createSourceIfMissing(ctx context.Context, input SourceInput) (bool, error) {
+	input, err := normalizeSourceInput(input)
+	if err != nil {
+		return false, err
+	}
+	result, err := r.db.ExecContext(ctx, `
+		INSERT INTO job_sources (name, type, url, enabled, parser_type)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(name) DO NOTHING
+	`, input.Name, input.Type, input.URL, boolToInt(input.Enabled), input.ParserType)
+	if err != nil {
+		return false, fmt.Errorf("insert source: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("read rows affected: %w", err)
+	}
+	return affected > 0, nil
 }
 
 func (r *Repository) ListSources(ctx context.Context, enabledOnly bool) ([]Source, error) {

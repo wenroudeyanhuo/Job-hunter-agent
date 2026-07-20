@@ -130,6 +130,24 @@ func (h *Handlers) RunCrawl(c *gin.Context) {
 	c.JSON(http.StatusOK, summary)
 }
 
+func (h *Handlers) RunRecommendedCrawl(c *gin.Context) {
+	seeded, err := h.Repo.SeedRecommendedSources(c.Request.Context())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	summary, err := h.Runner.Run(c.Request.Context(), "recommended")
+	if err != nil {
+		respondError(c, http.StatusConflict, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"seeded":  seeded.Created,
+		"sources": seeded,
+		"summary": summary,
+	})
+}
+
 func (h *Handlers) ListRuns(c *gin.Context) {
 	runs, err := h.Repo.ListRuns(c.Request.Context())
 	if err != nil {
@@ -207,6 +225,19 @@ func (h *Handlers) CreateSource(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, source)
+}
+
+func (h *Handlers) SeedRecommendedSources(c *gin.Context) {
+	result, err := h.Repo.SeedRecommendedSources(c.Request.Context())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	status := http.StatusCreated
+	if result.Created == 0 {
+		status = http.StatusOK
+	}
+	c.JSON(status, result)
 }
 
 func (h *Handlers) UpdateSource(c *gin.Context) {

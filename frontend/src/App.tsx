@@ -8,6 +8,8 @@ import {
   listRuns,
   listSources,
   runCrawl,
+  runRecommendedCrawl,
+  seedRecommendedSources,
   updateJobStatus,
   updateSettings,
   updateSourceEnabled,
@@ -48,6 +50,8 @@ export default function App() {
   const [runSources, setRunSources] = useState<JobRunSource[]>([]);
   const [sourceURLValue, setSourceURLValue] = useState("");
   const [addingSource, setAddingSource] = useState(false);
+  const [seedingSources, setSeedingSources] = useState(false);
+  const [recommendedRunning, setRecommendedRunning] = useState(false);
   const [settings, setSettings] = useState<Settings>(defaultSettings);
   const [settingsDraft, setSettingsDraft] = useState(settingsToDraft(defaultSettings));
   const [savingSettings, setSavingSettings] = useState(false);
@@ -170,6 +174,43 @@ export default function App() {
   async function toggleSource(source: Source) {
     await updateSourceEnabled(source.id, !source.enabled);
     setSources((current) => current.map((item) => (item.id === source.id ? { ...item, enabled: !source.enabled } : item)));
+  }
+
+  async function handleSeedRecommendedSources() {
+    setSeedingSources(true);
+    setError("");
+    setNotice("");
+    try {
+      const result = await seedRecommendedSources();
+      setNotice(
+        result.created > 0
+          ? `Added ${result.created} recommended sources.`
+          : "Recommended sources were already added.",
+      );
+      await refreshSources();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not add recommended sources");
+    } finally {
+      setSeedingSources(false);
+    }
+  }
+
+  async function handleRecommendedCrawl() {
+    setRecommendedRunning(true);
+    setError("");
+    setNotice("");
+    try {
+      const result = await runRecommendedCrawl();
+      setLastRun(result.summary);
+      setNotice(`Recommended crawl finished. Added ${result.sources.created} sources and created ${result.summary.jobs_created} jobs.`);
+      await refreshSources();
+      await refresh();
+      await refreshRuns();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Recommended crawl failed");
+    } finally {
+      setRecommendedRunning(false);
+    }
   }
 
   async function handleSaveSettings(event: React.FormEvent<HTMLFormElement>) {
@@ -341,6 +382,14 @@ export default function App() {
         <div className="panel-header">
           <h2>Sources</h2>
           <span>{sources.filter((source) => source.enabled).length} enabled</span>
+        </div>
+        <div className="source-actions">
+          <button type="button" onClick={handleSeedRecommendedSources} disabled={seedingSources || recommendedRunning}>
+            {seedingSources ? "Adding..." : "Add Recommended"}
+          </button>
+          <button type="button" className="strong-action" onClick={handleRecommendedCrawl} disabled={recommendedRunning || seedingSources}>
+            {recommendedRunning ? "Running..." : "Add & Crawl"}
+          </button>
         </div>
         <form className="source-form" onSubmit={handleAddSource}>
           <input

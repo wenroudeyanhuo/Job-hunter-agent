@@ -71,3 +71,31 @@ func TestRepositorySeedSourcesDeduplicatesURLs(t *testing.T) {
 		t.Fatalf("expected one deduped source, got %d", len(sources))
 	}
 }
+
+func TestRepositorySeedRecommendedSources(t *testing.T) {
+	ctx := context.Background()
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	repo := NewRepository(conn)
+
+	result, err := repo.SeedRecommendedSources(ctx)
+	if err != nil {
+		t.Fatalf("seed recommended sources: %v", err)
+	}
+	if result.Created == 0 {
+		t.Fatal("expected recommended sources to be created")
+	}
+	if result.Total != len(RecommendedSources()) {
+		t.Fatalf("expected total recommended sources, got %#v", result)
+	}
+
+	second, err := repo.SeedRecommendedSources(ctx)
+	if err != nil {
+		t.Fatalf("seed recommended sources again: %v", err)
+	}
+	if second.Created != 0 || second.Duplicated != result.Total {
+		t.Fatalf("expected second seed to dedupe, got %#v", second)
+	}
+}

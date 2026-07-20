@@ -27,8 +27,10 @@ func NewRouter(handlers *Handlers) http.Handler {
 	api.GET("/settings", handlers.GetSettings)
 	api.PATCH("/settings", handlers.UpdateSettings)
 	api.GET("/sources", handlers.ListSources)
+	api.POST("/sources/recommended", handlers.SeedRecommendedSources)
 	api.POST("/sources", handlers.CreateSource)
 	api.PATCH("/sources/:id", handlers.UpdateSource)
+	api.POST("/crawl/recommended", handlers.RunRecommendedCrawl)
 	api.POST("/notifications/feishu/test", handlers.SendFeishuTest)
 
 	return router
