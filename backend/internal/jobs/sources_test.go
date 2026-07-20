@@ -154,6 +154,44 @@ func TestRepositorySeedRecommendedSources(t *testing.T) {
 	}
 }
 
+func TestRecommendedSourcesCoverBroaderCompanyPool(t *testing.T) {
+	sources := RecommendedSources()
+	if len(sources) < 30 {
+		t.Fatalf("expected broad recommended source pool, got %d", len(sources))
+	}
+	want := map[string]bool{
+		"Tencent Careers":    false,
+		"DJI Careers":        false,
+		"Ping An Campus":     false,
+		"WeBank Campus":      false,
+		"BYD Jobs":           false,
+		"Mindray Careers":    false,
+		"Sangfor Careers":    false,
+		"Xiaohongshu Campus": false,
+		"miHoYo Jobs":        false,
+	}
+	seenNames := map[string]bool{}
+	seenURLs := map[string]bool{}
+	for _, source := range sources {
+		if seenNames[source.Name] {
+			t.Fatalf("duplicate recommended source name %q", source.Name)
+		}
+		if seenURLs[source.URL] {
+			t.Fatalf("duplicate recommended source URL %q", source.URL)
+		}
+		seenNames[source.Name] = true
+		seenURLs[source.URL] = true
+		if _, ok := want[source.Name]; ok {
+			want[source.Name] = true
+		}
+	}
+	for name, found := range want {
+		if !found {
+			t.Fatalf("expected broader recommended source %q", name)
+		}
+	}
+}
+
 func TestRepositorySeedRecommendedSourcesRefreshesExistingParserTypes(t *testing.T) {
 	ctx := context.Background()
 	conn, err := db.Open(":memory:")

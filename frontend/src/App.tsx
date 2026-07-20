@@ -3,6 +3,7 @@ import {
   cleanupLandingPages,
   createSource,
   getAgentBriefing,
+  getAgentDutyReport,
   getSettings,
   importURL,
   listAgentEvents,
@@ -17,7 +18,7 @@ import {
   updateSettings,
   updateSourceEnabled,
 } from "./api";
-import type { AgentBriefing, AgentEvent, Job, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source } from "./types";
+import type { AgentBriefing, AgentDutyReport, AgentEvent, Job, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source } from "./types";
 
 const statusLabels: Record<JobStatus | "all", string> = {
   all: "All",
@@ -71,6 +72,7 @@ export default function App() {
   const [notice, setNotice] = useState("");
   const [lastRun, setLastRun] = useState<RunSummary | null>(null);
   const [briefing, setBriefing] = useState<AgentBriefing | null>(null);
+  const [dutyReport, setDutyReport] = useState<AgentDutyReport | null>(null);
   const [agentEvents, setAgentEvents] = useState<AgentEvent[]>([]);
 
   async function refresh(nextStatus = status) {
@@ -105,13 +107,18 @@ export default function App() {
     setBriefing(data);
   }
 
+  async function refreshDutyReport() {
+    const data = await getAgentDutyReport();
+    setDutyReport(data);
+  }
+
   async function refreshAgentEvents() {
     const data = await listAgentEvents();
     setAgentEvents(data);
   }
 
   useEffect(() => {
-    Promise.all([refresh(), refreshSources(), refreshRuns(), refreshSettings(), refreshBriefing(), refreshAgentEvents()])
+    Promise.all([refresh(), refreshSources(), refreshRuns(), refreshSettings(), refreshBriefing(), refreshDutyReport(), refreshAgentEvents()])
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
@@ -189,6 +196,7 @@ export default function App() {
       await refresh();
       await refreshRuns();
       await refreshBriefing();
+      await refreshDutyReport();
       await refreshAgentEvents();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Run failed");
@@ -219,6 +227,7 @@ export default function App() {
       );
       await refresh();
       await refreshBriefing();
+      await refreshDutyReport();
       await refreshAgentEvents();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Import failed");
@@ -240,6 +249,7 @@ export default function App() {
       );
       await refresh();
       await refreshBriefing();
+      await refreshDutyReport();
       await refreshAgentEvents();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Cleanup failed");
@@ -264,6 +274,7 @@ export default function App() {
       setNotice("Source added. It will be used by the next crawl run.");
       await refreshSources();
       await refreshBriefing();
+      await refreshDutyReport();
       await refreshAgentEvents();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not add source");
@@ -276,6 +287,7 @@ export default function App() {
     await updateSourceEnabled(source.id, !source.enabled);
     setSources((current) => current.map((item) => (item.id === source.id ? { ...item, enabled: !source.enabled } : item)));
     await refreshBriefing();
+    await refreshDutyReport();
   }
 
   async function handleSeedRecommendedSources() {
@@ -291,6 +303,7 @@ export default function App() {
       );
       await refreshSources();
       await refreshBriefing();
+      await refreshDutyReport();
       await refreshAgentEvents();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not add recommended sources");
@@ -313,6 +326,7 @@ export default function App() {
       await refresh();
       await refreshRuns();
       await refreshBriefing();
+      await refreshDutyReport();
       await refreshAgentEvents();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Recommended crawl failed");
@@ -337,6 +351,7 @@ export default function App() {
       setSettings(nextSettings);
       setSettingsDraft(settingsToDraft(nextSettings));
       setNotice("Settings saved. Future crawl and scoring steps can use these preferences.");
+      await refreshDutyReport();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save settings");
     } finally {
@@ -353,6 +368,7 @@ export default function App() {
     await updateJobStatus(id, next);
     setJobs((current) => current.map((job) => (job.id === id ? { ...job, status: next } : job)));
     await refreshBriefing();
+    await refreshDutyReport();
     await refreshAgentEvents();
   }
 
@@ -376,6 +392,8 @@ export default function App() {
       </section>
 
       {briefing && <AgentBriefingPanel briefing={briefing} onAction={handleAgentAction} busy={running || recommendedRunning} />}
+
+      {dutyReport && <AgentDutyReportPanel report={dutyReport} onAction={handleAgentAction} busy={running || recommendedRunning} />}
 
       <AgentActivityLog events={agentEvents} />
 
@@ -688,6 +706,75 @@ function AgentBriefingPanel({
             </button>
           </div>
         ))}
+      </div>
+    </section>
+  );
+}
+
+function AgentDutyReportPanel({
+  report,
+  onAction,
+  busy,
+}: {
+  report: AgentDutyReport;
+  onAction: (action: string) => void | Promise<void>;
+  busy: boolean;
+}) {
+  const topDecision = report.needs_decision.slice(0, 3);
+  const sourceIssues = report.source_issues.slice(0, 3);
+  return (
+    <section className={`duty-report duty-${report.tone}`}>
+      <div className="panel-header">
+        <div>
+          <h2>Today's Work</h2>
+          <span>{report.headline}</span>
+        </div>
+        <button type="button" onClick={() => onAction(report.next_best_action.action)} disabled={busy}>
+          {report.next_best_action.label}
+        </button>
+      </div>
+      <div className="duty-grid">
+        <div className="duty-column">
+          <h3>Queue</h3>
+          {report.todays_work.map((item) => (
+            <div className="duty-item" key={item.kind}>
+              <div>
+                <strong>{item.title}</strong>
+                <span>{item.detail}</span>
+              </div>
+              <b>{item.count}</b>
+            </div>
+          ))}
+          {report.todays_work.length === 0 && <div className="empty-source">No active work queued.</div>}
+        </div>
+        <div className="duty-column">
+          <h3>Needs Your Decision</h3>
+          {topDecision.map((item) => (
+            <div className="decision-item" key={`${item.job_id}-${item.job_title}`}>
+              <strong>{item.company} · {item.job_title}</strong>
+              <span>{item.city} · score {item.score}</span>
+              <small>{item.reason}</small>
+            </div>
+          ))}
+          {topDecision.length === 0 && <div className="empty-source">No manual decisions waiting.</div>}
+        </div>
+        <div className="duty-column">
+          <h3>Source Issues</h3>
+          {sourceIssues.map((issue) => (
+            <div className={`source-issue issue-${issue.status}`} key={issue.source_id || issue.url}>
+              <strong>{issue.name}</strong>
+              <span>{sourceHealthLabels[issue.status] || issue.status} · {issue.reason}</span>
+              <small>found {issue.last_found_count} · failures {issue.consecutive_failures}</small>
+            </div>
+          ))}
+          {sourceIssues.length === 0 && <div className="empty-source">Sources look stable.</div>}
+        </div>
+      </div>
+      <div className="duty-summary">
+        <span>{report.summary.new_jobs} new</span>
+        <span>{report.summary.strong_matches} strong</span>
+        <span>{report.summary.manual_check} manual</span>
+        <span>{report.summary.source_issues} source issues</span>
       </div>
     </section>
   );

@@ -175,6 +175,134 @@ h2 {
   font-weight: 760;
 }
 
+.duty-report {
+  border: 1px solid #d8e2ef;
+  border-radius: 8px;
+  background: #fff;
+  margin-bottom: 16px;
+}
+
+.duty-report .panel-header {
+  padding: 15px 16px;
+}
+
+.duty-report .panel-header > div span {
+  display: block;
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.duty-report .panel-header button {
+  border: 1px solid #1769e0;
+  border-radius: 6px;
+  background: #1769e0;
+  color: #fff;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 760;
+}
+
+.duty-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-top: 1px solid #edf1f7;
+}
+
+.duty-column {
+  min-width: 0;
+  border-right: 1px solid #edf1f7;
+  padding: 14px 16px;
+}
+
+.duty-column:last-child {
+  border-right: 0;
+}
+
+.duty-column h3 {
+  margin: 0 0 10px;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 820;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.duty-item,
+.decision-item,
+.source-issue {
+  border-bottom: 1px solid #edf1f7;
+  padding: 10px 0;
+}
+
+.duty-item:first-of-type,
+.decision-item:first-of-type,
+.source-issue:first-of-type {
+  padding-top: 0;
+}
+
+.duty-item:last-child,
+.decision-item:last-child,
+.source-issue:last-child {
+  border-bottom: 0;
+}
+
+.duty-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.duty-item strong,
+.decision-item strong,
+.source-issue strong {
+  display: block;
+  color: #18212f;
+  font-size: 14px;
+}
+
+.duty-item span,
+.decision-item span,
+.source-issue span,
+.decision-item small,
+.source-issue small {
+  display: block;
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.duty-item b {
+  color: #1769e0;
+  font-size: 18px;
+}
+
+.issue-broken strong {
+  color: #b42318;
+}
+
+.issue-warning strong {
+  color: #8a5b00;
+}
+
+.duty-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-top: 1px solid #edf1f7;
+  padding: 10px 16px;
+}
+
+.duty-summary span {
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #475569;
+  padding: 4px 9px;
+  font-size: 12px;
+  font-weight: 720;
+}
+
 .metric {
   min-height: 88px;
   border: 1px solid #e3e8f2;
@@ -777,6 +905,7 @@ td {
 
   .summary-grid,
   .agent-briefing,
+  .duty-grid,
   .workspace {
     grid-template-columns: 1fr;
   }
@@ -811,6 +940,15 @@ td {
 
   .run-list {
     border-right: 0;
+  }
+
+  .duty-column {
+    border-right: 0;
+    border-bottom: 1px solid #edf1f7;
+  }
+
+  .duty-column:last-child {
+    border-bottom: 0;
   }
 
   .run-source-metrics {
