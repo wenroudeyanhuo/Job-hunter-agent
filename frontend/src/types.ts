@@ -126,6 +126,55 @@ export interface AgentBriefing {
   next_actions: AgentNextAction[];
 }
 
+export interface AgentState {
+  generated_at: string;
+  profile: AgentProfile;
+  mode: string;
+  focus: string;
+  maturity_score: number;
+  workload: AgentWorkload;
+  capabilities: AgentCapability[];
+  gaps: AgentCapabilityGap[];
+  operating_cycle: AgentOperatingMoment[];
+}
+
+export interface AgentProfile {
+  name: string;
+  role: string;
+  mission: string;
+  avatar: string;
+  presence: string;
+}
+
+export interface AgentWorkload {
+  open_tasks: number;
+  done_tasks: number;
+  strong_matches: number;
+  manual_decisions: number;
+  source_issues: number;
+}
+
+export interface AgentCapability {
+  key: string;
+  label: string;
+  status: string;
+  level: number;
+  evidence: string;
+}
+
+export interface AgentCapabilityGap {
+  key: string;
+  label: string;
+  why: string;
+  next_step: string;
+}
+
+export interface AgentOperatingMoment {
+  time: string;
+  title: string;
+  state: string;
+}
+
 export interface AgentDutyReport {
   generated_at: string;
   tone: string;

@@ -2,6 +2,7 @@ import type {
   AgentBriefing,
   AgentDutyReport,
   AgentEvent,
+  AgentState,
   AgentTask,
   Company,
   CleanupLandingPagesResponse,
@@ -43,6 +44,10 @@ export async function listJobs(status?: JobStatus | "all"): Promise<Job[]> {
 
 export async function getAgentBriefing(): Promise<AgentBriefing> {
   return request<AgentBriefing>("/api/agent/briefing");
+}
+
+export async function getAgentState(): Promise<AgentState> {
+  return request<AgentState>("/api/agent/state");
 }
 
 export async function getAgentDutyReport(): Promise<AgentDutyReport> {

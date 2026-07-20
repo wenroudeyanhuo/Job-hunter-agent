@@ -179,3 +179,48 @@ func TestAgentDutyReportIncludesDailyTaskState(t *testing.T) {
 		t.Fatalf("expected report task state, got summary=%#v tasks=%#v", response.Summary, response.Tasks)
 	}
 }
+
+func TestAgentStateAPIReportsDigitalEmployeeReadiness(t *testing.T) {
+	repo, handler := testRouter(t, nil)
+	if _, err := repo.CreateJob(t.Context(), domain.Job{
+		Company:    "Tencent",
+		Title:      "Go Backend Engineer",
+		City:       "Shenzhen",
+		MatchScore: 88,
+		Status:     domain.StatusNew,
+	}); err != nil {
+		t.Fatalf("seed job: %v", err)
+	}
+	if _, err := repo.CreateSource(t.Context(), jobs.SourceInput{
+		Name:       "Tencent Careers",
+		URL:        "https://careers.tencent.com/",
+		Enabled:    true,
+		ParserType: "tencent_api",
+	}); err != nil {
+		t.Fatalf("seed source: %v", err)
+	}
+	if _, err := repo.SyncAgentTasks(t.Context(), time.Now().UTC()); err != nil {
+		t.Fatalf("sync tasks: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/agent/state", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var response jobs.AgentState
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode state: %v", err)
+	}
+	if response.Profile.Name == "" || response.MaturityScore == 0 {
+		t.Fatalf("expected profile and maturity score, got %#v", response)
+	}
+	if response.Workload.OpenTasks == 0 {
+		t.Fatalf("expected open task workload, got %#v", response.Workload)
+	}
+	if len(response.Capabilities) == 0 || len(response.Gaps) == 0 {
+		t.Fatalf("expected capabilities and gaps, got %#v", response)
+	}
+}

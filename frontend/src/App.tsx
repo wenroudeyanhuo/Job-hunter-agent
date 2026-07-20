@@ -4,6 +4,7 @@ import {
   createSource,
   getAgentBriefing,
   getAgentDutyReport,
+  getAgentState,
   getSettings,
   importURL,
   listAgentEvents,
@@ -25,7 +26,7 @@ import {
   updateSettings,
   updateSourceEnabled,
 } from "./api";
-import type { AgentBriefing, AgentDutyReport, AgentEvent, AgentTask, Company, Job, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source } from "./types";
+import type { AgentBriefing, AgentDutyReport, AgentEvent, AgentState, AgentTask, Company, Job, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source } from "./types";
 
 const statusLabels: Record<JobStatus | "all", string> = {
   all: "All",
@@ -113,6 +114,7 @@ export default function App() {
   const [notice, setNotice] = useState("");
   const [lastRun, setLastRun] = useState<RunSummary | null>(null);
   const [briefing, setBriefing] = useState<AgentBriefing | null>(null);
+  const [agentState, setAgentState] = useState<AgentState | null>(null);
   const [dutyReport, setDutyReport] = useState<AgentDutyReport | null>(null);
   const [agentEvents, setAgentEvents] = useState<AgentEvent[]>([]);
   const [agentTasks, setAgentTasks] = useState<AgentTask[]>([]);
@@ -155,6 +157,11 @@ export default function App() {
     setBriefing(data);
   }
 
+  async function refreshAgentState() {
+    const data = await getAgentState();
+    setAgentState(data);
+  }
+
   async function refreshDutyReport() {
     const data = await getAgentDutyReport();
     setDutyReport(data);
@@ -171,7 +178,7 @@ export default function App() {
   }
 
   useEffect(() => {
-    Promise.all([refresh(), refreshSources(), refreshCompanies(), refreshRuns(), refreshSettings(), refreshBriefing(), refreshDutyReport(), refreshAgentEvents(), refreshTasks()])
+    Promise.all([refresh(), refreshSources(), refreshCompanies(), refreshRuns(), refreshSettings(), refreshBriefing(), refreshAgentState(), refreshDutyReport(), refreshAgentEvents(), refreshTasks()])
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
@@ -319,6 +326,7 @@ export default function App() {
       await refreshDutyReport();
       await refreshAgentEvents();
       await refreshTasks();
+      await refreshAgentState();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Run failed");
     } finally {
@@ -351,6 +359,7 @@ export default function App() {
       await refreshDutyReport();
       await refreshAgentEvents();
       await refreshTasks();
+      await refreshAgentState();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Import failed");
     } finally {
@@ -374,6 +383,7 @@ export default function App() {
       await refreshDutyReport();
       await refreshAgentEvents();
       await refreshTasks();
+      await refreshAgentState();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Cleanup failed");
     } finally {
@@ -413,6 +423,7 @@ export default function App() {
     await refreshBriefing();
     await refreshDutyReport();
     await refreshTasks();
+    await refreshAgentState();
   }
 
   async function toggleCompany(company: Company) {
@@ -423,6 +434,7 @@ export default function App() {
     await refreshDutyReport();
     await refreshAgentEvents();
     await refreshTasks();
+    await refreshAgentState();
   }
 
   async function handleSeedRecommendedSources() {
@@ -442,6 +454,7 @@ export default function App() {
       await refreshDutyReport();
       await refreshAgentEvents();
       await refreshTasks();
+      await refreshAgentState();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not add recommended sources");
     } finally {
@@ -467,6 +480,7 @@ export default function App() {
       await refreshDutyReport();
       await refreshAgentEvents();
       await refreshTasks();
+      await refreshAgentState();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Recommended crawl failed");
     } finally {
@@ -493,6 +507,7 @@ export default function App() {
       setNotice("Settings saved. Future crawl and scoring steps can use these preferences.");
       await refreshDutyReport();
       await refreshTasks();
+      await refreshAgentState();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save settings");
     } finally {
@@ -541,6 +556,7 @@ export default function App() {
       setNotice("Daily tasks refreshed from the current recruiting pipeline.");
       await refreshDutyReport();
       await refreshAgentEvents();
+      await refreshAgentState();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not refresh daily tasks");
     } finally {
@@ -554,6 +570,7 @@ export default function App() {
     setNotice("Task completed.");
     await refreshDutyReport();
     await refreshAgentEvents();
+    await refreshAgentState();
   }
 
   async function selectRun(runId: number) {
@@ -568,6 +585,7 @@ export default function App() {
     await refreshDutyReport();
     await refreshAgentEvents();
     await refreshTasks();
+    await refreshAgentState();
   }
 
   return (
@@ -594,50 +612,62 @@ export default function App() {
       {error && <div className="error-banner">{error}</div>}
 
       {activeView === "dashboard" && (
-        <>
-          <section className="summary-grid">
-            <Metric label="Tracked jobs" value={jobs.length} />
-            <Metric label="Strong matches" value={strongMatches} />
-            <Metric label="Enabled companies" value={enabledCompanies} />
-            <Metric label="Next runs" value={settings.crawl_schedule.join(" / ")} />
-          </section>
+        <section className="dashboard-workbench">
+          <div className="dashboard-main">
+            <section className="summary-grid">
+              <Metric label="Tracked jobs" value={jobs.length} />
+              <Metric label="Strong matches" value={strongMatches} />
+              <Metric label="Enabled companies" value={enabledCompanies} />
+              <Metric label="Next runs" value={settings.crawl_schedule.join(" / ")} />
+            </section>
 
-          <ProductReadinessPanel items={readinessItems} busy={running || seedingSources || recommendedRunning} />
+            <ProductReadinessPanel items={readinessItems} busy={running || seedingSources || recommendedRunning} />
 
-          <AgentTasksPanel
-            tasks={agentTasks}
-            onAction={handleAgentAction}
-            onComplete={handleTaskDone}
-            onRefresh={handleRefreshAgentTasks}
-            refreshing={refreshingTasks}
-            busy={running || recommendedRunning}
-          />
-
-          {briefing && <AgentBriefingPanel briefing={briefing} onAction={handleAgentAction} busy={running || recommendedRunning} />}
-
-          {dutyReport && (
-            <AgentDutyReportPanel
-              report={dutyReport}
+            <AgentTasksPanel
+              tasks={agentTasks}
               onAction={handleAgentAction}
-              onSendFeishu={handleSendFeishuReport}
+              onComplete={handleTaskDone}
+              onRefresh={handleRefreshAgentTasks}
+              refreshing={refreshingTasks}
               busy={running || recommendedRunning}
+            />
+
+            {briefing && <AgentBriefingPanel briefing={briefing} onAction={handleAgentAction} busy={running || recommendedRunning} />}
+
+            {dutyReport && (
+              <AgentDutyReportPanel
+                report={dutyReport}
+                onAction={handleAgentAction}
+                onSendFeishu={handleSendFeishuReport}
+                busy={running || recommendedRunning}
+                sendingFeishu={sendingFeishuReport}
+                feishuReady={settings.feishu_configured}
+              />
+            )}
+
+            <AgentActivityLog events={agentEvents} />
+
+            {lastRun && (
+              <section className="run-strip">
+                <span>Created {lastRun.jobs_created}</span>
+                <span>Duplicated {lastRun.jobs_duplicated}</span>
+                <span>Failed sources {lastRun.sources_failed}</span>
+                <span>Manual check {lastRun.manual_check_count}</span>
+                <span>Cleaned {lastRun.landing_pages_ignored}</span>
+              </section>
+            )}
+          </div>
+          {agentState && (
+            <AgentEmployeeSidebar
+              state={agentState}
+              onRefreshTasks={handleRefreshAgentTasks}
+              onSendFeishu={handleSendFeishuReport}
+              refreshingTasks={refreshingTasks}
               sendingFeishu={sendingFeishuReport}
               feishuReady={settings.feishu_configured}
             />
           )}
-
-          <AgentActivityLog events={agentEvents} />
-
-          {lastRun && (
-            <section className="run-strip">
-              <span>Created {lastRun.jobs_created}</span>
-              <span>Duplicated {lastRun.jobs_duplicated}</span>
-              <span>Failed sources {lastRun.sources_failed}</span>
-              <span>Manual check {lastRun.manual_check_count}</span>
-              <span>Cleaned {lastRun.landing_pages_ignored}</span>
-            </section>
-          )}
-        </>
+        </section>
       )}
 
       {activeView === "opportunities" && (
@@ -1156,6 +1186,114 @@ function AgentTasksPanel({
         {tasks.length === 0 && <div className="empty-source">Refresh tasks after setting companies and running a crawl.</div>}
       </div>
     </section>
+  );
+}
+
+function AgentEmployeeSidebar({
+  state,
+  onRefreshTasks,
+  onSendFeishu,
+  refreshingTasks,
+  sendingFeishu,
+  feishuReady,
+}: {
+  state: AgentState;
+  onRefreshTasks: () => void | Promise<void>;
+  onSendFeishu: () => void | Promise<void>;
+  refreshingTasks: boolean;
+  sendingFeishu: boolean;
+  feishuReady: boolean;
+}) {
+  const topGaps = state.gaps.slice(0, 3);
+  return (
+    <aside className={`employee-sidebar employee-${state.mode}`}>
+      <div className="employee-portrait">
+        <img src={state.profile.avatar} alt={state.profile.name} />
+        <div className="employee-presence">
+          <span />
+          {state.profile.presence}
+        </div>
+      </div>
+
+      <div className="employee-identity">
+        <h2>{state.profile.name}</h2>
+        <strong>{state.profile.role}</strong>
+        <p>{state.profile.mission}</p>
+      </div>
+
+      <div className="employee-focus">
+        <span>Current Focus</span>
+        <strong>{state.focus}</strong>
+      </div>
+
+      <div className="employee-score">
+        <div>
+          <span>Digital employee maturity</span>
+          <strong>{state.maturity_score}</strong>
+        </div>
+        <div className="score-track" aria-label="Digital employee maturity">
+          <span style={{ width: `${state.maturity_score}%` }} />
+        </div>
+      </div>
+
+      <div className="employee-workload">
+        <Metric label="Open tasks" value={state.workload.open_tasks} />
+        <Metric label="Strong" value={state.workload.strong_matches} />
+        <Metric label="Decisions" value={state.workload.manual_decisions} />
+        <Metric label="Source issues" value={state.workload.source_issues} />
+      </div>
+
+      <div className="employee-actions">
+        <button type="button" onClick={onRefreshTasks} disabled={refreshingTasks}>
+          {refreshingTasks ? "Refreshing..." : "Refresh Work Queue"}
+        </button>
+        <button type="button" onClick={onSendFeishu} disabled={sendingFeishu || !feishuReady}>
+          {sendingFeishu ? "Sending..." : "Send Duty Report"}
+        </button>
+      </div>
+
+      <section className="employee-section">
+        <h3>Capabilities</h3>
+        <div className="capability-list">
+          {state.capabilities.map((item) => (
+            <div className="capability-row" key={item.key}>
+              <div>
+                <strong>{item.label}</strong>
+                <span>{item.evidence}</span>
+              </div>
+              <b>{item.level}</b>
+              <div className="capability-track">
+                <span style={{ width: `${item.level}%` }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="employee-section">
+        <h3>Mainstream Gaps</h3>
+        <div className="gap-list">
+          {topGaps.map((gap) => (
+            <div className="gap-item" key={gap.key}>
+              <strong>{gap.label}</strong>
+              <span>{gap.next_step}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="employee-section">
+        <h3>Operating Cycle</h3>
+        <div className="cycle-list">
+          {state.operating_cycle.map((moment) => (
+            <div className="cycle-row" key={`${moment.time}-${moment.title}`}>
+              <strong>{moment.time}</strong>
+              <span>{moment.title}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+    </aside>
   );
 }
 
