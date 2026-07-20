@@ -210,6 +210,56 @@ h2 {
   font-size: 14px;
 }
 
+.activity-panel {
+  overflow: hidden;
+  border: 1px solid #e3e8f2;
+  border-radius: 8px;
+  background: #fff;
+  margin-bottom: 16px;
+}
+
+.activity-list {
+  display: grid;
+}
+
+.activity-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: start;
+  border-bottom: 1px solid #edf1f7;
+  padding: 13px 16px;
+}
+
+.activity-row:last-child {
+  border-bottom: 0;
+}
+
+.activity-row strong,
+.activity-row span {
+  display: block;
+}
+
+.activity-row strong {
+  color: #18212f;
+  font-size: 14px;
+}
+
+.activity-row span,
+.activity-row time {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.activity-success {
+  border-left: 3px solid #167145;
+}
+
+.activity-warning {
+  border-left: 3px solid #b7791f;
+}
+
 .run-strip {
   border: 1px solid #d9e8ff;
   background: #edf6ff;
@@ -697,6 +747,7 @@ td {
   .source-form,
   .source-actions,
   .source-row,
+  .activity-row,
   .settings-grid,
   .run-source-row {
     align-items: stretch;

@@ -43,6 +43,15 @@ func (h *Handlers) GetAgentBriefing(c *gin.Context) {
 	c.JSON(http.StatusOK, jobs.BuildAgentBriefing(jobList, sources, runs))
 }
 
+func (h *Handlers) ListAgentEvents(c *gin.Context) {
+	events, err := h.Repo.ListAgentEvents(c.Request.Context(), 20)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, events)
+}
+
 func (h *Handlers) ListJobs(c *gin.Context) {
 	filter := jobs.ListFilter{Status: domain.JobStatus(c.Query("status"))}
 	list, err := h.Repo.ListJobs(c.Request.Context(), filter)
@@ -95,6 +104,21 @@ func (h *Handlers) ImportURL(c *gin.Context) {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
+	if duplicate {
+		h.recordAgentEvent(c, jobs.AgentEventInput{
+			Type:    "job_import_duplicate",
+			Title:   "Imported link was already tracked",
+			Summary: "I checked the pasted recruitment link and found it already exists: " + created.Title,
+			Level:   "info",
+		})
+	} else {
+		h.recordAgentEvent(c, jobs.AgentEventInput{
+			Type:    "job_imported",
+			Title:   "Imported a recruitment link",
+			Summary: "I saved and scored: " + created.Title,
+			Level:   "success",
+		})
+	}
 	c.JSON(http.StatusCreated, gin.H{
 		"job":         created,
 		"duplicate":   duplicate,
@@ -118,6 +142,12 @@ func (h *Handlers) UpdateJobStatus(c *gin.Context) {
 		respondRepoError(c, err)
 		return
 	}
+	h.recordAgentEvent(c, jobs.AgentEventInput{
+		Type:    "job_status_updated",
+		Title:   "Updated job status",
+		Summary: "You marked job #" + strconv.FormatInt(id, 10) + " as " + string(req.Status) + ".",
+		Level:   "info",
+	})
 	c.Status(http.StatusNoContent)
 }
 
@@ -146,6 +176,7 @@ func (h *Handlers) RunCrawl(c *gin.Context) {
 		respondError(c, http.StatusConflict, err)
 		return
 	}
+	h.recordCrawlEvent(c, "crawl_completed", "Manual crawl completed", summary)
 	c.JSON(http.StatusOK, summary)
 }
 
@@ -160,6 +191,7 @@ func (h *Handlers) RunRecommendedCrawl(c *gin.Context) {
 		respondError(c, http.StatusConflict, err)
 		return
 	}
+	h.recordCrawlEvent(c, "recommended_crawl_completed", "Recommended crawl completed", summary)
 	c.JSON(http.StatusOK, gin.H{
 		"seeded":  seeded.Created,
 		"sources": seeded,
@@ -252,6 +284,14 @@ func (h *Handlers) SeedRecommendedSources(c *gin.Context) {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
+	if result.Created > 0 {
+		h.recordAgentEvent(c, jobs.AgentEventInput{
+			Type:    "recommended_sources_added",
+			Title:   "Added recommended sources",
+			Summary: "I added " + strconv.Itoa(result.Created) + " official recruitment sources.",
+			Level:   "success",
+		})
+	}
 	status := http.StatusCreated
 	if result.Created == 0 {
 		status = http.StatusOK
@@ -310,4 +350,23 @@ func respondRepoError(c *gin.Context, err error) {
 
 func respondError(c *gin.Context, status int, err error) {
 	c.JSON(status, gin.H{"error": err.Error()})
+}
+
+func (h *Handlers) recordCrawlEvent(c *gin.Context, eventType string, title string, summary crawl.RunSummary) {
+	level := "success"
+	if summary.SourcesFailed > 0 {
+		level = "warning"
+	}
+	h.recordAgentEvent(c, jobs.AgentEventInput{
+		Type:    eventType,
+		Title:   title,
+		Summary: "Created " + strconv.Itoa(summary.JobsCreated) + " jobs, found " + strconv.Itoa(summary.JobsDuplicated) + " duplicates, and flagged " + strconv.Itoa(summary.ManualCheckCount) + " for review.",
+		Level:   level,
+	})
+}
+
+func (h *Handlers) recordAgentEvent(c *gin.Context, input jobs.AgentEventInput) {
+	if _, err := h.Repo.CreateAgentEvent(c.Request.Context(), input); err != nil {
+		_ = c.Error(err)
+	}
 }
