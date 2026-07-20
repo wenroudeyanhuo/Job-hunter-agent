@@ -49,6 +49,50 @@ func TestImportURLCreatesScoredJob(t *testing.T) {
 	}
 }
 
+func TestImportURLUsesSavedSettingsForScoring(t *testing.T) {
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<html><head><title>Algorithm Engineer 2027 Campus - Guangzhou</title><meta name="description" content="Machine learning and recommendation systems."></head></html>`))
+	}))
+	defer source.Close()
+
+	repo, handler := testRouter(t, nil)
+	settings := jobs.DefaultSettings()
+	settings.TargetCities = []string{"Guangzhou"}
+	settings.TargetDirections = []string{"algorithm"}
+	if _, err := repo.SaveSettings(t.Context(), settings); err != nil {
+		t.Fatalf("save settings: %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]string{"url": source.URL})
+	req := httptest.NewRequest(http.MethodPost, "/api/jobs/import-url", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Job domain.Job `json:"job"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !containsReason(response.Job.RecommendReasons, "Target city: Guangzhou") {
+		t.Fatalf("expected Guangzhou setting reason, got %#v", response.Job.RecommendReasons)
+	}
+}
+
+func containsReason(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
 func TestImportURLRejectsBadPayload(t *testing.T) {
 	_, handler := testRouter(t, nil)
 	req := httptest.NewRequest(http.MethodPost, "/api/jobs/import-url", bytes.NewReader([]byte(`{"url":"not-a-url"}`)))

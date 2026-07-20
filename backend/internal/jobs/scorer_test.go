@@ -97,3 +97,80 @@ func TestScoreJobDoesNotTreatDomainAsAICompany(t *testing.T) {
 		}
 	}
 }
+
+func TestScoreJobWithSettingsUsesTargetCitiesAndDirections(t *testing.T) {
+	settings := DefaultSettings()
+	settings.TargetCities = []string{"Guangzhou"}
+	settings.TargetDirections = []string{"backend", "go"}
+
+	guangzhou := ScoreJobWithSettings(domain.Job{
+		Company:     "Example",
+		Title:       "Go Backend Engineer 2027 Campus",
+		City:        "Guangzhou",
+		Description: "Campus recruitment for backend microservices with Go.",
+		ApplyURL:    "https://example.com/apply",
+	}, settings)
+	shenzhen := ScoreJobWithSettings(domain.Job{
+		Company:     "Example",
+		Title:       "Go Backend Engineer 2027 Campus",
+		City:        "Shenzhen",
+		Description: "Campus recruitment for backend microservices with Go.",
+		ApplyURL:    "https://example.com/apply",
+	}, settings)
+
+	if guangzhou.Job.MatchScore <= shenzhen.Job.MatchScore {
+		t.Fatalf("expected configured target city to score higher, got %d <= %d", guangzhou.Job.MatchScore, shenzhen.Job.MatchScore)
+	}
+	if !contains(guangzhou.Job.RecommendReasons, "Target city: Guangzhou") {
+		t.Fatalf("expected target city reason, got %#v", guangzhou.Job.RecommendReasons)
+	}
+	if !contains(guangzhou.Job.RecommendReasons, "Matches target direction") {
+		t.Fatalf("expected target direction reason, got %#v", guangzhou.Job.RecommendReasons)
+	}
+}
+
+func TestScoreJobWithSettingsDoesNotRewardUnselectedDirections(t *testing.T) {
+	settings := DefaultSettings()
+	settings.TargetDirections = []string{"algorithm"}
+
+	frontend := ScoreJobWithSettings(domain.Job{
+		Company:     "Example",
+		Title:       "Frontend Engineer 2027 Campus",
+		City:        "Shenzhen",
+		Description: "React and TypeScript web development.",
+		ApplyURL:    "https://example.com/apply",
+	}, settings)
+	algorithm := ScoreJobWithSettings(domain.Job{
+		Company:     "Example",
+		Title:       "Algorithm Engineer 2027 Campus",
+		City:        "Shenzhen",
+		Description: "Machine learning and recommendation systems.",
+		ApplyURL:    "https://example.com/apply",
+	}, settings)
+
+	if frontend.Job.MatchScore >= algorithm.Job.MatchScore {
+		t.Fatalf("expected selected algorithm direction to score higher, got frontend %d algorithm %d", frontend.Job.MatchScore, algorithm.Job.MatchScore)
+	}
+	if contains(frontend.Job.RecommendReasons, "Matches target direction") {
+		t.Fatalf("did not expect unselected frontend direction to be rewarded: %#v", frontend.Job.RecommendReasons)
+	}
+}
+
+func TestScoreJobWithSettingsHardFiltersExcludedKeywords(t *testing.T) {
+	settings := DefaultSettings()
+	settings.ExcludedKeywords = []string{"remote-only"}
+
+	result := ScoreJobWithSettings(domain.Job{
+		Company:     "Example",
+		Title:       "Go Backend Engineer",
+		City:        "Shenzhen",
+		Description: "This is a remote-only contractor role.",
+	}, settings)
+
+	if !result.HardFiltered {
+		t.Fatal("expected configured excluded keyword to hard filter job")
+	}
+	if result.HardFilterReason != "Matched excluded keyword: remote-only" {
+		t.Fatalf("unexpected hard filter reason %q", result.HardFilterReason)
+	}
+}

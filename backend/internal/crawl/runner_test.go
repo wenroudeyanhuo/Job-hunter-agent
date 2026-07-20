@@ -79,6 +79,51 @@ func TestRunnerContinuesWhenCollectorFails(t *testing.T) {
 	}
 }
 
+func TestRunnerUsesSavedSettingsForFiltering(t *testing.T) {
+	ctx := context.Background()
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	repo := jobs.NewRepository(conn)
+	settings := jobs.DefaultSettings()
+	settings.ExcludedKeywords = []string{"remote-only"}
+	if _, err := repo.SaveSettings(ctx, settings); err != nil {
+		t.Fatalf("save settings: %v", err)
+	}
+
+	runner := NewRunner(repo, []Collector{
+		fakeCollector{name: "valid", jobs: []domain.Job{{
+			Company:     "Example",
+			Title:       "Go Backend Engineer",
+			City:        "Shenzhen",
+			Description: "This is a remote-only contractor role.",
+			ApplyURL:    "https://example.com/apply",
+			SourceName:  "valid",
+			SourceURL:   "https://example.com/source",
+		}}},
+	})
+
+	summary, err := runner.Run(ctx, "manual")
+	if err != nil {
+		t.Fatalf("run crawler: %v", err)
+	}
+	if summary.JobsCreated != 0 {
+		t.Fatalf("expected configured excluded keyword to prevent creation, got %d created", summary.JobsCreated)
+	}
+	runs, err := repo.ListRuns(ctx)
+	if err != nil {
+		t.Fatalf("list runs: %v", err)
+	}
+	sourceResults, err := repo.ListRunSources(ctx, runs[0].ID)
+	if err != nil {
+		t.Fatalf("list run source results: %v", err)
+	}
+	if len(sourceResults) != 1 || sourceResults[0].JobsFiltered != 1 {
+		t.Fatalf("expected one filtered job source result, got %#v", sourceResults)
+	}
+}
+
 type fakeCollector struct {
 	name string
 	jobs []domain.Job
