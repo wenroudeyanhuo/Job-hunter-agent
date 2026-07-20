@@ -14,6 +14,40 @@ import (
 )
 
 const maxImportBodyBytes = 1 << 20
+const defaultUserAgent = "JobHunterAgent/0.1 (+https://github.com/wenroudeyanhuo/Job-hunter-agent)"
+
+var recruitmentLinkKeywords = []string{
+	"job",
+	"jobs",
+	"career",
+	"careers",
+	"campus",
+	"graduate",
+	"intern",
+	"recruit",
+	"recruitment",
+	"apply",
+	"frontend",
+	"backend",
+	"java",
+	"golang",
+	"algorithm",
+	"ai",
+	"llm",
+	"招聘",
+	"校招",
+	"秋招",
+	"春招",
+	"应届",
+	"实习",
+	"岗位",
+	"职位",
+	"投递",
+	"前端",
+	"后端",
+	"算法",
+	"大模型",
+}
 
 func ImportURL(ctx context.Context, rawURL string, client *http.Client) (domain.Job, error) {
 	parsed, err := parseHTTPURL(rawURL)
@@ -37,7 +71,7 @@ func ImportURL(ctx context.Context, rawURL string, client *http.Client) (domain.
 	if err != nil {
 		return domain.Job{}, fmt.Errorf("create import request: %w", err)
 	}
-	req.Header.Set("User-Agent", "JobHunterAgent/0.1 (+https://github.com/wenroudeyanhuo/Job-hunter-agent)")
+	req.Header.Set("User-Agent", defaultUserAgent)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -71,6 +105,74 @@ func ImportURL(ctx context.Context, rawURL string, client *http.Client) (domain.
 		job.City = "Shenzhen"
 	}
 	return job, nil
+}
+
+func DiscoverLinks(ctx context.Context, rawURL string, client *http.Client, limit int) ([]string, error) {
+	parsed, err := parseHTTPURL(rawURL)
+	if err != nil {
+		return nil, err
+	}
+	if limit <= 0 {
+		return []string{}, nil
+	}
+	if client == nil {
+		client = http.DefaultClient
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("create discovery request: %w", err)
+	}
+	req.Header.Set("User-Agent", defaultUserAgent)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetch discovery page: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("fetch discovery page returned HTTP %d", resp.StatusCode)
+	}
+
+	doc, err := html.Parse(io.LimitReader(resp.Body, maxImportBodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("parse discovery page: %w", err)
+	}
+
+	links := []string{}
+	seen := map[string]struct{}{
+		parsed.String(): {},
+	}
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if len(links) >= limit {
+			return
+		}
+		if n.Type == html.ElementNode && n.Data == "a" {
+			href := attrValue(n, "href")
+			text := cleanText(nodeText(n))
+			if href != "" && containsAny(href+" "+text, recruitmentLinkKeywords...) {
+				resolved, err := parsed.Parse(href)
+				if err == nil && (resolved.Scheme == "http" || resolved.Scheme == "https") && resolved.Host != "" {
+					resolved.Fragment = ""
+					link := resolved.String()
+					if _, ok := seen[link]; !ok {
+						seen[link] = struct{}{}
+						links = append(links, link)
+					}
+				}
+			}
+		}
+		for child := n.FirstChild; child != nil; child = child.NextSibling {
+			walk(child)
+			if len(links) >= limit {
+				return
+			}
+		}
+	}
+	walk(doc)
+	return links, nil
 }
 
 func parseHTTPURL(rawURL string) (*url.URL, error) {
@@ -141,6 +243,30 @@ func fallbackTitle(parsed *url.URL) string {
 
 func cleanText(value string) string {
 	return strings.Join(strings.Fields(strings.TrimSpace(value)), " ")
+}
+
+func attrValue(node *html.Node, key string) string {
+	for _, attr := range node.Attr {
+		if strings.EqualFold(attr.Key, key) {
+			return strings.TrimSpace(attr.Val)
+		}
+	}
+	return ""
+}
+
+func nodeText(node *html.Node) string {
+	var values []string
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if n.Type == html.TextNode {
+			values = append(values, n.Data)
+		}
+		for child := n.FirstChild; child != nil; child = child.NextSibling {
+			walk(child)
+		}
+	}
+	walk(node)
+	return strings.Join(values, " ")
 }
 
 func containsAny(value string, needles ...string) bool {
