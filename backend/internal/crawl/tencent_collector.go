@@ -30,7 +30,7 @@ func newTencentCareerCollector(endpoint string, client *http.Client) TencentCare
 	if client == nil {
 		client = &http.Client{Timeout: 20 * time.Second}
 	}
-	return TencentCareerCollector{endpoint: strings.TrimRight(endpoint, "/"), client: client}
+	return TencentCareerCollector{endpoint: normalizeEndpointRoot(endpoint), client: client}
 }
 
 func (TencentCareerCollector) Name() string {

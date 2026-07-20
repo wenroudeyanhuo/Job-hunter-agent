@@ -2,6 +2,7 @@ package crawl
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -131,20 +132,22 @@ func (c DBSourceCollector) Collect(ctx context.Context) ([]domain.Job, error) {
 		if source.Type != "public_url" || source.URL == "" {
 			continue
 		}
-		if isTencentCareerSource(source.URL) {
-			collected, err := NewTencentCareerCollector(c.client).Collect(ctx)
+		if source.ParserType == "tencent_api" || isTencentCareerSource(source.URL) {
+			collected, err := newTencentCareerCollector(source.URL, c.client).Collect(ctx)
 			if err != nil {
-				return nil, err
+				jobs = appendUniqueJob(jobs, seen, failedSourceJob(source, err))
+				continue
 			}
 			for _, job := range collected {
 				jobs = appendUniqueJob(jobs, seen, job)
 			}
 			continue
 		}
-		if isByteDanceCareerSource(source.URL) {
-			collected, err := NewByteDanceCareerCollector(c.client).Collect(ctx)
+		if source.ParserType == "bytedance_api" || isByteDanceCareerSource(source.URL) {
+			collected, err := newByteDanceCareerCollector(source.URL, c.client).Collect(ctx)
 			if err != nil {
-				return nil, err
+				jobs = appendUniqueJob(jobs, seen, failedSourceJob(source, err))
+				continue
 			}
 			for _, job := range collected {
 				jobs = appendUniqueJob(jobs, seen, job)
@@ -178,4 +181,17 @@ func isByteDanceCareerSource(rawURL string) bool {
 	}
 	host := strings.ToLower(parsed.Hostname())
 	return strings.Contains(host, "jobs.bytedance.com") || strings.Contains(host, "jobs.toutiao.com")
+}
+
+func failedSourceJob(source jobs.Source, err error) domain.Job {
+	return domain.Job{
+		Company:        source.Name,
+		Title:          source.Name + " source needs attention",
+		SourceName:     source.Name,
+		SourceURL:      source.URL,
+		ApplyURL:       source.URL,
+		Status:         domain.StatusManualCheck,
+		Description:    fmt.Sprintf("Source parser failed: %v", err),
+		PenaltyReasons: []string{"Source parser failed"},
+	}
 }

@@ -30,7 +30,7 @@ func newByteDanceCareerCollector(endpoint string, client *http.Client) ByteDance
 	if client == nil {
 		client = &http.Client{Timeout: 20 * time.Second}
 	}
-	return ByteDanceCareerCollector{endpoint: strings.TrimRight(endpoint, "/"), client: client}
+	return ByteDanceCareerCollector{endpoint: normalizeEndpointRoot(endpoint), client: client}
 }
 
 func (ByteDanceCareerCollector) Name() string {
