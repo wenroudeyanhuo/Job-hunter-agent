@@ -59,21 +59,28 @@ func (c PublicURLCollector) Collect(ctx context.Context) ([]domain.Job, error) {
 		if job.SourceName == "" {
 			job.SourceName = "public_urls"
 		}
-		jobs = appendUniqueJob(jobs, seen, job)
 
 		links, err := importer.DiscoverLinks(ctx, sourceURL, c.client, discoveredLinksPerSource)
-		if err != nil {
-			continue
+		discoveredConcreteJobs := 0
+		if err == nil {
+			for _, link := range links {
+				discoveredJob, err := importer.ImportURL(ctx, link, c.client)
+				if err != nil {
+					continue
+				}
+				if discoveredJob.SourceName == "" {
+					discoveredJob.SourceName = job.SourceName
+				}
+				if !importer.LooksLikeConcreteJobPosting(discoveredJob) && discoveredJob.Status != domain.StatusManualCheck {
+					continue
+				}
+				discoveredConcreteJobs++
+				jobs = appendUniqueJob(jobs, seen, discoveredJob)
+			}
 		}
-		for _, link := range links {
-			discoveredJob, err := importer.ImportURL(ctx, link, c.client)
-			if err != nil {
-				continue
-			}
-			if discoveredJob.SourceName == "" {
-				discoveredJob.SourceName = job.SourceName
-			}
-			jobs = appendUniqueJob(jobs, seen, discoveredJob)
+
+		if importer.LooksLikeConcreteJobPosting(job) || (job.Status == domain.StatusManualCheck && discoveredConcreteJobs == 0) {
+			jobs = appendUniqueJob(jobs, seen, job)
 		}
 	}
 	return jobs, nil

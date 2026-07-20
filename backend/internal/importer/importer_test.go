@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/domain"
 )
 
 func TestImportURLParsesTitleAndDescription(t *testing.T) {
@@ -82,5 +84,62 @@ func TestDiscoverLinksFindsRecruitmentAnchors(t *testing.T) {
 	}
 	if links[0] != server.URL+"/jobs/backend-go" {
 		t.Fatalf("unexpected link %q", links[0])
+	}
+}
+
+func TestDiscoverLinksFindsChineseRecruitmentAnchors(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<html><body>
+<a href="/positions/algorithm">算法工程师（深圳）</a>
+<a href="/about">关于我们</a>
+</body></html>`))
+	}))
+	defer server.Close()
+
+	links, err := DiscoverLinks(context.Background(), server.URL, server.Client(), 10)
+	if err != nil {
+		t.Fatalf("discover links: %v", err)
+	}
+
+	if len(links) != 1 || links[0] != server.URL+"/positions/algorithm" {
+		t.Fatalf("unexpected links: %#v", links)
+	}
+}
+
+func TestDiscoverLinksFindsRecruitmentURLsInScripts(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<html><body>
+<script>window.__jobs = [{"url":"\/campus\/position\/12345?lang=zh-CN"}]</script>
+</body></html>`))
+	}))
+	defer server.Close()
+
+	links, err := DiscoverLinks(context.Background(), server.URL, server.Client(), 10)
+	if err != nil {
+		t.Fatalf("discover links: %v", err)
+	}
+
+	if len(links) != 1 || links[0] != server.URL+"/campus/position/12345?lang=zh-CN" {
+		t.Fatalf("unexpected links: %#v", links)
+	}
+}
+
+func TestLooksLikeConcreteJobPostingRejectsRecruitmentLandingPage(t *testing.T) {
+	if LooksLikeConcreteJobPosting(domain.Job{
+		Title:       "华为应届生_实习生_留学生_海外本地最新招聘信息-华为校园招聘",
+		Description: "校园招聘官网",
+		ApplyURL:    "https://career.example.com/",
+	}) {
+		t.Fatal("expected recruitment landing page to be rejected")
+	}
+}
+
+func TestLooksLikeConcreteJobPostingAcceptsRolePage(t *testing.T) {
+	if !LooksLikeConcreteJobPosting(domain.Job{
+		Title:       "Go Backend Engineer 2027 Campus - Shenzhen",
+		Description: "Job description and requirements for Go backend microservices.",
+		ApplyURL:    "https://career.example.com/jobs/backend-go",
+	}) {
+		t.Fatal("expected concrete role page to be accepted")
 	}
 }
