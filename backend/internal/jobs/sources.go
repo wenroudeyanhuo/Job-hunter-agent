@@ -9,16 +9,29 @@ import (
 	"time"
 )
 
+const (
+	SourceHealthUnknown = "unknown"
+	SourceHealthHealthy = "healthy"
+	SourceHealthWarning = "warning"
+	SourceHealthBroken  = "broken"
+)
+
 type Source struct {
-	ID         int64      `json:"id"`
-	Name       string     `json:"name"`
-	Type       string     `json:"type"`
-	URL        string     `json:"url"`
-	Enabled    bool       `json:"enabled"`
-	ParserType string     `json:"parser_type"`
-	LastRunAt  *time.Time `json:"last_run_at,omitempty"`
-	CreatedAt  time.Time  `json:"created_at"`
-	UpdatedAt  time.Time  `json:"updated_at"`
+	ID                  int64      `json:"id"`
+	Name                string     `json:"name"`
+	Type                string     `json:"type"`
+	URL                 string     `json:"url"`
+	Enabled             bool       `json:"enabled"`
+	ParserType          string     `json:"parser_type"`
+	LastRunAt           *time.Time `json:"last_run_at,omitempty"`
+	HealthStatus        string     `json:"health_status"`
+	HealthReason        string     `json:"health_reason"`
+	ConsecutiveFailures int        `json:"consecutive_failures"`
+	LastSuccessAt       *time.Time `json:"last_success_at,omitempty"`
+	LastFailureAt       *time.Time `json:"last_failure_at,omitempty"`
+	LastFoundCount      int        `json:"last_found_count"`
+	CreatedAt           time.Time  `json:"created_at"`
+	UpdatedAt           time.Time  `json:"updated_at"`
 }
 
 type SourceInput struct {
@@ -33,6 +46,13 @@ type SeedSourcesResult struct {
 	Total      int `json:"total"`
 	Created    int `json:"created"`
 	Duplicated int `json:"duplicated"`
+}
+
+type SourceHealthInput struct {
+	Status     string
+	Reason     string
+	FoundCount int
+	Success    bool
 }
 
 func RecommendedSources() []SourceInput {
@@ -181,6 +201,44 @@ func (r *Repository) UpdateSourceEnabled(ctx context.Context, id int64, enabled 
 	return nil
 }
 
+func (r *Repository) UpdateSourceHealthByURL(ctx context.Context, rawURL string, input SourceHealthInput) error {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return nil
+	}
+	status := normalizeSourceHealthStatus(input.Status)
+	now := time.Now().UTC()
+	var result sql.Result
+	var err error
+	if input.Success {
+		result, err = r.db.ExecContext(ctx, `
+			UPDATE job_sources
+			SET last_run_at = ?, health_status = ?, health_reason = ?, consecutive_failures = 0,
+				last_success_at = ?, last_found_count = ?, updated_at = CURRENT_TIMESTAMP
+			WHERE url = ?
+		`, now, status, strings.TrimSpace(input.Reason), now, input.FoundCount, rawURL)
+	} else {
+		result, err = r.db.ExecContext(ctx, `
+			UPDATE job_sources
+			SET last_run_at = ?, health_status = ?, health_reason = ?,
+				consecutive_failures = consecutive_failures + 1, last_failure_at = ?,
+				last_found_count = ?, updated_at = CURRENT_TIMESTAMP
+			WHERE url = ?
+		`, now, status, strings.TrimSpace(input.Reason), now, input.FoundCount, rawURL)
+	}
+	if err != nil {
+		return fmt.Errorf("update source health: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("read source health rows affected: %w", err)
+	}
+	if affected == 0 {
+		return nil
+	}
+	return nil
+}
+
 func (r *Repository) SeedPublicURLSources(ctx context.Context, urls []string) error {
 	seen := map[string]bool{}
 	for _, rawURL := range urls {
@@ -238,7 +296,9 @@ func sourceNameFromURL(parsed *url.URL) string {
 
 func selectSourceSQL() string {
 	return `
-		SELECT id, name, type, url, enabled, parser_type, last_run_at, created_at, updated_at
+		SELECT id, name, type, url, enabled, parser_type, last_run_at,
+			health_status, health_reason, consecutive_failures, last_success_at,
+			last_failure_at, last_found_count, created_at, updated_at
 		FROM job_sources`
 }
 
@@ -257,12 +317,19 @@ func scanSource(scanner sourceScanner) (Source, error) {
 		&enabled,
 		&source.ParserType,
 		&source.LastRunAt,
+		&source.HealthStatus,
+		&source.HealthReason,
+		&source.ConsecutiveFailures,
+		&source.LastSuccessAt,
+		&source.LastFailureAt,
+		&source.LastFoundCount,
 		&source.CreatedAt,
 		&source.UpdatedAt,
 	); err != nil {
 		return Source{}, fmt.Errorf("scan source: %w", err)
 	}
 	source.Enabled = enabled == 1
+	source.HealthStatus = normalizeSourceHealthStatus(source.HealthStatus)
 	return source, nil
 }
 
@@ -271,4 +338,13 @@ func boolToInt(value bool) int {
 		return 1
 	}
 	return 0
+}
+
+func normalizeSourceHealthStatus(status string) string {
+	switch strings.TrimSpace(status) {
+	case SourceHealthHealthy, SourceHealthWarning, SourceHealthBroken:
+		return strings.TrimSpace(status)
+	default:
+		return SourceHealthUnknown
+	}
 }

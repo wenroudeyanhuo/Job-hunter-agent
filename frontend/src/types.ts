@@ -69,6 +69,13 @@ export interface Source {
   url: string;
   enabled: boolean;
   parser_type: string;
+  last_run_at?: string;
+  health_status: "unknown" | "healthy" | "warning" | "broken" | string;
+  health_reason: string;
+  consecutive_failures: number;
+  last_success_at?: string;
+  last_failure_at?: string;
+  last_found_count: number;
 }
 
 export interface Settings {
@@ -110,6 +117,7 @@ export interface AgentMetrics {
   interested_jobs: number;
   applied_jobs: number;
   enabled_sources: number;
+  broken_sources: number;
 }
 
 export interface AgentNextAction {

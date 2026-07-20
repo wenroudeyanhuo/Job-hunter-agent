@@ -52,6 +52,60 @@ func TestRepositoryCreateListAndToggleSource(t *testing.T) {
 	}
 }
 
+func TestRepositoryUpdateSourceHealthByURL(t *testing.T) {
+	ctx := context.Background()
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	repo := NewRepository(conn)
+
+	created, err := repo.CreateSource(ctx, SourceInput{
+		Name:       "Meituan Campus",
+		Type:       "public_url",
+		URL:        "https://campus.meituan.com/",
+		Enabled:    true,
+		ParserType: "meituan_api",
+	})
+	if err != nil {
+		t.Fatalf("create source: %v", err)
+	}
+
+	if err := repo.UpdateSourceHealthByURL(ctx, created.URL, SourceHealthInput{
+		Status:     SourceHealthHealthy,
+		Reason:     "Collected 3 jobs",
+		FoundCount: 3,
+		Success:    true,
+	}); err != nil {
+		t.Fatalf("update source health success: %v", err)
+	}
+	source, err := repo.GetSource(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("get source: %v", err)
+	}
+	if source.HealthStatus != SourceHealthHealthy || source.ConsecutiveFailures != 0 || source.LastSuccessAt == nil {
+		t.Fatalf("expected healthy source, got %#v", source)
+	}
+	if source.HealthReason != "Collected 3 jobs" || source.LastFoundCount != 3 {
+		t.Fatalf("unexpected health details: %#v", source)
+	}
+
+	if err := repo.UpdateSourceHealthByURL(ctx, created.URL, SourceHealthInput{
+		Status:  SourceHealthBroken,
+		Reason:  "HTTP 502 from official API",
+		Success: false,
+	}); err != nil {
+		t.Fatalf("update source health failure: %v", err)
+	}
+	source, err = repo.GetSource(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("get source after failure: %v", err)
+	}
+	if source.HealthStatus != SourceHealthBroken || source.ConsecutiveFailures != 1 || source.LastFailureAt == nil {
+		t.Fatalf("expected broken source with one failure, got %#v", source)
+	}
+}
+
 func TestRepositorySeedSourcesDeduplicatesURLs(t *testing.T) {
 	ctx := context.Background()
 	conn, err := db.Open(":memory:")

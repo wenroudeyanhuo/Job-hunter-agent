@@ -88,3 +88,25 @@ func TestBuildAgentBriefingHighlightsLowConfidenceQueue(t *testing.T) {
 		t.Fatalf("expected low confidence review action, got %#v", briefing.NextActions)
 	}
 }
+
+func TestBuildAgentBriefingFlagsBrokenSources(t *testing.T) {
+	briefing := BuildAgentBriefing(nil, []Source{
+		{Name: "Meituan Campus", Enabled: true, HealthStatus: SourceHealthBroken},
+		{Name: "Tencent Careers", Enabled: true, HealthStatus: SourceHealthHealthy},
+	}, []domain.JobRun{
+		{Status: "success", JobsCreated: 0, SourcesFailed: 0},
+	})
+
+	if briefing.Tone != "needs_attention" {
+		t.Fatalf("expected needs_attention tone, got %q", briefing.Tone)
+	}
+	if briefing.Metrics.BrokenSources != 1 {
+		t.Fatalf("expected one broken source, got %#v", briefing.Metrics)
+	}
+	for _, action := range briefing.NextActions {
+		if action.Action == "inspect_failed_sources" {
+			return
+		}
+	}
+	t.Fatalf("expected inspect_failed_sources action, got %#v", briefing.NextActions)
+}

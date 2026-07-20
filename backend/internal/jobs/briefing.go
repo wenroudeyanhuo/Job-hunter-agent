@@ -24,6 +24,7 @@ type AgentMetrics struct {
 	InterestedJobs    int `json:"interested_jobs"`
 	AppliedJobs       int `json:"applied_jobs"`
 	EnabledSources    int `json:"enabled_sources"`
+	BrokenSources     int `json:"broken_sources"`
 }
 
 type AgentNextAction struct {
@@ -45,6 +46,9 @@ func BuildAgentBriefing(jobList []domain.Job, sources []Source, runs []domain.Jo
 	for _, source := range sources {
 		if source.Enabled {
 			briefing.Metrics.EnabledSources++
+			if source.HealthStatus == SourceHealthBroken {
+				briefing.Metrics.BrokenSources++
+			}
 		}
 	}
 	for _, job := range jobList {
@@ -111,6 +115,15 @@ func BuildAgentBriefing(jobList []domain.Job, sources []Source, runs []domain.Jo
 			Label:    "Review strong matches",
 			Reason:   "I found high-score roles that have not been marked interested or applied.",
 			Priority: 80,
+		})
+	}
+	if briefing.Metrics.BrokenSources > 0 {
+		briefing.Tone = "needs_attention"
+		briefing.NextActions = append(briefing.NextActions, AgentNextAction{
+			Action:   "inspect_failed_sources",
+			Label:    "Inspect unhealthy sources",
+			Reason:   "Some enabled sources are broken, so I may miss fresh opportunities until they recover.",
+			Priority: 86,
 		})
 	}
 	if briefing.LatestRun == nil {

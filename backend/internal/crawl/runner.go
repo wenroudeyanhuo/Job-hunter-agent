@@ -77,6 +77,10 @@ func (r *Runner) Run(ctx context.Context, trigger string) (RunSummary, error) {
 		for _, rawJob := range collected {
 			stat := sourceStat(sourceStats, run.ID, collector.Name(), rawJob.SourceName, rawJob.SourceURL)
 			stat.JobsFound++
+			if isSourceParserDiagnostic(rawJob) {
+				stat.Status = "failed"
+				stat.ErrorMessage = appendErrorMessage(stat.ErrorMessage, rawJob.Description)
+			}
 			scored := jobs.ScoreJobWithSettings(rawJob, settings)
 			if scored.HardFiltered {
 				stat.JobsFiltered++
@@ -116,6 +120,9 @@ func (r *Runner) Run(ctx context.Context, trigger string) (RunSummary, error) {
 			if _, err := r.repo.CreateRunSourceResult(ctx, *stat); err != nil {
 				errors = append(errors, fmt.Sprintf("%s source result: %v", collector.Name(), err))
 			}
+			if err := r.updateSourceHealth(ctx, *stat); err != nil {
+				errors = append(errors, fmt.Sprintf("%s source health: %v", collector.Name(), err))
+			}
 		}
 	}
 
@@ -142,6 +149,51 @@ func (r *Runner) Run(ctx context.Context, trigger string) (RunSummary, error) {
 		return summary.RecommendedJobs[i].MatchScore > summary.RecommendedJobs[j].MatchScore
 	})
 	return summary, nil
+}
+
+func (r *Runner) updateSourceHealth(ctx context.Context, stat jobs.RunSourceResultInput) error {
+	if strings.TrimSpace(stat.SourceURL) == "" {
+		return nil
+	}
+	success := stat.Status == "success" || stat.Status == "partial_success"
+	status := jobs.SourceHealthHealthy
+	reason := fmt.Sprintf("Collected %d jobs", stat.JobsFound)
+	if stat.Status == "partial_success" {
+		status = jobs.SourceHealthWarning
+		reason = strings.TrimSpace(stat.ErrorMessage)
+		if reason == "" {
+			reason = "Partial success during collection"
+		}
+	}
+	if !success {
+		status = jobs.SourceHealthBroken
+		reason = strings.TrimSpace(stat.ErrorMessage)
+		if reason == "" {
+			reason = "Collection failed"
+		}
+	}
+	if success && stat.JobsFound == 0 {
+		status = jobs.SourceHealthWarning
+		reason = "No jobs found in latest run"
+	}
+	return r.repo.UpdateSourceHealthByURL(ctx, stat.SourceURL, jobs.SourceHealthInput{
+		Status:     status,
+		Reason:     reason,
+		FoundCount: stat.JobsFound,
+		Success:    success && status != jobs.SourceHealthBroken,
+	})
+}
+
+func isSourceParserDiagnostic(job domain.Job) bool {
+	if job.Status != domain.StatusManualCheck {
+		return false
+	}
+	for _, reason := range job.PenaltyReasons {
+		if strings.EqualFold(strings.TrimSpace(reason), "Source parser failed") {
+			return true
+		}
+	}
+	return strings.Contains(strings.ToLower(job.Description), "source parser failed")
 }
 
 func sourceStat(stats map[string]*jobs.RunSourceResultInput, runID int64, collectorName string, sourceName string, sourceURL string) *jobs.RunSourceResultInput {
