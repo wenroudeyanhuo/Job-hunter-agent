@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS job_sources (
     type TEXT NOT NULL,
     url TEXT NOT NULL DEFAULT '',
     enabled INTEGER NOT NULL DEFAULT 1,
+    category TEXT NOT NULL DEFAULT 'general',
     parser_type TEXT NOT NULL DEFAULT 'generic',
     last_run_at TIMESTAMP NULL,
     health_status TEXT NOT NULL DEFAULT 'unknown',

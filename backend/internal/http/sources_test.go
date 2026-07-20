@@ -24,14 +24,18 @@ func TestSourcesAPI(t *testing.T) {
 	}
 
 	var created struct {
-		ID      int64 `json:"id"`
-		Enabled bool  `json:"enabled"`
+		ID       int64  `json:"id"`
+		Enabled  bool   `json:"enabled"`
+		Category string `json:"category"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
 		t.Fatalf("decode created source: %v", err)
 	}
 	if created.ID == 0 || !created.Enabled {
 		t.Fatalf("unexpected created source: %#v", created)
+	}
+	if created.Category != "general" {
+		t.Fatalf("expected default category, got %#v", created)
 	}
 
 	toggleBody := bytes.NewBufferString(`{"enabled":false}`)

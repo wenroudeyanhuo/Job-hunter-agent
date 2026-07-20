@@ -37,6 +37,33 @@ const sourceHealthLabels: Record<string, string> = {
   unknown: "Unknown",
 };
 
+type AppView = "dashboard" | "opportunities" | "companies" | "runs" | "settings";
+
+const appViews: Array<{ id: AppView; label: string }> = [
+  { id: "dashboard", label: "Dashboard" },
+  { id: "opportunities", label: "Opportunities" },
+  { id: "companies", label: "Companies" },
+  { id: "runs", label: "Runs" },
+  { id: "settings", label: "Settings" },
+];
+
+const categoryLabels: Record<string, string> = {
+  all: "All categories",
+  internet: "Internet",
+  ai: "AI",
+  hardware: "Hardware",
+  fintech: "Fintech",
+  game: "Games",
+  new_energy: "New energy",
+  software: "Software",
+  security: "Security",
+  logistics: "Logistics",
+  medical: "Medical",
+  manufacturing: "Manufacturing",
+  custom: "Custom",
+  general: "General",
+};
+
 const directionOptions = ["all", "frontend", "backend", "java", "go", "algorithm", "ai_application"];
 const defaultSettings: Settings = {
   target_cities: ["Shenzhen"],
@@ -48,6 +75,7 @@ const defaultSettings: Settings = {
 };
 
 export default function App() {
+  const [activeView, setActiveView] = useState<AppView>("dashboard");
   const [jobs, setJobs] = useState<Job[]>([]);
   const [status, setStatus] = useState<JobStatus | "all">("all");
   const [direction, setDirection] = useState("all");
@@ -62,6 +90,8 @@ export default function App() {
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
   const [runSources, setRunSources] = useState<JobRunSource[]>([]);
   const [sourceURLValue, setSourceURLValue] = useState("");
+  const [companyCategoryFilter, setCompanyCategoryFilter] = useState("all");
+  const [companyQuery, setCompanyQuery] = useState("");
   const [addingSource, setAddingSource] = useState(false);
   const [seedingSources, setSeedingSources] = useState(false);
   const [recommendedRunning, setRecommendedRunning] = useState(false);
@@ -136,6 +166,25 @@ export default function App() {
   }, [jobs, direction, scoreView]);
 
   const strongMatches = jobs.filter((job) => job.match_score >= 70).length;
+  const enabledSources = sources.filter((source) => source.enabled).length;
+  const companyCategories = useMemo(() => {
+    const categories = new Set<string>();
+    sources.forEach((source) => categories.add(source.category || "general"));
+    return ["all", ...Array.from(categories).sort()];
+  }, [sources]);
+  const visibleSources = useMemo(() => {
+    const query = companyQuery.trim().toLowerCase();
+    return sources.filter((source) => {
+      const category = source.category || "general";
+      const categoryMatches = companyCategoryFilter === "all" || category === companyCategoryFilter;
+      const queryMatches =
+        query === "" ||
+        source.name.toLowerCase().includes(query) ||
+        source.url.toLowerCase().includes(query) ||
+        category.toLowerCase().includes(query);
+      return categoryMatches && queryMatches;
+    });
+  }, [sources, companyCategoryFilter, companyQuery]);
 
   async function handleStatusFilter(next: JobStatus | "all") {
     setStatus(next);
@@ -154,11 +203,13 @@ export default function App() {
         await handleRunCrawl();
         return;
       case "review_manual_check":
+        setActiveView("opportunities");
         setScoreView("all");
         await handleStatusFilter("manual_check");
         setNotice("Showing jobs that need manual review.");
         return;
       case "review_low_confidence":
+        setActiveView("opportunities");
         setStatus("manual_check");
         setDirection("all");
         setScoreView("low_confidence");
@@ -169,6 +220,7 @@ export default function App() {
         await handleCleanupLandingPages();
         return;
       case "review_strong_matches":
+        setActiveView("opportunities");
         setStatus("all");
         setDirection("all");
         setScoreView("strong");
@@ -176,6 +228,7 @@ export default function App() {
         setNotice("Showing strong matches from the agent briefing.");
         return;
       case "inspect_failed_sources":
+        setActiveView("runs");
         if (runs.length > 0) {
           await selectRun(runs[0].id);
           setNotice("Opened the latest crawl run. Check source errors below.");
@@ -384,48 +437,62 @@ export default function App() {
         </button>
       </header>
 
-      <section className="summary-grid">
-        <Metric label="Tracked jobs" value={jobs.length} />
-        <Metric label="Strong matches" value={strongMatches} />
-        <Metric label="Visible now" value={visibleJobs.length} />
-        <Metric label="Next runs" value={settings.crawl_schedule.join(" / ")} />
-      </section>
-
-      {briefing && <AgentBriefingPanel briefing={briefing} onAction={handleAgentAction} busy={running || recommendedRunning} />}
-
-      {dutyReport && <AgentDutyReportPanel report={dutyReport} onAction={handleAgentAction} busy={running || recommendedRunning} />}
-
-      <AgentActivityLog events={agentEvents} />
-
-      {lastRun && (
-        <section className="run-strip">
-          <span>Created {lastRun.jobs_created}</span>
-          <span>Duplicated {lastRun.jobs_duplicated}</span>
-          <span>Failed sources {lastRun.sources_failed}</span>
-          <span>Manual check {lastRun.manual_check_count}</span>
-          <span>Cleaned {lastRun.landing_pages_ignored}</span>
-        </section>
-      )}
-
-      <form className="import-bar" onSubmit={handleImportURL}>
-        <input
-          value={importURLValue}
-          onChange={(event) => setImportURLValue(event.target.value)}
-          placeholder="Paste a recruitment URL"
-          aria-label="Recruitment URL"
-        />
-        <button type="submit" disabled={importing}>
-          {importing ? "Importing..." : "Import URL"}
-        </button>
-        <button type="button" className="secondary-action" onClick={handleCleanupLandingPages} disabled={cleaningLandingPages}>
-          {cleaningLandingPages ? "Cleaning..." : "Clean landing pages"}
-        </button>
-      </form>
+      <nav className="view-nav" aria-label="Primary views">
+        {appViews.map((view) => (
+          <button key={view.id} className={activeView === view.id ? "active-view" : ""} onClick={() => setActiveView(view.id)}>
+            {view.label}
+          </button>
+        ))}
+      </nav>
 
       {notice && <div className="notice-banner">{notice}</div>}
       {error && <div className="error-banner">{error}</div>}
 
-      <section className="workspace">
+      {activeView === "dashboard" && (
+        <>
+          <section className="summary-grid">
+            <Metric label="Tracked jobs" value={jobs.length} />
+            <Metric label="Strong matches" value={strongMatches} />
+            <Metric label="Enabled companies" value={enabledSources} />
+            <Metric label="Next runs" value={settings.crawl_schedule.join(" / ")} />
+          </section>
+
+          {briefing && <AgentBriefingPanel briefing={briefing} onAction={handleAgentAction} busy={running || recommendedRunning} />}
+
+          {dutyReport && <AgentDutyReportPanel report={dutyReport} onAction={handleAgentAction} busy={running || recommendedRunning} />}
+
+          <AgentActivityLog events={agentEvents} />
+
+          {lastRun && (
+            <section className="run-strip">
+              <span>Created {lastRun.jobs_created}</span>
+              <span>Duplicated {lastRun.jobs_duplicated}</span>
+              <span>Failed sources {lastRun.sources_failed}</span>
+              <span>Manual check {lastRun.manual_check_count}</span>
+              <span>Cleaned {lastRun.landing_pages_ignored}</span>
+            </section>
+          )}
+        </>
+      )}
+
+      {activeView === "opportunities" && (
+        <>
+          <form className="import-bar" onSubmit={handleImportURL}>
+            <input
+              value={importURLValue}
+              onChange={(event) => setImportURLValue(event.target.value)}
+              placeholder="Paste a recruitment URL"
+              aria-label="Recruitment URL"
+            />
+            <button type="submit" disabled={importing}>
+              {importing ? "Importing..." : "Import URL"}
+            </button>
+            <button type="button" className="secondary-action" onClick={handleCleanupLandingPages} disabled={cleaningLandingPages}>
+              {cleaningLandingPages ? "Cleaning..." : "Clean landing pages"}
+            </button>
+          </form>
+
+          <section className="workspace">
         <aside className="filters">
           <h2>Filters</h2>
           <label>
@@ -522,11 +589,29 @@ export default function App() {
           </div>
         </section>
       </section>
+        </>
+      )}
 
+      {activeView === "companies" && (
       <section className="sources-panel">
         <div className="panel-header">
-          <h2>Sources</h2>
-          <span>{sources.filter((source) => source.enabled).length} enabled</span>
+          <h2>Companies</h2>
+          <span>{enabledSources} enabled / {sources.length} total</span>
+        </div>
+        <div className="company-toolbar">
+          <input
+            value={companyQuery}
+            onChange={(event) => setCompanyQuery(event.target.value)}
+            placeholder="Search company or source URL"
+            aria-label="Search companies"
+          />
+          <select value={companyCategoryFilter} onChange={(event) => setCompanyCategoryFilter(event.target.value)}>
+            {companyCategories.map((category) => (
+              <option key={category} value={category}>
+                {categoryLabels[category] || category}
+              </option>
+            ))}
+          </select>
         </div>
         <div className="source-actions">
           <button type="button" onClick={handleSeedRecommendedSources} disabled={seedingSources || recommendedRunning}>
@@ -548,10 +633,14 @@ export default function App() {
           </button>
         </form>
         <div className="source-list">
-          {sources.map((source) => (
+          {visibleSources.map((source) => (
             <div className="source-row" key={source.id}>
               <div>
                 <strong>{source.name}</strong>
+                <div className="source-meta">
+                  <span>{categoryLabels[source.category] || source.category || "General"}</span>
+                  <span>{source.parser_type || "generic"}</span>
+                </div>
                 <a href={source.url} target="_blank" rel="noreferrer">
                   {source.url}
                 </a>
@@ -569,10 +658,12 @@ export default function App() {
               </button>
             </div>
           ))}
-          {sources.length === 0 && <div className="empty-source">No saved sources yet.</div>}
+          {visibleSources.length === 0 && <div className="empty-source">No companies match the current filters.</div>}
         </div>
       </section>
+      )}
 
+      {activeView === "settings" && (
       <section className="settings-panel">
         <div className="panel-header">
           <h2>Settings</h2>
@@ -612,7 +703,9 @@ export default function App() {
           </button>
         </form>
       </section>
+      )}
 
+      {activeView === "runs" && (
       <section className="runs-panel">
         <div className="panel-header">
           <h2>Crawl Runs</h2>
@@ -663,6 +756,7 @@ export default function App() {
           </div>
         </div>
       </section>
+      )}
     </main>
   );
 }

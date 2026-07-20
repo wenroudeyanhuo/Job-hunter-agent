@@ -39,14 +39,15 @@ func applySchema(conn *sql.DB) error {
 			return fmt.Errorf("apply schema statement %q: %w", statement, err)
 		}
 	}
-	if err := ensureJobSourceHealthColumns(conn); err != nil {
+	if err := ensureJobSourceColumns(conn); err != nil {
 		return err
 	}
 	return nil
 }
 
-func ensureJobSourceHealthColumns(conn *sql.DB) error {
+func ensureJobSourceColumns(conn *sql.DB) error {
 	columns := map[string]string{
+		"category":             "TEXT NOT NULL DEFAULT 'general'",
 		"health_status":        "TEXT NOT NULL DEFAULT 'unknown'",
 		"health_reason":        "TEXT NOT NULL DEFAULT ''",
 		"consecutive_failures": "INTEGER NOT NULL DEFAULT 0",

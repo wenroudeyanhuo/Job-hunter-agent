@@ -92,7 +92,7 @@ export async function listSources(): Promise<Source[]> {
 export async function createSource(url: string, name = ""): Promise<Source> {
   return request<Source>("/api/sources", {
     method: "POST",
-    body: JSON.stringify({ name, url, enabled: true, type: "public_url", parser_type: "generic" }),
+    body: JSON.stringify({ name, url, enabled: true, type: "public_url", category: "custom", parser_type: "generic" }),
   });
 }
 
