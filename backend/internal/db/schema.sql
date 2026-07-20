@@ -43,6 +43,12 @@ CREATE TABLE IF NOT EXISTS job_sources (
     enabled INTEGER NOT NULL DEFAULT 1,
     parser_type TEXT NOT NULL DEFAULT 'generic',
     last_run_at TIMESTAMP NULL,
+    health_status TEXT NOT NULL DEFAULT 'unknown',
+    health_reason TEXT NOT NULL DEFAULT '',
+    consecutive_failures INTEGER NOT NULL DEFAULT 0,
+    last_success_at TIMESTAMP NULL,
+    last_failure_at TIMESTAMP NULL,
+    last_found_count INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

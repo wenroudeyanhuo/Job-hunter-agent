@@ -154,6 +154,28 @@ func (c DBSourceCollector) Collect(ctx context.Context) ([]domain.Job, error) {
 			}
 			continue
 		}
+		if source.ParserType == "oppo_api" || isOPPOCareerSource(source.URL) {
+			collected, err := newOPPOCareerCollector(source.URL, c.client).Collect(ctx)
+			if err != nil {
+				jobs = appendUniqueJob(jobs, seen, failedSourceJob(source, err))
+				continue
+			}
+			for _, job := range collected {
+				jobs = appendUniqueJob(jobs, seen, job)
+			}
+			continue
+		}
+		if source.ParserType == "meituan_api" || isMeituanCareerSource(source.URL) {
+			collected, err := newMeituanCareerCollector(source.URL, c.client).Collect(ctx)
+			if err != nil {
+				jobs = appendUniqueJob(jobs, seen, failedSourceJob(source, err))
+				continue
+			}
+			for _, job := range collected {
+				jobs = appendUniqueJob(jobs, seen, job)
+			}
+			continue
+		}
 		urls = append(urls, source.URL)
 	}
 	collected, err := NewPublicURLCollector(urls, c.client).Collect(ctx)

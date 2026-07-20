@@ -124,6 +124,73 @@ func TestRunnerUsesSavedSettingsForFiltering(t *testing.T) {
 	}
 }
 
+func TestRunnerUpdatesSourceHealth(t *testing.T) {
+	ctx := context.Background()
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	repo := jobs.NewRepository(conn)
+	source, err := repo.CreateSource(ctx, jobs.SourceInput{
+		Name:       "Meituan Campus",
+		URL:        "https://campus.meituan.com/",
+		Enabled:    true,
+		ParserType: "meituan_api",
+	})
+	if err != nil {
+		t.Fatalf("create source: %v", err)
+	}
+
+	runner := NewRunner(repo, []Collector{
+		fakeCollector{name: "db_sources", jobs: []domain.Job{{
+			Company:     "Meituan",
+			Title:       "Java Backend Engineer",
+			City:        "Shenzhen",
+			Description: "Build merchant platform backend services with Java.",
+			ApplyURL:    "https://campus.meituan.com/web/position/detail?jobUnionId=1",
+			SourceName:  "Meituan Campus",
+			SourceURL:   source.URL,
+		}}},
+	})
+	if _, err := runner.Run(ctx, "manual"); err != nil {
+		t.Fatalf("run crawler: %v", err)
+	}
+
+	updated, err := repo.GetSource(ctx, source.ID)
+	if err != nil {
+		t.Fatalf("get source: %v", err)
+	}
+	if updated.HealthStatus != jobs.SourceHealthHealthy {
+		t.Fatalf("expected healthy source, got %#v", updated)
+	}
+	if updated.LastSuccessAt == nil || updated.LastRunAt == nil || updated.LastFoundCount != 1 {
+		t.Fatalf("expected source run details to be updated, got %#v", updated)
+	}
+
+	runner = NewRunner(repo, []Collector{
+		fakeCollector{name: "db_sources", jobs: []domain.Job{{
+			Company:        "Meituan Campus",
+			Title:          "Meituan Campus source needs attention",
+			SourceName:     "Meituan Campus",
+			SourceURL:      source.URL,
+			ApplyURL:       source.URL,
+			Status:         domain.StatusManualCheck,
+			Description:    "Source parser failed: HTTP 502",
+			PenaltyReasons: []string{"Source parser failed"},
+		}}},
+	})
+	if _, err := runner.Run(ctx, "manual"); err != nil {
+		t.Fatalf("run crawler with diagnostic job: %v", err)
+	}
+	updated, err = repo.GetSource(ctx, source.ID)
+	if err != nil {
+		t.Fatalf("get source after diagnostic: %v", err)
+	}
+	if updated.HealthStatus != jobs.SourceHealthBroken || updated.ConsecutiveFailures != 1 || updated.LastFailureAt == nil {
+		t.Fatalf("expected broken source after diagnostic job, got %#v", updated)
+	}
+}
+
 type fakeCollector struct {
 	name string
 	jobs []domain.Job

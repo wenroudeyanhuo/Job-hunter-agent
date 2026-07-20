@@ -29,6 +29,13 @@ const statusLabels: Record<JobStatus | "all", string> = {
   expired: "Expired",
 };
 
+const sourceHealthLabels: Record<string, string> = {
+  healthy: "Healthy",
+  warning: "Warning",
+  broken: "Broken",
+  unknown: "Unknown",
+};
+
 const directionOptions = ["all", "frontend", "backend", "java", "go", "algorithm", "ai_application"];
 const defaultSettings: Settings = {
   target_cities: ["Shenzhen"],
@@ -530,6 +537,14 @@ export default function App() {
                 <a href={source.url} target="_blank" rel="noreferrer">
                   {source.url}
                 </a>
+                <div className="source-health">
+                  <span className={`health-badge health-${source.health_status || "unknown"}`}>
+                    {sourceHealthLabels[source.health_status] || source.health_status || "Unknown"}
+                  </span>
+                  <span>{source.health_reason || "Waiting for first crawl"}</span>
+                  <span>found {source.last_found_count ?? 0}</span>
+                  {source.consecutive_failures > 0 && <span>failures {source.consecutive_failures}</span>}
+                </div>
               </div>
               <button className={source.enabled ? "toggle-on" : "toggle-off"} onClick={() => toggleSource(source)}>
                 {source.enabled ? "Enabled" : "Disabled"}
@@ -661,6 +676,7 @@ function AgentBriefingPanel({
         <Metric label="Manual" value={briefing.metrics.manual_check_jobs} />
         <Metric label="Low conf" value={briefing.metrics.low_confidence_jobs} />
         <Metric label="Sources" value={briefing.metrics.enabled_sources} />
+        <Metric label="Broken" value={briefing.metrics.broken_sources} />
       </div>
       <div className="agent-actions">
         {briefing.next_actions.map((action) => (

@@ -572,6 +572,42 @@ td {
   text-decoration: none;
 }
 
+.source-health {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 8px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.health-badge {
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-weight: 760;
+}
+
+.health-healthy {
+  background: #e8f7ef;
+  color: #167145;
+}
+
+.health-warning {
+  background: #fff6dc;
+  color: #8a5b00;
+}
+
+.health-broken {
+  background: #ffe9e8;
+  color: #b42318;
+}
+
+.health-unknown {
+  background: #eef2f7;
+  color: #475569;
+}
+
 .toggle-on {
   background: #e8f7ef;
   color: #167145;
