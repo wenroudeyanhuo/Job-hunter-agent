@@ -337,6 +337,40 @@ func (h *Handlers) ListSources(c *gin.Context) {
 	c.JSON(http.StatusOK, sources)
 }
 
+func (h *Handlers) ListCompanies(c *gin.Context) {
+	companies, err := h.Repo.ListCompanies(c.Request.Context())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, companies)
+}
+
+func (h *Handlers) UpdateCompany(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	var req struct {
+		Enabled *bool `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.Enabled == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "enabled is required"})
+		return
+	}
+	if err := h.Repo.UpdateCompanyEnabled(c.Request.Context(), id, *req.Enabled); err != nil {
+		respondRepoError(c, err)
+		return
+	}
+	h.recordAgentEvent(c, jobs.AgentEventInput{
+		Type:    "company_scope_updated",
+		Title:   "Updated company scope",
+		Summary: "You " + enabledVerb(*req.Enabled) + " company #" + strconv.FormatInt(id, 10) + " for future crawls.",
+		Level:   "info",
+	})
+	c.Status(http.StatusNoContent)
+}
+
 func (h *Handlers) CreateSource(c *gin.Context) {
 	var req jobs.SourceInput
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -349,6 +383,13 @@ func (h *Handlers) CreateSource(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, source)
+}
+
+func enabledVerb(enabled bool) string {
+	if enabled {
+		return "enabled"
+	}
+	return "disabled"
 }
 
 func (h *Handlers) SeedRecommendedSources(c *gin.Context) {

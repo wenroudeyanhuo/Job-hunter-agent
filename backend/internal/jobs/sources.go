@@ -21,6 +21,7 @@ type Source struct {
 	Name                string     `json:"name"`
 	Type                string     `json:"type"`
 	URL                 string     `json:"url"`
+	CompanyID           int64      `json:"company_id"`
 	Enabled             bool       `json:"enabled"`
 	Category            string     `json:"category"`
 	ParserType          string     `json:"parser_type"`
@@ -102,10 +103,18 @@ func (r *Repository) CreateSource(ctx context.Context, input SourceInput) (Sourc
 	if err != nil {
 		return Source{}, err
 	}
+	company, err := r.CreateOrUpdateCompany(ctx, CompanyInput{
+		Name:     companyNameFromSource(input.Name),
+		Category: input.Category,
+		Enabled:  input.Enabled,
+	})
+	if err != nil {
+		return Source{}, err
+	}
 	result, err := r.db.ExecContext(ctx, `
-		INSERT INTO job_sources (name, type, url, enabled, category, parser_type)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`, input.Name, input.Type, input.URL, boolToInt(input.Enabled), input.Category, input.ParserType)
+		INSERT INTO job_sources (name, type, url, company_id, enabled, category, parser_type)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, input.Name, input.Type, input.URL, company.ID, boolToInt(input.Enabled), input.Category, input.ParserType)
 	if err != nil {
 		return Source{}, fmt.Errorf("insert source: %w", err)
 	}
@@ -155,14 +164,22 @@ func (r *Repository) createSourceIfMissing(ctx context.Context, input SourceInpu
 	if err != nil {
 		return false, err
 	}
+	company, err := r.CreateOrUpdateCompany(ctx, CompanyInput{
+		Name:     companyNameFromSource(input.Name),
+		Category: input.Category,
+		Enabled:  input.Enabled,
+	})
+	if err != nil {
+		return false, err
+	}
 	var existingID int64
 	err = r.db.QueryRowContext(ctx, `SELECT id FROM job_sources WHERE name = ?`, input.Name).Scan(&existingID)
 	if err == nil {
 		_, err = r.db.ExecContext(ctx, `
 			UPDATE job_sources
-			SET type = ?, url = ?, category = ?, parser_type = ?, updated_at = CURRENT_TIMESTAMP
+			SET type = ?, url = ?, company_id = ?, category = ?, parser_type = ?, updated_at = CURRENT_TIMESTAMP
 			WHERE id = ?
-		`, input.Type, input.URL, input.Category, input.ParserType, existingID)
+		`, input.Type, input.URL, company.ID, input.Category, input.ParserType, existingID)
 		if err != nil {
 			return false, fmt.Errorf("refresh source %q: %w", input.Name, err)
 		}
@@ -172,9 +189,9 @@ func (r *Repository) createSourceIfMissing(ctx context.Context, input SourceInpu
 		return false, fmt.Errorf("find source %q: %w", input.Name, err)
 	}
 	result, err := r.db.ExecContext(ctx, `
-		INSERT INTO job_sources (name, type, url, enabled, category, parser_type)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`, input.Name, input.Type, input.URL, boolToInt(input.Enabled), input.Category, input.ParserType)
+		INSERT INTO job_sources (name, type, url, company_id, enabled, category, parser_type)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, input.Name, input.Type, input.URL, company.ID, boolToInt(input.Enabled), input.Category, input.ParserType)
 	if err != nil {
 		return false, fmt.Errorf("insert source: %w", err)
 	}
@@ -281,11 +298,19 @@ func (r *Repository) SeedPublicURLSources(ctx context.Context, urls []string) er
 			continue
 		}
 		name := sourceNameFromURL(parsed)
+		company, err := r.CreateOrUpdateCompany(ctx, CompanyInput{
+			Name:     companyNameFromSource(name),
+			Category: "custom",
+			Enabled:  true,
+		})
+		if err != nil {
+			return fmt.Errorf("create company for source %q: %w", rawURL, err)
+		}
 		_, err = r.db.ExecContext(ctx, `
-			INSERT INTO job_sources (name, type, url, enabled, category, parser_type)
-			VALUES (?, 'public_url', ?, 1, 'custom', 'generic')
+			INSERT INTO job_sources (name, type, url, company_id, enabled, category, parser_type)
+			VALUES (?, 'public_url', ?, ?, 1, 'custom', 'generic')
 			ON CONFLICT(name) DO NOTHING
-		`, name, parsed.String())
+		`, name, parsed.String(), company.ID)
 		if err != nil {
 			return fmt.Errorf("seed source %q: %w", rawURL, err)
 		}
@@ -326,9 +351,24 @@ func sourceNameFromURL(parsed *url.URL) string {
 	return host + " " + strings.Trim(strings.ReplaceAll(parsed.Path, "/", " "), " ")
 }
 
+func companyNameFromSource(sourceName string) string {
+	name := strings.TrimSpace(sourceName)
+	replacers := []string{
+		" Careers", " Campus", " Jobs", " Talent",
+		" 校招", " 招聘",
+	}
+	for _, suffix := range replacers {
+		name = strings.TrimSuffix(name, suffix)
+	}
+	if name == "" {
+		return "Company"
+	}
+	return name
+}
+
 func selectSourceSQL() string {
 	return `
-		SELECT id, name, type, url, enabled, category, parser_type, last_run_at,
+		SELECT id, name, type, url, COALESCE(company_id, 0), enabled, category, parser_type, last_run_at,
 			health_status, health_reason, consecutive_failures, last_success_at,
 			last_failure_at, last_found_count, created_at, updated_at
 		FROM job_sources`
@@ -346,6 +386,7 @@ func scanSource(scanner sourceScanner) (Source, error) {
 		&source.Name,
 		&source.Type,
 		&source.URL,
+		&source.CompanyID,
 		&enabled,
 		&source.Category,
 		&source.ParserType,

@@ -30,6 +30,8 @@ func NewRouter(handlers *Handlers) http.Handler {
 	api.GET("/crawl/runs/:id/sources", handlers.ListRunSources)
 	api.GET("/settings", handlers.GetSettings)
 	api.PATCH("/settings", handlers.UpdateSettings)
+	api.GET("/companies", handlers.ListCompanies)
+	api.PATCH("/companies/:id", handlers.UpdateCompany)
 	api.GET("/sources", handlers.ListSources)
 	api.POST("/sources/recommended", handlers.SeedRecommendedSources)
 	api.POST("/sources", handlers.CreateSource)

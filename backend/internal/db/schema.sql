@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS companies (
     name TEXT NOT NULL UNIQUE,
     aliases TEXT NOT NULL DEFAULT '[]',
     category TEXT NOT NULL DEFAULT '',
+    enabled INTEGER NOT NULL DEFAULT 1,
     priority INTEGER NOT NULL DEFAULT 0,
     notes TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -40,6 +41,7 @@ CREATE TABLE IF NOT EXISTS job_sources (
     name TEXT NOT NULL UNIQUE,
     type TEXT NOT NULL,
     url TEXT NOT NULL DEFAULT '',
+    company_id INTEGER NULL,
     enabled INTEGER NOT NULL DEFAULT 1,
     category TEXT NOT NULL DEFAULT 'general',
     parser_type TEXT NOT NULL DEFAULT 'generic',
@@ -51,7 +53,8 @@ CREATE TABLE IF NOT EXISTS job_sources (
     last_failure_at TIMESTAMP NULL,
     last_found_count INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(company_id) REFERENCES companies(id)
 );
 
 CREATE TABLE IF NOT EXISTS job_runs (

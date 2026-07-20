@@ -79,6 +79,21 @@ export interface Source {
   last_found_count: number;
 }
 
+export interface Company {
+  id: number;
+  name: string;
+  category: string;
+  enabled: boolean;
+  priority: number;
+  notes: string;
+  source_count: number;
+  healthy_count: number;
+  warning_count: number;
+  broken_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Settings {
   target_cities: string[];
   target_directions: string[];

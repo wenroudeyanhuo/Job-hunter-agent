@@ -7,6 +7,7 @@ import {
   getSettings,
   importURL,
   listAgentEvents,
+  listCompanies,
   listJobs,
   listRunSources,
   listRuns,
@@ -15,10 +16,11 @@ import {
   runRecommendedCrawl,
   seedRecommendedSources,
   updateJobStatus,
+  updateCompanyEnabled,
   updateSettings,
   updateSourceEnabled,
 } from "./api";
-import type { AgentBriefing, AgentDutyReport, AgentEvent, Job, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source } from "./types";
+import type { AgentBriefing, AgentDutyReport, AgentEvent, Company, Job, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source } from "./types";
 
 const statusLabels: Record<JobStatus | "all", string> = {
   all: "All",
@@ -86,6 +88,7 @@ export default function App() {
   const [cleaningLandingPages, setCleaningLandingPages] = useState(false);
   const [importURLValue, setImportURLValue] = useState("");
   const [sources, setSources] = useState<Source[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [runs, setRuns] = useState<JobRun[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
   const [runSources, setRunSources] = useState<JobRunSource[]>([]);
@@ -114,6 +117,11 @@ export default function App() {
   async function refreshSources() {
     const data = await listSources();
     setSources(data);
+  }
+
+  async function refreshCompanies() {
+    const data = await listCompanies();
+    setCompanies(data);
   }
 
   async function refreshRuns() {
@@ -148,7 +156,7 @@ export default function App() {
   }
 
   useEffect(() => {
-    Promise.all([refresh(), refreshSources(), refreshRuns(), refreshSettings(), refreshBriefing(), refreshDutyReport(), refreshAgentEvents()])
+    Promise.all([refresh(), refreshSources(), refreshCompanies(), refreshRuns(), refreshSettings(), refreshBriefing(), refreshDutyReport(), refreshAgentEvents()])
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
@@ -166,12 +174,22 @@ export default function App() {
   }, [jobs, direction, scoreView]);
 
   const strongMatches = jobs.filter((job) => job.match_score >= 70).length;
-  const enabledSources = sources.filter((source) => source.enabled).length;
+  const enabledCompanies = companies.filter((company) => company.enabled).length;
   const companyCategories = useMemo(() => {
     const categories = new Set<string>();
+    companies.forEach((company) => categories.add(company.category || "general"));
     sources.forEach((source) => categories.add(source.category || "general"));
     return ["all", ...Array.from(categories).sort()];
-  }, [sources]);
+  }, [companies, sources]);
+  const visibleCompanies = useMemo(() => {
+    const query = companyQuery.trim().toLowerCase();
+    return companies.filter((company) => {
+      const category = company.category || "general";
+      const categoryMatches = companyCategoryFilter === "all" || category === companyCategoryFilter;
+      const queryMatches = query === "" || company.name.toLowerCase().includes(query) || category.toLowerCase().includes(query);
+      return categoryMatches && queryMatches;
+    });
+  }, [companies, companyCategoryFilter, companyQuery]);
   const visibleSources = useMemo(() => {
     const query = companyQuery.trim().toLowerCase();
     return sources.filter((source) => {
@@ -326,6 +344,7 @@ export default function App() {
       setSourceURLValue("");
       setNotice("Source added. It will be used by the next crawl run.");
       await refreshSources();
+      await refreshCompanies();
       await refreshBriefing();
       await refreshDutyReport();
       await refreshAgentEvents();
@@ -343,6 +362,15 @@ export default function App() {
     await refreshDutyReport();
   }
 
+  async function toggleCompany(company: Company) {
+    await updateCompanyEnabled(company.id, !company.enabled);
+    setCompanies((current) => current.map((item) => (item.id === company.id ? { ...item, enabled: !company.enabled } : item)));
+    await refreshSources();
+    await refreshBriefing();
+    await refreshDutyReport();
+    await refreshAgentEvents();
+  }
+
   async function handleSeedRecommendedSources() {
     setSeedingSources(true);
     setError("");
@@ -355,6 +383,7 @@ export default function App() {
           : "Recommended sources were already added.",
       );
       await refreshSources();
+      await refreshCompanies();
       await refreshBriefing();
       await refreshDutyReport();
       await refreshAgentEvents();
@@ -376,6 +405,7 @@ export default function App() {
         `Recommended crawl finished. Added ${result.sources.created} sources, created ${result.summary.jobs_created} jobs, and cleaned ${result.summary.landing_pages_ignored} landing pages.`,
       );
       await refreshSources();
+      await refreshCompanies();
       await refresh();
       await refreshRuns();
       await refreshBriefing();
@@ -453,7 +483,7 @@ export default function App() {
           <section className="summary-grid">
             <Metric label="Tracked jobs" value={jobs.length} />
             <Metric label="Strong matches" value={strongMatches} />
-            <Metric label="Enabled companies" value={enabledSources} />
+            <Metric label="Enabled companies" value={enabledCompanies} />
             <Metric label="Next runs" value={settings.crawl_schedule.join(" / ")} />
           </section>
 
@@ -596,7 +626,7 @@ export default function App() {
       <section className="sources-panel">
         <div className="panel-header">
           <h2>Companies</h2>
-          <span>{enabledSources} enabled / {sources.length} total</span>
+          <span>{enabledCompanies} enabled / {companies.length} total</span>
         </div>
         <div className="company-toolbar">
           <input
@@ -612,6 +642,25 @@ export default function App() {
               </option>
             ))}
           </select>
+        </div>
+        <div className="company-grid">
+          {visibleCompanies.map((company) => (
+            <div className="company-card" key={company.id}>
+              <div>
+                <strong>{company.name}</strong>
+                <div className="source-meta">
+                  <span>{categoryLabels[company.category] || company.category || "General"}</span>
+                  <span>{company.source_count} sources</span>
+                  {company.broken_count > 0 && <span>{company.broken_count} broken</span>}
+                  {company.warning_count > 0 && <span>{company.warning_count} warning</span>}
+                </div>
+              </div>
+              <button className={company.enabled ? "toggle-on" : "toggle-off"} onClick={() => toggleCompany(company)}>
+                {company.enabled ? "Enabled" : "Disabled"}
+              </button>
+            </div>
+          ))}
+          {visibleCompanies.length === 0 && <div className="empty-source">No companies match the current filters.</div>}
         </div>
         <div className="source-actions">
           <button type="button" onClick={handleSeedRecommendedSources} disabled={seedingSources || recommendedRunning}>
@@ -658,7 +707,7 @@ export default function App() {
               </button>
             </div>
           ))}
-          {visibleSources.length === 0 && <div className="empty-source">No companies match the current filters.</div>}
+          {visibleSources.length === 0 && <div className="empty-source">No source entries match the current filters.</div>}
         </div>
       </section>
       )}

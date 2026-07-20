@@ -2,6 +2,7 @@ import type {
   AgentBriefing,
   AgentDutyReport,
   AgentEvent,
+  Company,
   CleanupLandingPagesResponse,
   ImportURLResponse,
   Job,
@@ -50,6 +51,11 @@ export async function getAgentDutyReport(): Promise<AgentDutyReport> {
 export async function listAgentEvents(): Promise<AgentEvent[]> {
   const events = await request<AgentEvent[] | null>("/api/agent/events");
   return Array.isArray(events) ? events : [];
+}
+
+export async function listCompanies(): Promise<Company[]> {
+  const companies = await request<Company[] | null>("/api/companies");
+  return Array.isArray(companies) ? companies : [];
 }
 
 export async function updateJobStatus(id: number, status: JobStatus): Promise<void> {
@@ -106,6 +112,13 @@ export async function runRecommendedCrawl(): Promise<RecommendedCrawlResponse> {
 
 export async function updateSourceEnabled(id: number, enabled: boolean): Promise<void> {
   await request<void>(`/api/sources/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ enabled }),
+  });
+}
+
+export async function updateCompanyEnabled(id: number, enabled: boolean): Promise<void> {
+  await request<void>(`/api/companies/${id}`, {
     method: "PATCH",
     body: JSON.stringify({ enabled }),
   });
