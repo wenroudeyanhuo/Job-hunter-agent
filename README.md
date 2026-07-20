@@ -17,7 +17,7 @@ Early MVP. The current version provides a Go backend foundation, SQLite persiste
 - Deduplication by application URL and normalized company/title/city.
 - Scheduled crawl runner for 09:00, 12:00, and 18:00.
 - React dashboard for reviewing jobs, filtering by status/direction, updating status, and running a crawl.
-- Feishu webhook summaries after crawl runs when `FEISHU_WEBHOOK_URL` is configured.
+- Feishu webhook summaries after crawl runs when a webhook is configured in Settings or `FEISHU_WEBHOOK_URL`.
 
 ## What It Does
 
@@ -68,6 +68,8 @@ SOURCE_URLS=
 ```
 
 `SOURCE_URLS` can contain comma-separated or newline-separated public recruitment URLs. Manual and scheduled crawl runs import these URLs, score them, deduplicate them, and store them in the local database.
+
+`FEISHU_WEBHOOK_URL` is optional. Open-source users can also open the dashboard, go to Settings, paste their own Feishu incoming bot webhook URL, save it, and send a test notification. A saved dashboard webhook takes priority over the environment variable and does not require restarting the backend.
 
 ### Backend
 

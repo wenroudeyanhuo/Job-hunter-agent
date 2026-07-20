@@ -9,7 +9,9 @@ import (
 	"testing"
 
 	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/crawl"
+	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/db"
 	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/domain"
+	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/jobs"
 )
 
 func TestNotifyingRunnerSendsFeishuSummary(t *testing.T) {
@@ -35,7 +37,7 @@ func TestNotifyingRunnerSendsFeishuSummary(t *testing.T) {
 			City:       "Shenzhen",
 			MatchScore: 90,
 		}},
-	}}, server.URL)
+	}}, nil, server.URL)
 
 	if _, err := runner.Run(context.Background(), "manual"); err != nil {
 		t.Fatalf("run: %v", err)
@@ -55,12 +57,40 @@ func TestNotifyingRunnerSkipsEmptySummary(t *testing.T) {
 	}))
 	defer server.Close()
 
-	runner := newNotifyingRunner(fakeSummaryRunner{summary: crawl.RunSummary{}}, server.URL)
+	runner := newNotifyingRunner(fakeSummaryRunner{summary: crawl.RunSummary{}}, nil, server.URL)
 	if _, err := runner.Run(context.Background(), "manual"); err != nil {
 		t.Fatalf("run: %v", err)
 	}
 	if called {
 		t.Fatal("expected empty summary not to send notification")
+	}
+}
+
+func TestNotifyingRunnerUsesSavedFeishuWebhook(t *testing.T) {
+	called := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	repo := jobs.NewRepository(conn)
+	settings := jobs.DefaultSettings()
+	settings.FeishuWebhookURL = server.URL
+	if _, err := repo.SaveSettings(context.Background(), settings); err != nil {
+		t.Fatalf("save settings: %v", err)
+	}
+
+	runner := newNotifyingRunner(fakeSummaryRunner{summary: crawl.RunSummary{JobsCreated: 1}}, repo, "")
+	if _, err := runner.Run(context.Background(), "manual"); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !called {
+		t.Fatal("expected saved Feishu webhook to be called")
 	}
 }
 

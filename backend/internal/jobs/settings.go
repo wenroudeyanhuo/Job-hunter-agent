@@ -15,6 +15,7 @@ type Settings struct {
 	TargetDirections []string  `json:"target_directions"`
 	ExcludedKeywords []string  `json:"excluded_keywords"`
 	CrawlSchedule    []string  `json:"crawl_schedule"`
+	FeishuWebhookURL string    `json:"feishu_webhook_url"`
 	UpdatedAt        time.Time `json:"updated_at"`
 }
 
@@ -86,6 +87,7 @@ func normalizeSettings(settings Settings) Settings {
 	if len(settings.CrawlSchedule) == 0 {
 		settings.CrawlSchedule = defaults.CrawlSchedule
 	}
+	settings.FeishuWebhookURL = strings.TrimSpace(settings.FeishuWebhookURL)
 	return settings
 }
 

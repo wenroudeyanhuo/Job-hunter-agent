@@ -128,9 +128,13 @@ export async function getSettings(): Promise<Settings> {
   return request<Settings>("/api/settings");
 }
 
-export async function updateSettings(settings: Pick<Settings, "target_cities" | "target_directions" | "excluded_keywords" | "crawl_schedule">): Promise<Settings> {
+export async function updateSettings(settings: Pick<Settings, "target_cities" | "target_directions" | "excluded_keywords" | "crawl_schedule" | "feishu_webhook_url">): Promise<Settings> {
   return request<Settings>("/api/settings", {
     method: "PATCH",
     body: JSON.stringify(settings),
   });
+}
+
+export async function sendFeishuTest(): Promise<void> {
+  await request<void>("/api/notifications/feishu/test", { method: "POST" });
 }

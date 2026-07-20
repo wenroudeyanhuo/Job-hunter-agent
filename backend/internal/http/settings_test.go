@@ -15,7 +15,8 @@ func TestSettingsAPIPersistsUpdates(t *testing.T) {
 		"target_cities":["Shenzhen","Guangzhou"],
 		"target_directions":["backend","go","ai_application"],
 		"excluded_keywords":["outsourcing","training"],
-		"crawl_schedule":["09:00","18:00"]
+		"crawl_schedule":["09:00","18:00"],
+		"feishu_webhook_url":"https://open.feishu.cn/open-apis/bot/v2/hook/test"
 	}`)
 	req := httptest.NewRequest(http.MethodPatch, "/api/settings", body)
 	req.Header.Set("Content-Type", "application/json")
@@ -37,6 +38,8 @@ func TestSettingsAPIPersistsUpdates(t *testing.T) {
 		TargetDirections []string `json:"target_directions"`
 		ExcludedKeywords []string `json:"excluded_keywords"`
 		CrawlSchedule    []string `json:"crawl_schedule"`
+		FeishuWebhookURL string   `json:"feishu_webhook_url"`
+		FeishuConfigured bool     `json:"feishu_configured"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &settings); err != nil {
 		t.Fatalf("decode settings: %v", err)
@@ -49,5 +52,8 @@ func TestSettingsAPIPersistsUpdates(t *testing.T) {
 	}
 	if len(settings.CrawlSchedule) != 2 || settings.CrawlSchedule[1] != "18:00" {
 		t.Fatalf("unexpected crawl schedule: %#v", settings.CrawlSchedule)
+	}
+	if settings.FeishuWebhookURL == "" || !settings.FeishuConfigured {
+		t.Fatalf("expected Feishu settings to be returned, got %#v", settings)
 	}
 }

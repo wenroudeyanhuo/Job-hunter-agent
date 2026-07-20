@@ -99,6 +99,7 @@ export interface Settings {
   target_directions: string[];
   excluded_keywords: string[];
   crawl_schedule: string[];
+  feishu_webhook_url: string;
   feishu_configured: boolean;
   updated_at: string;
 }

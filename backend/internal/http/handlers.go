@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/crawl"
@@ -300,7 +301,7 @@ func (h *Handlers) GetSettings(c *gin.Context) {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
-	c.JSON(http.StatusOK, settingsResponse(settings, h.FeishuWebhookURL != ""))
+	c.JSON(http.StatusOK, h.settingsResponse(settings))
 }
 
 func (h *Handlers) UpdateSettings(c *gin.Context) {
@@ -314,17 +315,19 @@ func (h *Handlers) UpdateSettings(c *gin.Context) {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
-	c.JSON(http.StatusOK, settingsResponse(settings, h.FeishuWebhookURL != ""))
+	c.JSON(http.StatusOK, h.settingsResponse(settings))
 }
 
-func settingsResponse(settings jobs.Settings, feishuConfigured bool) gin.H {
+func (h *Handlers) settingsResponse(settings jobs.Settings) gin.H {
+	webhookURL := strings.TrimSpace(settings.FeishuWebhookURL)
 	return gin.H{
-		"target_cities":     settings.TargetCities,
-		"target_directions": settings.TargetDirections,
-		"excluded_keywords": settings.ExcludedKeywords,
-		"crawl_schedule":    settings.CrawlSchedule,
-		"feishu_configured": feishuConfigured,
-		"updated_at":        settings.UpdatedAt,
+		"target_cities":      settings.TargetCities,
+		"target_directions":  settings.TargetDirections,
+		"excluded_keywords":  settings.ExcludedKeywords,
+		"crawl_schedule":     settings.CrawlSchedule,
+		"feishu_webhook_url": webhookURL,
+		"feishu_configured":  webhookURL != "" || strings.TrimSpace(h.FeishuWebhookURL) != "",
+		"updated_at":         settings.UpdatedAt,
 	}
 }
 
@@ -433,16 +436,32 @@ func (h *Handlers) UpdateSource(c *gin.Context) {
 }
 
 func (h *Handlers) SendFeishuTest(c *gin.Context) {
-	if h.FeishuWebhookURL == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "FEISHU_WEBHOOK_URL is not configured"})
+	webhookURL, err := h.effectiveFeishuWebhookURL(c.Request.Context())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
-	err := notify.SendFeishuWebhook(c.Request.Context(), h.FeishuWebhookURL, "Job Hunter Agent test notification")
+	if webhookURL == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Feishu webhook URL is not configured"})
+		return
+	}
+	err = notify.SendFeishuWebhook(c.Request.Context(), webhookURL, "Job Hunter Agent test notification")
 	if err != nil {
 		respondError(c, http.StatusBadGateway, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "sent"})
+}
+
+func (h *Handlers) effectiveFeishuWebhookURL(ctx context.Context) (string, error) {
+	settings, err := h.Repo.GetSettings(ctx)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(settings.FeishuWebhookURL) != "" {
+		return strings.TrimSpace(settings.FeishuWebhookURL), nil
+	}
+	return strings.TrimSpace(h.FeishuWebhookURL), nil
 }
 
 func parseID(c *gin.Context) (int64, bool) {

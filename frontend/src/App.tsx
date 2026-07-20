@@ -14,6 +14,7 @@ import {
   listSources,
   runCrawl,
   runRecommendedCrawl,
+  sendFeishuTest,
   seedRecommendedSources,
   updateJobStatus,
   updateCompanyEnabled,
@@ -72,6 +73,7 @@ const defaultSettings: Settings = {
   target_directions: ["frontend", "backend", "java", "go", "algorithm", "ai_application"],
   excluded_keywords: ["outsourcing", "training", "bootcamp"],
   crawl_schedule: ["09:00", "12:00", "18:00"],
+  feishu_webhook_url: "",
   feishu_configured: false,
   updated_at: "",
 };
@@ -101,6 +103,7 @@ export default function App() {
   const [settings, setSettings] = useState<Settings>(defaultSettings);
   const [settingsDraft, setSettingsDraft] = useState(settingsToDraft(defaultSettings));
   const [savingSettings, setSavingSettings] = useState(false);
+  const [testingFeishu, setTestingFeishu] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [lastRun, setLastRun] = useState<RunSummary | null>(null);
@@ -429,6 +432,7 @@ export default function App() {
         target_directions: parseSettingsList(settingsDraft.target_directions),
         excluded_keywords: parseSettingsList(settingsDraft.excluded_keywords),
         crawl_schedule: parseSettingsList(settingsDraft.crawl_schedule),
+        feishu_webhook_url: settingsDraft.feishu_webhook_url.trim(),
       });
       const nextSettings = normalizeSettings(saved);
       setSettings(nextSettings);
@@ -439,6 +443,21 @@ export default function App() {
       setError(err instanceof Error ? err.message : "Could not save settings");
     } finally {
       setSavingSettings(false);
+    }
+  }
+
+  async function handleSendFeishuTest() {
+    setTestingFeishu(true);
+    setError("");
+    setNotice("");
+    try {
+      await sendFeishuTest();
+      setNotice("Feishu test notification sent.");
+      await refreshSettings();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not send Feishu test notification");
+    } finally {
+      setTestingFeishu(false);
     }
   }
 
@@ -747,8 +766,19 @@ export default function App() {
               onChange={(event) => setSettingsDraft((current) => ({ ...current, crawl_schedule: event.target.value }))}
             />
           </label>
+          <label className="settings-wide">
+            Feishu bot webhook
+            <input
+              value={settingsDraft.feishu_webhook_url}
+              onChange={(event) => setSettingsDraft((current) => ({ ...current, feishu_webhook_url: event.target.value }))}
+              placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..."
+            />
+          </label>
           <button type="submit" disabled={savingSettings}>
             {savingSettings ? "Saving..." : "Save Settings"}
+          </button>
+          <button type="button" className="secondary-settings-action" onClick={handleSendFeishuTest} disabled={testingFeishu || !settings.feishu_configured}>
+            {testingFeishu ? "Sending..." : "Send Feishu Test"}
           </button>
         </form>
       </section>
@@ -952,6 +982,7 @@ function settingsToDraft(settings: Settings) {
     target_directions: safeSettingsList(settings.target_directions, defaultSettings.target_directions).join("\n"),
     excluded_keywords: safeSettingsList(settings.excluded_keywords, defaultSettings.excluded_keywords).join("\n"),
     crawl_schedule: safeSettingsList(settings.crawl_schedule, defaultSettings.crawl_schedule).join("\n"),
+    feishu_webhook_url: settings.feishu_webhook_url || "",
   };
 }
 
@@ -961,6 +992,7 @@ function normalizeSettings(settings: Partial<Settings>): Settings {
     target_directions: safeSettingsList(settings.target_directions, defaultSettings.target_directions),
     excluded_keywords: safeSettingsList(settings.excluded_keywords, defaultSettings.excluded_keywords),
     crawl_schedule: safeSettingsList(settings.crawl_schedule, defaultSettings.crawl_schedule),
+    feishu_webhook_url: settings.feishu_webhook_url || "",
     feishu_configured: Boolean(settings.feishu_configured),
     updated_at: settings.updated_at || "",
   };

@@ -865,7 +865,8 @@ td {
   font-weight: 700;
 }
 
-.settings-grid textarea {
+.settings-grid textarea,
+.settings-grid input {
   min-height: 110px;
   resize: vertical;
   border: 1px solid #cfd8e6;
@@ -873,6 +874,15 @@ td {
   color: #18212f;
   padding: 10px 12px;
   line-height: 1.45;
+}
+
+.settings-grid input {
+  min-height: auto;
+  resize: none;
+}
+
+.settings-wide {
+  grid-column: span 3;
 }
 
 .settings-grid button {
@@ -883,6 +893,12 @@ td {
   color: #fff;
   padding: 10px 14px;
   font-weight: 760;
+}
+
+.settings-grid .secondary-settings-action {
+  border: 1px solid #cfd8e6;
+  background: #fff;
+  color: #334155;
 }
 
 .runs-panel {
@@ -1025,6 +1041,10 @@ td {
 
   .settings-grid {
     grid-template-columns: 1fr;
+  }
+
+  .settings-wide {
+    grid-column: auto;
   }
 
   .company-toolbar {
