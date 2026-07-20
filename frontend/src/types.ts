@@ -68,6 +68,7 @@ export interface Source {
   type: string;
   url: string;
   enabled: boolean;
+  category: string;
   parser_type: string;
   last_run_at?: string;
   health_status: "unknown" | "healthy" | "warning" | "broken" | string;

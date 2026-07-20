@@ -39,6 +39,9 @@ func TestRepositoryCreateListAndToggleSource(t *testing.T) {
 	if !sources[0].Enabled {
 		t.Fatal("expected source to be enabled")
 	}
+	if sources[0].Category != "general" {
+		t.Fatalf("expected default source category, got %q", sources[0].Category)
+	}
 
 	if err := repo.UpdateSourceEnabled(ctx, created.ID, false); err != nil {
 		t.Fatalf("toggle source: %v", err)
@@ -124,6 +127,9 @@ func TestRepositorySeedSourcesDeduplicatesURLs(t *testing.T) {
 	if len(sources) != 1 {
 		t.Fatalf("expected one deduped source, got %d", len(sources))
 	}
+	if sources[0].Category != "custom" {
+		t.Fatalf("expected custom category for imported URL source, got %q", sources[0].Category)
+	}
 }
 
 func TestRepositorySeedRecommendedSources(t *testing.T) {
@@ -178,6 +184,9 @@ func TestRecommendedSourcesCoverBroaderCompanyPool(t *testing.T) {
 		}
 		if seenURLs[source.URL] {
 			t.Fatalf("duplicate recommended source URL %q", source.URL)
+		}
+		if source.Category == "" {
+			t.Fatalf("expected category for recommended source %q", source.Name)
 		}
 		seenNames[source.Name] = true
 		seenURLs[source.URL] = true

@@ -88,6 +88,31 @@ h2 {
   margin-bottom: 16px;
 }
 
+.view-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  border: 1px solid #dbe4f0;
+  border-radius: 8px;
+  background: #fff;
+  margin-bottom: 16px;
+  padding: 8px;
+}
+
+.view-nav button {
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #475569;
+  padding: 9px 12px;
+  font-weight: 760;
+}
+
+.view-nav .active-view {
+  background: #1769e0;
+  color: #fff;
+}
+
 .agent-briefing {
   display: grid;
   grid-template-columns: minmax(0, 1.5fr) minmax(260px, 0.8fr) minmax(320px, 1fr);
@@ -627,6 +652,23 @@ td {
   padding: 14px 16px 0;
 }
 
+.company-toolbar {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(180px, 240px);
+  gap: 10px;
+  border-bottom: 1px solid #edf1f7;
+  padding: 14px 16px;
+}
+
+.company-toolbar input {
+  min-width: 0;
+  border: 1px solid #cfd8e6;
+  border-radius: 6px;
+  color: #18212f;
+  padding: 10px 12px;
+  font: inherit;
+}
+
 .source-actions button {
   border: 1px solid #d5deeb;
   border-radius: 6px;
@@ -690,6 +732,22 @@ td {
 .source-row strong {
   color: #18212f;
   font-size: 14px;
+}
+
+.source-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.source-meta span {
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #475569;
+  padding: 3px 8px;
+  font-size: 12px;
+  font-weight: 720;
 }
 
 .source-row a {
@@ -921,6 +979,7 @@ td {
 
   .source-form,
   .source-actions,
+  .company-toolbar,
   .source-row,
   .activity-row,
   .settings-grid,
@@ -930,6 +989,10 @@ td {
   }
 
   .settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .company-toolbar {
     grid-template-columns: 1fr;
   }
 

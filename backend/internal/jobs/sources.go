@@ -22,6 +22,7 @@ type Source struct {
 	Type                string     `json:"type"`
 	URL                 string     `json:"url"`
 	Enabled             bool       `json:"enabled"`
+	Category            string     `json:"category"`
 	ParserType          string     `json:"parser_type"`
 	LastRunAt           *time.Time `json:"last_run_at,omitempty"`
 	HealthStatus        string     `json:"health_status"`
@@ -39,6 +40,7 @@ type SourceInput struct {
 	Type       string `json:"type"`
 	URL        string `json:"url"`
 	Enabled    bool   `json:"enabled"`
+	Category   string `json:"category"`
 	ParserType string `json:"parser_type"`
 }
 
@@ -57,41 +59,41 @@ type SourceHealthInput struct {
 
 func RecommendedSources() []SourceInput {
 	return []SourceInput{
-		{Name: "Tencent Careers", URL: "https://careers.tencent.com/", Enabled: true, ParserType: "tencent_api"},
-		{Name: "Huawei Careers", URL: "https://career.huawei.com/reccampportal/portal5/index.html", Enabled: true},
-		{Name: "ByteDance Jobs", URL: "https://jobs.bytedance.com/campus/", Enabled: true, ParserType: "bytedance_api"},
-		{Name: "Alibaba Campus", URL: "https://talent.alibaba.com/campus/home", Enabled: true},
-		{Name: "Meituan Campus", URL: "https://campus.meituan.com/", Enabled: true, ParserType: "meituan_api"},
-		{Name: "DJI Careers", URL: "https://we.dji.com/zh-CN/campus", Enabled: true},
-		{Name: "Kuaishou Campus", URL: "https://campus.kuaishou.cn/", Enabled: true},
-		{Name: "Baidu Talent", URL: "https://talent.baidu.com/jobs/list", Enabled: true},
-		{Name: "OPPO Careers", URL: "https://careers.oppo.com/", Enabled: true, ParserType: "oppo_api"},
-		{Name: "vivo Careers", URL: "https://hr.vivo.com/", Enabled: true},
-		{Name: "Honor Careers", URL: "https://career.hihonor.com/", Enabled: true},
-		{Name: "JD Careers", URL: "https://zhaopin.jd.com/", Enabled: true},
-		{Name: "NetEase Campus", URL: "https://campus.163.com/", Enabled: true},
-		{Name: "Xiaomi Campus", URL: "https://campus.hr.xiaomi.com/", Enabled: true},
-		{Name: "Ant Group Campus", URL: "https://talent.antgroup.com/campus/home", Enabled: true},
-		{Name: "DiDi Campus", URL: "https://campus.didiglobal.com/", Enabled: true},
-		{Name: "PDD Careers", URL: "https://careers.pddglobalhr.com/", Enabled: true},
-		{Name: "Ctrip Careers", URL: "https://job.ctrip.com/", Enabled: true},
-		{Name: "Xiaohongshu Campus", URL: "https://campus.xiaohongshu.com/", Enabled: true},
-		{Name: "miHoYo Jobs", URL: "https://jobs.mihoyo.com/", Enabled: true},
-		{Name: "Dewu Campus", URL: "https://campus.dewu.com/", Enabled: true},
-		{Name: "Bilibili Jobs", URL: "https://jobs.bilibili.com/", Enabled: true},
-		{Name: "Ping An Campus", URL: "https://campus.pingan.com/", Enabled: true},
-		{Name: "WeBank Campus", URL: "https://campus.webank.com/", Enabled: true},
-		{Name: "SF Express Campus", URL: "https://campus.sf-express.com/", Enabled: true},
-		{Name: "BYD Jobs", URL: "https://job.byd.com/portal/pc/", Enabled: true},
-		{Name: "Lenovo Careers", URL: "https://talent.lenovo.com.cn/", Enabled: true},
-		{Name: "TP-Link Campus", URL: "https://join.tplinkglobal.com/campus/", Enabled: true},
-		{Name: "iFlytek Campus", URL: "https://campus.iflytek.com/", Enabled: true},
-		{Name: "Kingsoft Campus", URL: "https://campus.kingsoft.com/", Enabled: true},
-		{Name: "360 Campus", URL: "https://campus.360.cn/", Enabled: true},
-		{Name: "ZTE Careers", URL: "https://job.zte.com.cn/", Enabled: true},
-		{Name: "Mindray Careers", URL: "https://career.mindray.com/", Enabled: true},
-		{Name: "Sangfor Careers", URL: "https://hr.sangfor.com/", Enabled: true},
-		{Name: "Midea Careers", URL: "https://careers.midea.com/", Enabled: true},
+		{Name: "Tencent Careers", URL: "https://careers.tencent.com/", Enabled: true, Category: "internet", ParserType: "tencent_api"},
+		{Name: "Huawei Careers", URL: "https://career.huawei.com/reccampportal/portal5/index.html", Enabled: true, Category: "hardware"},
+		{Name: "ByteDance Jobs", URL: "https://jobs.bytedance.com/campus/", Enabled: true, Category: "internet", ParserType: "bytedance_api"},
+		{Name: "Alibaba Campus", URL: "https://talent.alibaba.com/campus/home", Enabled: true, Category: "internet"},
+		{Name: "Meituan Campus", URL: "https://campus.meituan.com/", Enabled: true, Category: "internet", ParserType: "meituan_api"},
+		{Name: "DJI Careers", URL: "https://we.dji.com/zh-CN/campus", Enabled: true, Category: "hardware"},
+		{Name: "Kuaishou Campus", URL: "https://campus.kuaishou.cn/", Enabled: true, Category: "internet"},
+		{Name: "Baidu Talent", URL: "https://talent.baidu.com/jobs/list", Enabled: true, Category: "ai"},
+		{Name: "OPPO Careers", URL: "https://careers.oppo.com/", Enabled: true, Category: "hardware", ParserType: "oppo_api"},
+		{Name: "vivo Careers", URL: "https://hr.vivo.com/", Enabled: true, Category: "hardware"},
+		{Name: "Honor Careers", URL: "https://career.hihonor.com/", Enabled: true, Category: "hardware"},
+		{Name: "JD Careers", URL: "https://zhaopin.jd.com/", Enabled: true, Category: "internet"},
+		{Name: "NetEase Campus", URL: "https://campus.163.com/", Enabled: true, Category: "internet"},
+		{Name: "Xiaomi Campus", URL: "https://campus.hr.xiaomi.com/", Enabled: true, Category: "hardware"},
+		{Name: "Ant Group Campus", URL: "https://talent.antgroup.com/campus/home", Enabled: true, Category: "fintech"},
+		{Name: "DiDi Campus", URL: "https://campus.didiglobal.com/", Enabled: true, Category: "internet"},
+		{Name: "PDD Careers", URL: "https://careers.pddglobalhr.com/", Enabled: true, Category: "internet"},
+		{Name: "Ctrip Careers", URL: "https://job.ctrip.com/", Enabled: true, Category: "internet"},
+		{Name: "Xiaohongshu Campus", URL: "https://campus.xiaohongshu.com/", Enabled: true, Category: "internet"},
+		{Name: "miHoYo Jobs", URL: "https://jobs.mihoyo.com/", Enabled: true, Category: "game"},
+		{Name: "Dewu Campus", URL: "https://campus.dewu.com/", Enabled: true, Category: "internet"},
+		{Name: "Bilibili Jobs", URL: "https://jobs.bilibili.com/", Enabled: true, Category: "internet"},
+		{Name: "Ping An Campus", URL: "https://campus.pingan.com/", Enabled: true, Category: "fintech"},
+		{Name: "WeBank Campus", URL: "https://campus.webank.com/", Enabled: true, Category: "fintech"},
+		{Name: "SF Express Campus", URL: "https://campus.sf-express.com/", Enabled: true, Category: "logistics"},
+		{Name: "BYD Jobs", URL: "https://job.byd.com/portal/pc/", Enabled: true, Category: "new_energy"},
+		{Name: "Lenovo Careers", URL: "https://talent.lenovo.com.cn/", Enabled: true, Category: "hardware"},
+		{Name: "TP-Link Campus", URL: "https://join.tplinkglobal.com/campus/", Enabled: true, Category: "hardware"},
+		{Name: "iFlytek Campus", URL: "https://campus.iflytek.com/", Enabled: true, Category: "ai"},
+		{Name: "Kingsoft Campus", URL: "https://campus.kingsoft.com/", Enabled: true, Category: "software"},
+		{Name: "360 Campus", URL: "https://campus.360.cn/", Enabled: true, Category: "security"},
+		{Name: "ZTE Careers", URL: "https://job.zte.com.cn/", Enabled: true, Category: "hardware"},
+		{Name: "Mindray Careers", URL: "https://career.mindray.com/", Enabled: true, Category: "medical"},
+		{Name: "Sangfor Careers", URL: "https://hr.sangfor.com/", Enabled: true, Category: "security"},
+		{Name: "Midea Careers", URL: "https://careers.midea.com/", Enabled: true, Category: "manufacturing"},
 	}
 }
 
@@ -101,9 +103,9 @@ func (r *Repository) CreateSource(ctx context.Context, input SourceInput) (Sourc
 		return Source{}, err
 	}
 	result, err := r.db.ExecContext(ctx, `
-		INSERT INTO job_sources (name, type, url, enabled, parser_type)
-		VALUES (?, ?, ?, ?, ?)
-	`, input.Name, input.Type, input.URL, boolToInt(input.Enabled), input.ParserType)
+		INSERT INTO job_sources (name, type, url, enabled, category, parser_type)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, input.Name, input.Type, input.URL, boolToInt(input.Enabled), input.Category, input.ParserType)
 	if err != nil {
 		return Source{}, fmt.Errorf("insert source: %w", err)
 	}
@@ -119,6 +121,9 @@ func (r *Repository) SeedRecommendedSources(ctx context.Context) (SeedSourcesRes
 	for _, source := range RecommendedSources() {
 		if source.Type == "" {
 			source.Type = "public_url"
+		}
+		if source.Category == "" {
+			source.Category = "general"
 		}
 		if source.ParserType == "" {
 			source.ParserType = "generic"
@@ -155,9 +160,9 @@ func (r *Repository) createSourceIfMissing(ctx context.Context, input SourceInpu
 	if err == nil {
 		_, err = r.db.ExecContext(ctx, `
 			UPDATE job_sources
-			SET type = ?, url = ?, parser_type = ?, updated_at = CURRENT_TIMESTAMP
+			SET type = ?, url = ?, category = ?, parser_type = ?, updated_at = CURRENT_TIMESTAMP
 			WHERE id = ?
-		`, input.Type, input.URL, input.ParserType, existingID)
+		`, input.Type, input.URL, input.Category, input.ParserType, existingID)
 		if err != nil {
 			return false, fmt.Errorf("refresh source %q: %w", input.Name, err)
 		}
@@ -167,9 +172,9 @@ func (r *Repository) createSourceIfMissing(ctx context.Context, input SourceInpu
 		return false, fmt.Errorf("find source %q: %w", input.Name, err)
 	}
 	result, err := r.db.ExecContext(ctx, `
-		INSERT INTO job_sources (name, type, url, enabled, parser_type)
-		VALUES (?, ?, ?, ?, ?)
-	`, input.Name, input.Type, input.URL, boolToInt(input.Enabled), input.ParserType)
+		INSERT INTO job_sources (name, type, url, enabled, category, parser_type)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, input.Name, input.Type, input.URL, boolToInt(input.Enabled), input.Category, input.ParserType)
 	if err != nil {
 		return false, fmt.Errorf("insert source: %w", err)
 	}
@@ -277,8 +282,8 @@ func (r *Repository) SeedPublicURLSources(ctx context.Context, urls []string) er
 		}
 		name := sourceNameFromURL(parsed)
 		_, err = r.db.ExecContext(ctx, `
-			INSERT INTO job_sources (name, type, url, enabled, parser_type)
-			VALUES (?, 'public_url', ?, 1, 'generic')
+			INSERT INTO job_sources (name, type, url, enabled, category, parser_type)
+			VALUES (?, 'public_url', ?, 1, 'custom', 'generic')
 			ON CONFLICT(name) DO NOTHING
 		`, name, parsed.String())
 		if err != nil {
@@ -295,6 +300,9 @@ func normalizeSourceInput(input SourceInput) (SourceInput, error) {
 	input.ParserType = strings.TrimSpace(input.ParserType)
 	if input.Type == "" {
 		input.Type = "public_url"
+	}
+	if input.Category == "" {
+		input.Category = "general"
 	}
 	if input.ParserType == "" {
 		input.ParserType = "generic"
@@ -320,7 +328,7 @@ func sourceNameFromURL(parsed *url.URL) string {
 
 func selectSourceSQL() string {
 	return `
-		SELECT id, name, type, url, enabled, parser_type, last_run_at,
+		SELECT id, name, type, url, enabled, category, parser_type, last_run_at,
 			health_status, health_reason, consecutive_failures, last_success_at,
 			last_failure_at, last_found_count, created_at, updated_at
 		FROM job_sources`
@@ -339,6 +347,7 @@ func scanSource(scanner sourceScanner) (Source, error) {
 		&source.Type,
 		&source.URL,
 		&enabled,
+		&source.Category,
 		&source.ParserType,
 		&source.LastRunAt,
 		&source.HealthStatus,
