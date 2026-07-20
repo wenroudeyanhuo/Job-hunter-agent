@@ -141,6 +141,16 @@ func (c DBSourceCollector) Collect(ctx context.Context) ([]domain.Job, error) {
 			}
 			continue
 		}
+		if isByteDanceCareerSource(source.URL) {
+			collected, err := NewByteDanceCareerCollector(c.client).Collect(ctx)
+			if err != nil {
+				return nil, err
+			}
+			for _, job := range collected {
+				jobs = appendUniqueJob(jobs, seen, job)
+			}
+			continue
+		}
 		urls = append(urls, source.URL)
 	}
 	collected, err := NewPublicURLCollector(urls, c.client).Collect(ctx)
@@ -159,4 +169,13 @@ func isTencentCareerSource(rawURL string) bool {
 		return false
 	}
 	return strings.Contains(strings.ToLower(parsed.Hostname()), "careers.tencent.com")
+}
+
+func isByteDanceCareerSource(rawURL string) bool {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	return strings.Contains(host, "jobs.bytedance.com") || strings.Contains(host, "jobs.toutiao.com")
 }
