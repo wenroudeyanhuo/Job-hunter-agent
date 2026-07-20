@@ -135,3 +135,25 @@ func TestRepositorySeedRecommendedSourcesRefreshesExistingParserTypes(t *testing
 	}
 	t.Fatal("expected OPPO Careers source")
 }
+
+func TestRecommendedSourcesUseOfficialParsers(t *testing.T) {
+	want := map[string]string{
+		"Tencent Careers": "tencent_api",
+		"ByteDance Jobs":  "bytedance_api",
+		"Meituan Campus":  "meituan_api",
+		"OPPO Careers":    "oppo_api",
+	}
+	for _, source := range RecommendedSources() {
+		parser, ok := want[source.Name]
+		if !ok {
+			continue
+		}
+		if source.ParserType != parser {
+			t.Fatalf("expected %s to use %s, got %q", source.Name, parser, source.ParserType)
+		}
+		delete(want, source.Name)
+	}
+	if len(want) > 0 {
+		t.Fatalf("missing recommended official parser sources: %#v", want)
+	}
+}

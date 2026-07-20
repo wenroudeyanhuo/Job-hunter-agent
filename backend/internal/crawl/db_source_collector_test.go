@@ -168,3 +168,43 @@ func TestDBSourceCollectorUsesOPPOParserType(t *testing.T) {
 		t.Fatalf("expected OPPO job, got %#v", collected)
 	}
 }
+
+func TestDBSourceCollectorUsesMeituanParserType(t *testing.T) {
+	sourceServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{
+			"data": {
+				"list": [{
+					"jobUnionId": "4439540334",
+					"name": "Backend Engineer",
+					"cityList": [{"name": "Shenzhen"}],
+					"department": [{"name": "Retail Platform"}],
+					"jobDuty": "Build retail backend systems."
+				}]
+			}
+		}`))
+	}))
+	defer sourceServer.Close()
+
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	repo := jobs.NewRepository(conn)
+	if _, err := repo.CreateSource(context.Background(), jobs.SourceInput{
+		Name:       "Meituan Campus",
+		URL:        sourceServer.URL,
+		Enabled:    true,
+		ParserType: "meituan_api",
+	}); err != nil {
+		t.Fatalf("create source: %v", err)
+	}
+
+	collector := NewDBSourceCollector(repo, sourceServer.Client())
+	collected, err := collector.Collect(context.Background())
+	if err != nil {
+		t.Fatalf("collect: %v", err)
+	}
+	if len(collected) != 1 || collected[0].Company != "Meituan" {
+		t.Fatalf("expected Meituan job, got %#v", collected)
+	}
+}

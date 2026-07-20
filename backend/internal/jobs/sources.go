@@ -41,7 +41,7 @@ func RecommendedSources() []SourceInput {
 		{Name: "Huawei Careers", URL: "https://career.huawei.com/reccampportal/portal5/index.html", Enabled: true},
 		{Name: "ByteDance Jobs", URL: "https://jobs.bytedance.com/campus/", Enabled: true, ParserType: "bytedance_api"},
 		{Name: "Alibaba Campus", URL: "https://talent.alibaba.com/campus/home", Enabled: true},
-		{Name: "Meituan Campus", URL: "https://campus.meituan.com/", Enabled: true},
+		{Name: "Meituan Campus", URL: "https://campus.meituan.com/", Enabled: true, ParserType: "meituan_api"},
 		{Name: "DJI Careers", URL: "https://we.dji.com/zh-CN/campus", Enabled: true},
 		{Name: "Kuaishou Campus", URL: "https://campus.kuaishou.cn/", Enabled: true},
 		{Name: "Baidu Talent", URL: "https://talent.baidu.com/jobs/list", Enabled: true},
