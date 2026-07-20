@@ -12,7 +12,7 @@ import (
 	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/jobs"
 )
 
-const discoveredLinksPerSource = 10
+const discoveredLinksPerSource = 20
 
 type Collector interface {
 	Name() string
