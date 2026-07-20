@@ -70,6 +70,10 @@ func ScoreJobWithSettings(input domain.Job, settings Settings) ScoreResult {
 		score -= 10
 		penalties = append(penalties, "Missing job description")
 	}
+	if !looksLikeConcreteJobPosting(job, text, tags) {
+		score -= 15
+		penalties = append(penalties, "Low confidence job posting")
+	}
 
 	if score < 0 {
 		score = 0
@@ -84,6 +88,9 @@ func ScoreJobWithSettings(input domain.Job, settings Settings) ScoreResult {
 	job.PenaltyReasons = mergeStrings(job.PenaltyReasons, penalties)
 	if job.Status == "" {
 		job.Status = domain.StatusNew
+	}
+	if containsString(job.PenaltyReasons, "Low confidence job posting") && job.Status == domain.StatusNew {
+		job.Status = domain.StatusManualCheck
 	}
 
 	return ScoreResult{Job: job}
@@ -195,4 +202,18 @@ func intersectStrings(values []string, allowed []string) []string {
 		}
 	}
 	return out
+}
+
+func looksLikeConcreteJobPosting(job domain.Job, text string, tags []string) bool {
+	if len(tags) == 0 {
+		return false
+	}
+	if hasAny(text, "engineer", "developer", "intern", "算法", "开发", "工程师", "实习", "岗位", "职位") {
+		return true
+	}
+	if hasAny(text, "apply online", "job description", "responsibilities", "requirements", "投递", "岗位职责", "任职要求") {
+		return true
+	}
+	pathText := strings.ToLower(job.ApplyURL + " " + job.SourceURL)
+	return hasAny(" "+pathText+" ", "/job/", "/jobs/", "position", "requisition")
 }

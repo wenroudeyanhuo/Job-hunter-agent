@@ -57,3 +57,27 @@ func TestBuildAgentBriefingSummarizesWorkQueue(t *testing.T) {
 		t.Fatalf("expected manual check action, got %#v", briefing.NextActions)
 	}
 }
+
+func TestBuildAgentBriefingHighlightsLowConfidenceQueue(t *testing.T) {
+	briefing := BuildAgentBriefing([]domain.Job{
+		{Title: "Tencent Careers", MatchScore: 10, Status: domain.StatusNew, PenaltyReasons: []string{"Low confidence job posting"}},
+		{Title: "Go Backend Engineer", MatchScore: 82, Status: domain.StatusNew},
+	}, []Source{
+		{Name: "Tencent Careers", Enabled: true},
+	}, []domain.JobRun{
+		{Status: "success", JobsCreated: 2},
+	})
+
+	if briefing.Metrics.LowConfidenceJobs != 1 {
+		t.Fatalf("expected one low confidence job, got %#v", briefing.Metrics)
+	}
+	found := false
+	for _, action := range briefing.NextActions {
+		if action.Action == "review_low_confidence" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected low confidence review action, got %#v", briefing.NextActions)
+	}
+}
