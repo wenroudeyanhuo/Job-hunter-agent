@@ -68,6 +68,56 @@ func TestListJobsReturnsEmptyArray(t *testing.T) {
 	}
 }
 
+func TestListJobsHidesIgnoredJobsByDefault(t *testing.T) {
+	repo, handler := testRouter(t, nil)
+	if _, err := repo.CreateJob(context.Background(), domain.Job{
+		Company:    "Tencent",
+		Title:      "Go Backend Engineer",
+		ApplyURL:   "https://example.com/jobs/backend",
+		Status:     domain.StatusNew,
+		MatchScore: 88,
+	}); err != nil {
+		t.Fatalf("seed active job: %v", err)
+	}
+	if _, err := repo.CreateJob(context.Background(), domain.Job{
+		Company:    "Career",
+		Title:      "招聘官网",
+		ApplyURL:   "https://career.example.com/",
+		Status:     domain.StatusIgnored,
+		MatchScore: 35,
+	}); err != nil {
+		t.Fatalf("seed ignored job: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/jobs", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var active []domain.Job
+	if err := json.Unmarshal(rec.Body.Bytes(), &active); err != nil {
+		t.Fatalf("decode active jobs: %v", err)
+	}
+	if len(active) != 1 || active[0].Status == domain.StatusIgnored {
+		t.Fatalf("expected only active jobs, got %#v", active)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/jobs?status=ignored", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var ignored []domain.Job
+	if err := json.Unmarshal(rec.Body.Bytes(), &ignored); err != nil {
+		t.Fatalf("decode ignored jobs: %v", err)
+	}
+	if len(ignored) != 1 || ignored[0].Status != domain.StatusIgnored {
+		t.Fatalf("expected ignored job when requested, got %#v", ignored)
+	}
+}
+
 func TestRunCrawlReturnsSummary(t *testing.T) {
 	_, handler := testRouter(t, fakeRunner{summary: crawl.RunSummary{JobsCreated: 1}})
 
@@ -84,6 +134,42 @@ func TestRunCrawlReturnsSummary(t *testing.T) {
 	}
 	if summary.JobsCreated != 1 {
 		t.Fatalf("expected jobs_created 1, got %d", summary.JobsCreated)
+	}
+}
+
+func TestRunCrawlAutomaticallyCleansLandingPages(t *testing.T) {
+	repo, handler := testRouter(t, fakeRunner{summary: crawl.RunSummary{JobsCreated: 1}})
+	landing, err := repo.CreateJob(context.Background(), domain.Job{
+		Company:     "Career",
+		Title:       "华为应届生_实习生_留学生_海外本地最新招聘信息-华为校园招聘",
+		Description: "校园招聘官网",
+		ApplyURL:    "https://career.example.com/",
+		SourceURL:   "https://career.example.com/",
+		Status:      domain.StatusNew,
+	})
+	if err != nil {
+		t.Fatalf("seed landing page: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/crawl/run", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var summary crawl.RunSummary
+	if err := json.Unmarshal(rec.Body.Bytes(), &summary); err != nil {
+		t.Fatalf("decode summary: %v", err)
+	}
+	if summary.LandingPagesIgnored != 1 {
+		t.Fatalf("expected one auto-cleaned landing page, got %#v", summary)
+	}
+	after, err := repo.GetJob(context.Background(), landing.ID)
+	if err != nil {
+		t.Fatalf("get landing page: %v", err)
+	}
+	if after.Status != domain.StatusIgnored {
+		t.Fatalf("expected landing page ignored, got %q", after.Status)
 	}
 }
 

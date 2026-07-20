@@ -72,10 +72,17 @@ func TestBuildAgentBriefingHighlightsLowConfidenceQueue(t *testing.T) {
 		t.Fatalf("expected one low confidence job, got %#v", briefing.Metrics)
 	}
 	found := false
+	cleanupFound := false
 	for _, action := range briefing.NextActions {
+		if action.Action == "cleanup_landing_pages" {
+			cleanupFound = true
+		}
 		if action.Action == "review_low_confidence" {
 			found = true
 		}
+	}
+	if !cleanupFound {
+		t.Fatalf("expected cleanup action, got %#v", briefing.NextActions)
 	}
 	if !found {
 		t.Fatalf("expected low confidence review action, got %#v", briefing.NextActions)
