@@ -13,10 +13,15 @@ type ScoreResult struct {
 }
 
 func ScoreJob(input domain.Job) ScoreResult {
+	return ScoreJobWithSettings(input, DefaultSettings())
+}
+
+func ScoreJobWithSettings(input domain.Job, settings Settings) ScoreResult {
 	job := input
+	settings = normalizeSettings(settings)
 	text := normalizedSearchText(job.Company, job.Title, job.City, job.Description)
 
-	if filtered, reason := IsHardFiltered(job); filtered {
+	if filtered, reason := IsHardFilteredWithSettings(job, settings); filtered {
 		return ScoreResult{Job: job, HardFiltered: true, HardFilterReason: reason}
 	}
 
@@ -24,20 +29,21 @@ func ScoreJob(input domain.Job) ScoreResult {
 	reasons := []string{}
 	penalties := []string{}
 
-	if hasAny(text, "shenzhen", "深圳") {
+	if city, ok := matchedSettingValue(text, settings.TargetCities); ok {
 		score += 25
-		reasons = append(reasons, "Shenzhen role")
+		reasons = append(reasons, "Target city: "+city)
 	} else if strings.TrimSpace(job.City) == "" {
 		score -= 10
 		penalties = append(penalties, "Unclear city")
 	}
 
 	tags := detectDirectionTags(text)
-	if len(tags) > 0 {
+	matchedTags := intersectStrings(tags, settings.TargetDirections)
+	if len(matchedTags) > 0 {
 		score += 20
 		reasons = append(reasons, "Matches target direction")
 	}
-	if containsString(tags, "algorithm") || containsString(tags, "ai_application") {
+	if containsString(matchedTags, "algorithm") || containsString(matchedTags, "ai_application") {
 		score += 10
 		reasons = append(reasons, "High-priority algorithm or AI application role")
 	}
@@ -84,7 +90,16 @@ func ScoreJob(input domain.Job) ScoreResult {
 }
 
 func IsHardFiltered(job domain.Job) (bool, string) {
+	return IsHardFilteredWithSettings(job, DefaultSettings())
+}
+
+func IsHardFilteredWithSettings(job domain.Job, settings Settings) (bool, string) {
 	text := normalizedSearchText(job.Company, job.Title, job.City, job.Description)
+	for _, keyword := range cleanStringList(settings.ExcludedKeywords) {
+		if hasAny(text, keyword) {
+			return true, "Matched excluded keyword: " + keyword
+		}
+	}
 	if hasAny(text, "outsourcing", "外包") {
 		return true, "Suspected outsourcing"
 	}
@@ -157,4 +172,27 @@ func containsString(values []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func matchedSettingValue(text string, values []string) (string, bool) {
+	for _, value := range cleanStringList(values) {
+		if hasAny(text, value) {
+			return value, true
+		}
+	}
+	return "", false
+}
+
+func intersectStrings(values []string, allowed []string) []string {
+	allowedSet := map[string]struct{}{}
+	for _, value := range cleanStringList(allowed) {
+		allowedSet[strings.ToLower(value)] = struct{}{}
+	}
+	out := []string{}
+	for _, value := range values {
+		if _, ok := allowedSet[strings.ToLower(value)]; ok {
+			out = append(out, value)
+		}
+	}
+	return out
 }

@@ -52,6 +52,10 @@ func (r *Runner) Run(ctx context.Context, trigger string) (RunSummary, error) {
 
 	summary := RunSummary{SourcesTotal: len(r.collectors)}
 	errors := []string{}
+	settings, err := r.repo.GetSettings(ctx)
+	if err != nil {
+		return summary, err
+	}
 
 	for _, collector := range r.collectors {
 		collected, err := collector.Collect(ctx)
@@ -72,7 +76,7 @@ func (r *Runner) Run(ctx context.Context, trigger string) (RunSummary, error) {
 		for _, rawJob := range collected {
 			stat := sourceStat(sourceStats, run.ID, collector.Name(), rawJob.SourceName, rawJob.SourceURL)
 			stat.JobsFound++
-			scored := jobs.ScoreJob(rawJob)
+			scored := jobs.ScoreJobWithSettings(rawJob, settings)
 			if scored.HardFiltered {
 				stat.JobsFiltered++
 				continue

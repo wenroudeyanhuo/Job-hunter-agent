@@ -61,7 +61,12 @@ func (h *Handlers) ImportURL(c *gin.Context) {
 		return
 	}
 	manualOnly := imported.Status == domain.StatusManualCheck
-	scored := jobs.ScoreJob(imported)
+	settings, err := h.Repo.GetSettings(c.Request.Context())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	scored := jobs.ScoreJobWithSettings(imported, settings)
 	if scored.HardFiltered {
 		scored.Job.Status = domain.StatusManualCheck
 		scored.Job.PenaltyReasons = append(scored.Job.PenaltyReasons, scored.HardFilterReason)
