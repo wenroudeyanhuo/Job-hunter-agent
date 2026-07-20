@@ -86,3 +86,29 @@ export interface RecommendedCrawlResponse {
   sources: SeedSourcesResult;
   summary: RunSummary;
 }
+
+export interface AgentBriefing {
+  generated_at: string;
+  tone: "steady" | "needs_setup" | "needs_review" | "needs_attention" | string;
+  headline: string;
+  metrics: AgentMetrics;
+  latest_run?: JobRun;
+  highlights: string[];
+  next_actions: AgentNextAction[];
+}
+
+export interface AgentMetrics {
+  total_jobs: number;
+  strong_matches: number;
+  manual_check_jobs: number;
+  interested_jobs: number;
+  applied_jobs: number;
+  enabled_sources: number;
+}
+
+export interface AgentNextAction {
+  action: string;
+  label: string;
+  reason: string;
+  priority: number;
+}

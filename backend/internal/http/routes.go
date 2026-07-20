@@ -16,6 +16,7 @@ func NewRouter(handlers *Handlers) http.Handler {
 	})
 
 	api := router.Group("/api")
+	api.GET("/agent/briefing", handlers.GetAgentBriefing)
 	api.GET("/jobs", handlers.ListJobs)
 	api.POST("/jobs/import-url", handlers.ImportURL)
 	api.GET("/jobs/:id", handlers.GetJob)
