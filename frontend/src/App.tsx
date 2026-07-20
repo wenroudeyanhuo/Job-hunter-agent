@@ -41,6 +41,7 @@ export default function App() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [status, setStatus] = useState<JobStatus | "all">("all");
   const [direction, setDirection] = useState("all");
+  const [scoreView, setScoreView] = useState<"all" | "strong">("all");
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -100,8 +101,12 @@ export default function App() {
   }, []);
 
   const visibleJobs = useMemo(() => {
-    return jobs.filter((job) => direction === "all" || job.direction_tags.includes(direction));
-  }, [jobs, direction]);
+    return jobs.filter((job) => {
+      const directionMatches = direction === "all" || job.direction_tags.includes(direction);
+      const scoreMatches = scoreView === "all" || job.match_score >= 70;
+      return directionMatches && scoreMatches;
+    });
+  }, [jobs, direction, scoreView]);
 
   const strongMatches = jobs.filter((job) => job.match_score >= 70).length;
 
@@ -111,6 +116,37 @@ export default function App() {
     refresh(next)
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
+  }
+
+  async function handleAgentAction(action: string) {
+    switch (action) {
+      case "add_recommended_and_crawl":
+        await handleRecommendedCrawl();
+        return;
+      case "run_crawl":
+        await handleRunCrawl();
+        return;
+      case "review_manual_check":
+        setScoreView("all");
+        await handleStatusFilter("manual_check");
+        setNotice("Showing jobs that need manual review.");
+        return;
+      case "review_strong_matches":
+        setStatus("all");
+        setDirection("all");
+        setScoreView("strong");
+        await refresh("all");
+        setNotice("Showing strong matches from the agent briefing.");
+        return;
+      case "inspect_failed_sources":
+        if (runs.length > 0) {
+          await selectRun(runs[0].id);
+          setNotice("Opened the latest crawl run. Check source errors below.");
+        }
+        return;
+      default:
+        setNotice("The agent will keep monitoring your pipeline.");
+    }
   }
 
   async function handleRunCrawl() {
@@ -279,7 +315,7 @@ export default function App() {
         <Metric label="Next runs" value={settings.crawl_schedule.join(" / ")} />
       </section>
 
-      {briefing && <AgentBriefingPanel briefing={briefing} />}
+      {briefing && <AgentBriefingPanel briefing={briefing} onAction={handleAgentAction} busy={running || recommendedRunning} />}
 
       {lastRun && (
         <section className="run-strip">
@@ -326,6 +362,13 @@ export default function App() {
                   {value === "all" ? "All" : value.replace("_", " ")}
                 </option>
               ))}
+            </select>
+          </label>
+          <label>
+            Score
+            <select value={scoreView} onChange={(event) => setScoreView(event.target.value as "all" | "strong")}>
+              <option value="all">All</option>
+              <option value="strong">Strong matches</option>
             </select>
           </label>
         </aside>
@@ -530,7 +573,15 @@ export default function App() {
   );
 }
 
-function AgentBriefingPanel({ briefing }: { briefing: AgentBriefing }) {
+function AgentBriefingPanel({
+  briefing,
+  onAction,
+  busy,
+}: {
+  briefing: AgentBriefing;
+  onAction: (action: string) => void | Promise<void>;
+  busy: boolean;
+}) {
   return (
     <section className={`agent-briefing agent-${briefing.tone}`}>
       <div>
@@ -554,6 +605,9 @@ function AgentBriefingPanel({ briefing }: { briefing: AgentBriefing }) {
           <div className="agent-action" key={action.action}>
             <strong>{action.label}</strong>
             <span>{action.reason}</span>
+            <button type="button" onClick={() => onAction(action.action)} disabled={busy}>
+              Do it
+            </button>
           </div>
         ))}
       </div>
