@@ -188,19 +188,23 @@ func DiscoverLinks(ctx context.Context, rawURL string, client *http.Client, limi
 
 func LooksLikeConcreteJobPosting(job domain.Job) bool {
 	text := cleanText(strings.ToLower(strings.Join([]string{job.Title, job.Description, job.ApplyURL, job.SourceURL}, " ")))
+	landingSignal := containsAny(text,
+		"招聘官网", "校园招聘官网", "校园招聘", "社会招聘", "招聘平台", "最新招聘信息", "校招资讯",
+		"jobs list", "job list", "/jobs/list", "/static/index.html", "careers home",
+	)
 	roleSignal := containsAny(text,
-		"engineer", "developer", "frontend", "backend", "java", "golang", "go ", "algorithm", "ai application", "llm",
-		"工程师", "开发", "前端", "后端", "java", "go", "算法", "大模型", "ai应用", "实习生",
+		"engineer", "developer", "frontend", "backend", "java engineer", "golang", "go backend", "algorithm", "ai application", "llm",
+		"工程师", "开发", "前端", "后端", "算法", "大模型", "ai应用", "实习生",
 	)
 	detailSignal := containsAny(text,
 		"job description", "responsibilities", "requirements", "apply now", "apply online",
 		"岗位职责", "任职要求", "职位描述", "工作职责", "投递", "立即申请",
 	)
 	pathSignal := containsAny(text, "/job/", "/jobs/", "/position/", "/positions/", "requisition", "campus/position")
-	landingSignal := containsAny(text,
-		"招聘官网", "校园招聘官网", "最新招聘信息", "jobs list", "job list", "careers home",
-	)
 
+	if landingSignal && !detailSignal {
+		return false
+	}
 	if roleSignal && (detailSignal || pathSignal || !landingSignal) {
 		return true
 	}

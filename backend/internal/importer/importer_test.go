@@ -134,6 +134,35 @@ func TestLooksLikeConcreteJobPostingRejectsRecruitmentLandingPage(t *testing.T) 
 	}
 }
 
+func TestLooksLikeConcreteJobPostingRejectsKnownRecruitmentPortals(t *testing.T) {
+	cases := []domain.Job{
+		{
+			Title:       "校园招聘 - DJI 大疆招聘",
+			Description: "从这里起飞，让你的想象，变成世界现象。点击了解大疆拓疆者校园招聘、大咖计划、实习生招聘等最新校招资讯。",
+			ApplyURL:    "https://we.dji.com/zh-CN/campus",
+			SourceURL:   "https://we.dji.com/zh-CN/campus",
+		},
+		{
+			Title:       "百度校园招聘",
+			Description: "百度官方招聘平台-诚挚邀请来自社会，校园，实习生，海外的各界精英了解百度，加入百度。",
+			ApplyURL:    "https://talent.baidu.com/jobs/list",
+			SourceURL:   "https://talent.baidu.com/jobs/list",
+		},
+		{
+			Title:       "百度招聘",
+			Description: "百度官方招聘平台-诚挚邀请来自社会，校园，实习生，海外的各界精英了解百度，加入百度。",
+			ApplyURL:    "https://talent.baidu.com/static/index.html",
+			SourceURL:   "https://talent.baidu.com/static/index.html",
+		},
+	}
+
+	for _, job := range cases {
+		if LooksLikeConcreteJobPosting(job) {
+			t.Fatalf("expected recruitment portal to be rejected: %#v", job)
+		}
+	}
+}
+
 func TestLooksLikeConcreteJobPostingAcceptsRolePage(t *testing.T) {
 	if !LooksLikeConcreteJobPosting(domain.Job{
 		Title:       "Go Backend Engineer 2027 Campus - Shenzhen",
