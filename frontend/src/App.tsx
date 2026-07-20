@@ -208,6 +208,40 @@ export default function App() {
       return categoryMatches && queryMatches;
     });
   }, [sources, companyCategoryFilter, companyQuery]);
+  const readinessItems = [
+    {
+      id: "company_scope",
+      label: "Company scope",
+      detail: companies.length > 0 ? `${enabledCompanies} enabled companies` : "No company pool yet",
+      done: companies.length > 0 && enabledCompanies > 0,
+      actionLabel: companies.length > 0 ? "Manage" : "Add companies",
+      action: () => setActiveView("companies"),
+    },
+    {
+      id: "preferences",
+      label: "Preferences",
+      detail: `${settings.target_cities.join(", ")} / ${settings.target_directions.length} directions`,
+      done: settings.target_cities.length > 0 && settings.target_directions.length > 0,
+      actionLabel: "Edit",
+      action: () => setActiveView("settings"),
+    },
+    {
+      id: "crawl_history",
+      label: "Crawl history",
+      detail: runs.length > 0 ? `${runs.length} recorded runs` : "No crawl run yet",
+      done: runs.length > 0,
+      actionLabel: runs.length > 0 ? "View runs" : "Run crawl",
+      action: runs.length > 0 ? () => setActiveView("runs") : handleRunCrawl,
+    },
+    {
+      id: "feishu",
+      label: "Feishu",
+      detail: settings.feishu_configured ? "Webhook configured" : "Webhook not configured",
+      done: settings.feishu_configured,
+      actionLabel: "Settings",
+      action: () => setActiveView("settings"),
+    },
+  ];
 
   async function handleStatusFilter(next: JobStatus | "all") {
     setStatus(next);
@@ -522,6 +556,8 @@ export default function App() {
             <Metric label="Enabled companies" value={enabledCompanies} />
             <Metric label="Next runs" value={settings.crawl_schedule.join(" / ")} />
           </section>
+
+          <ProductReadinessPanel items={readinessItems} busy={running || seedingSources || recommendedRunning} />
 
           {briefing && <AgentBriefingPanel briefing={briefing} onAction={handleAgentAction} busy={running || recommendedRunning} />}
 
@@ -1013,6 +1049,44 @@ function AgentActivityLog({ events }: { events: AgentEvent[] }) {
   );
 }
 
+function ProductReadinessPanel({
+  items,
+  busy,
+}: {
+  items: Array<{
+    id: string;
+    label: string;
+    detail: string;
+    done: boolean;
+    actionLabel: string;
+    action: () => void | Promise<void>;
+  }>;
+  busy: boolean;
+}) {
+  const complete = items.filter((item) => item.done).length;
+  return (
+    <section className="readiness-panel">
+      <div className="panel-header">
+        <h2>Product Readiness</h2>
+        <span>{complete} / {items.length} ready</span>
+      </div>
+      <div className="readiness-grid">
+        {items.map((item) => (
+          <div className={item.done ? "readiness-item ready" : "readiness-item"} key={item.id}>
+            <div>
+              <strong>{item.label}</strong>
+              <span>{item.detail}</span>
+            </div>
+            <button type="button" onClick={item.action} disabled={busy}>
+              {item.actionLabel}
+            </button>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function settingsToDraft(settings: Settings) {
   return {
     target_cities: safeSettingsList(settings.target_cities, defaultSettings.target_cities).join("\n"),
@@ -1046,7 +1120,7 @@ function safeSettingsList(values: unknown, fallback: string[]) {
 function parseSettingsList(value: string) {
   const seen = new Set<string>();
   return value
-    .split(/[\n,，]/)
+    .split(/\r?\n|,|;|\//)
     .map((item) => item.trim())
     .filter((item) => {
       const key = item.toLowerCase();

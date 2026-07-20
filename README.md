@@ -108,6 +108,18 @@ cd frontend
 npm run build
 ```
 
+### First Run Checklist
+
+After the backend and frontend are running:
+
+1. Open `http://localhost:5173`.
+2. Go to Companies and add the recommended company pool.
+3. Go to Settings and adjust cities, directions, excluded keywords, crawl schedule, and your optional Feishu webhook.
+4. Use Send Feishu Test if a webhook is configured.
+5. Go back to Dashboard and run a crawl.
+6. Review Opportunities, mark promising jobs as Interested or Applied, and ignore low-quality matches.
+7. Use Send to Feishu from the duty report when you want the assistant to push a current summary to your bot.
+
 ## Local Data
 
 By default, the backend stores SQLite data under:
