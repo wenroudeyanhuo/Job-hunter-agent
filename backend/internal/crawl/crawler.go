@@ -3,6 +3,8 @@ package crawl
 import (
 	"context"
 	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/domain"
 	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/importer"
@@ -123,11 +125,38 @@ func (c DBSourceCollector) Collect(ctx context.Context) ([]domain.Job, error) {
 		return nil, err
 	}
 	urls := []string{}
+	jobs := []domain.Job{}
+	seen := map[string]struct{}{}
 	for _, source := range sources {
 		if source.Type != "public_url" || source.URL == "" {
 			continue
 		}
+		if isTencentCareerSource(source.URL) {
+			collected, err := NewTencentCareerCollector(c.client).Collect(ctx)
+			if err != nil {
+				return nil, err
+			}
+			for _, job := range collected {
+				jobs = appendUniqueJob(jobs, seen, job)
+			}
+			continue
+		}
 		urls = append(urls, source.URL)
 	}
-	return NewPublicURLCollector(urls, c.client).Collect(ctx)
+	collected, err := NewPublicURLCollector(urls, c.client).Collect(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, job := range collected {
+		jobs = appendUniqueJob(jobs, seen, job)
+	}
+	return jobs, nil
+}
+
+func isTencentCareerSource(rawURL string) bool {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(parsed.Hostname()), "careers.tencent.com")
 }
