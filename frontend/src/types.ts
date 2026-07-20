@@ -65,3 +65,12 @@ export interface Source {
   enabled: boolean;
   parser_type: string;
 }
+
+export interface Settings {
+  target_cities: string[];
+  target_directions: string[];
+  excluded_keywords: string[];
+  crawl_schedule: string[];
+  feishu_configured: boolean;
+  updated_at: string;
+}

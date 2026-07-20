@@ -1,4 +1,4 @@
-import type { ImportURLResponse, Job, JobRun, JobRunSource, JobStatus, RunSummary, Source } from "./types";
+import type { ImportURLResponse, Job, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source } from "./types";
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -68,5 +68,16 @@ export async function updateSourceEnabled(id: number, enabled: boolean): Promise
   await request<void>(`/api/sources/${id}`, {
     method: "PATCH",
     body: JSON.stringify({ enabled }),
+  });
+}
+
+export async function getSettings(): Promise<Settings> {
+  return request<Settings>("/api/settings");
+}
+
+export async function updateSettings(settings: Pick<Settings, "target_cities" | "target_directions" | "excluded_keywords" | "crawl_schedule">): Promise<Settings> {
+  return request<Settings>("/api/settings", {
+    method: "PATCH",
+    body: JSON.stringify(settings),
   });
 }

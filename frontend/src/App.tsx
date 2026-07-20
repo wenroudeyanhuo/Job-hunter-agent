@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   createSource,
+  getSettings,
   importURL,
   listJobs,
   listRunSources,
@@ -8,9 +9,10 @@ import {
   listSources,
   runCrawl,
   updateJobStatus,
+  updateSettings,
   updateSourceEnabled,
 } from "./api";
-import type { Job, JobRun, JobRunSource, JobStatus, RunSummary, Source } from "./types";
+import type { Job, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source } from "./types";
 
 const statusLabels: Record<JobStatus | "all", string> = {
   all: "All",
@@ -23,6 +25,14 @@ const statusLabels: Record<JobStatus | "all", string> = {
 };
 
 const directionOptions = ["all", "frontend", "backend", "java", "go", "algorithm", "ai_application"];
+const defaultSettings: Settings = {
+  target_cities: ["Shenzhen"],
+  target_directions: ["frontend", "backend", "java", "go", "algorithm", "ai_application"],
+  excluded_keywords: ["outsourcing", "training", "bootcamp"],
+  crawl_schedule: ["09:00", "12:00", "18:00"],
+  feishu_configured: false,
+  updated_at: "",
+};
 
 export default function App() {
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -38,6 +48,9 @@ export default function App() {
   const [runSources, setRunSources] = useState<JobRunSource[]>([]);
   const [sourceURLValue, setSourceURLValue] = useState("");
   const [addingSource, setAddingSource] = useState(false);
+  const [settings, setSettings] = useState<Settings>(defaultSettings);
+  const [settingsDraft, setSettingsDraft] = useState(settingsToDraft(defaultSettings));
+  const [savingSettings, setSavingSettings] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [lastRun, setLastRun] = useState<RunSummary | null>(null);
@@ -62,8 +75,15 @@ export default function App() {
     }
   }
 
+  async function refreshSettings() {
+    const data = await getSettings();
+    const nextSettings = normalizeSettings(data);
+    setSettings(nextSettings);
+    setSettingsDraft(settingsToDraft(nextSettings));
+  }
+
   useEffect(() => {
-    Promise.all([refresh(), refreshSources(), refreshRuns()])
+    Promise.all([refresh(), refreshSources(), refreshRuns(), refreshSettings()])
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
@@ -152,6 +172,29 @@ export default function App() {
     setSources((current) => current.map((item) => (item.id === source.id ? { ...item, enabled: !source.enabled } : item)));
   }
 
+  async function handleSaveSettings(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSavingSettings(true);
+    setError("");
+    setNotice("");
+    try {
+      const saved = await updateSettings({
+        target_cities: parseSettingsList(settingsDraft.target_cities),
+        target_directions: parseSettingsList(settingsDraft.target_directions),
+        excluded_keywords: parseSettingsList(settingsDraft.excluded_keywords),
+        crawl_schedule: parseSettingsList(settingsDraft.crawl_schedule),
+      });
+      const nextSettings = normalizeSettings(saved);
+      setSettings(nextSettings);
+      setSettingsDraft(settingsToDraft(nextSettings));
+      setNotice("Settings saved. Future crawl and scoring steps can use these preferences.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save settings");
+    } finally {
+      setSavingSettings(false);
+    }
+  }
+
   async function selectRun(runId: number) {
     setSelectedRunId(runId);
     setRunSources(await listRunSources(runId));
@@ -178,7 +221,7 @@ export default function App() {
         <Metric label="Tracked jobs" value={jobs.length} />
         <Metric label="Strong matches" value={strongMatches} />
         <Metric label="Visible now" value={visibleJobs.length} />
-        <Metric label="Next runs" value="09:00 / 12:00 / 18:00" />
+        <Metric label="Next runs" value={settings.crawl_schedule.join(" / ")} />
       </section>
 
       {lastRun && (
@@ -328,6 +371,46 @@ export default function App() {
         </div>
       </section>
 
+      <section className="settings-panel">
+        <div className="panel-header">
+          <h2>Settings</h2>
+          <span>{settings.feishu_configured ? "Feishu ready" : "Feishu not configured"}</span>
+        </div>
+        <form className="settings-grid" onSubmit={handleSaveSettings}>
+          <label>
+            Target cities
+            <textarea
+              value={settingsDraft.target_cities}
+              onChange={(event) => setSettingsDraft((current) => ({ ...current, target_cities: event.target.value }))}
+            />
+          </label>
+          <label>
+            Directions
+            <textarea
+              value={settingsDraft.target_directions}
+              onChange={(event) => setSettingsDraft((current) => ({ ...current, target_directions: event.target.value }))}
+            />
+          </label>
+          <label>
+            Excluded keywords
+            <textarea
+              value={settingsDraft.excluded_keywords}
+              onChange={(event) => setSettingsDraft((current) => ({ ...current, excluded_keywords: event.target.value }))}
+            />
+          </label>
+          <label>
+            Crawl schedule
+            <textarea
+              value={settingsDraft.crawl_schedule}
+              onChange={(event) => setSettingsDraft((current) => ({ ...current, crawl_schedule: event.target.value }))}
+            />
+          </label>
+          <button type="submit" disabled={savingSettings}>
+            {savingSettings ? "Saving..." : "Save Settings"}
+          </button>
+        </form>
+      </section>
+
       <section className="runs-panel">
         <div className="panel-header">
           <h2>Crawl Runs</h2>
@@ -380,6 +463,49 @@ export default function App() {
       </section>
     </main>
   );
+}
+
+function settingsToDraft(settings: Settings) {
+  return {
+    target_cities: safeSettingsList(settings.target_cities, defaultSettings.target_cities).join("\n"),
+    target_directions: safeSettingsList(settings.target_directions, defaultSettings.target_directions).join("\n"),
+    excluded_keywords: safeSettingsList(settings.excluded_keywords, defaultSettings.excluded_keywords).join("\n"),
+    crawl_schedule: safeSettingsList(settings.crawl_schedule, defaultSettings.crawl_schedule).join("\n"),
+  };
+}
+
+function normalizeSettings(settings: Partial<Settings>): Settings {
+  return {
+    target_cities: safeSettingsList(settings.target_cities, defaultSettings.target_cities),
+    target_directions: safeSettingsList(settings.target_directions, defaultSettings.target_directions),
+    excluded_keywords: safeSettingsList(settings.excluded_keywords, defaultSettings.excluded_keywords),
+    crawl_schedule: safeSettingsList(settings.crawl_schedule, defaultSettings.crawl_schedule),
+    feishu_configured: Boolean(settings.feishu_configured),
+    updated_at: settings.updated_at || "",
+  };
+}
+
+function safeSettingsList(values: unknown, fallback: string[]) {
+  if (!Array.isArray(values)) {
+    return fallback;
+  }
+  const cleaned = values.filter((value): value is string => typeof value === "string" && value.trim() !== "");
+  return cleaned.length > 0 ? cleaned : fallback;
+}
+
+function parseSettingsList(value: string) {
+  const seen = new Set<string>();
+  return value
+    .split(/[\n,，]/)
+    .map((item) => item.trim())
+    .filter((item) => {
+      const key = item.toLowerCase();
+      if (!item || seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
 }
 
 function Metric({ label, value }: { label: string; value: string | number }) {

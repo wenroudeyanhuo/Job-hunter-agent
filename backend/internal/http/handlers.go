@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/crawl"
@@ -149,22 +148,37 @@ func (h *Handlers) ListRunSources(c *gin.Context) {
 }
 
 func (h *Handlers) GetSettings(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
-		"target_cities":     []string{"Shenzhen"},
-		"target_directions": []string{"frontend", "backend", "java", "go", "algorithm", "ai_application"},
-		"crawl_schedule":    []string{"09:00", "12:00", "18:00"},
-		"feishu_configured": h.FeishuWebhookURL != "",
-		"updated_at":        time.Now().UTC(),
-	})
+	settings, err := h.Repo.GetSettings(c.Request.Context())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, settingsResponse(settings, h.FeishuWebhookURL != ""))
 }
 
 func (h *Handlers) UpdateSettings(c *gin.Context) {
-	var raw map[string]any
-	if err := c.ShouldBindJSON(&raw); err != nil {
+	var req jobs.Settings
+	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid settings payload"})
 		return
 	}
-	c.JSON(http.StatusOK, raw)
+	settings, err := h.Repo.SaveSettings(c.Request.Context(), req)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, settingsResponse(settings, h.FeishuWebhookURL != ""))
+}
+
+func settingsResponse(settings jobs.Settings, feishuConfigured bool) gin.H {
+	return gin.H{
+		"target_cities":     settings.TargetCities,
+		"target_directions": settings.TargetDirections,
+		"excluded_keywords": settings.ExcludedKeywords,
+		"crawl_schedule":    settings.CrawlSchedule,
+		"feishu_configured": feishuConfigured,
+		"updated_at":        settings.UpdatedAt,
+	}
 }
 
 func (h *Handlers) ListSources(c *gin.Context) {
