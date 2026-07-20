@@ -218,6 +218,13 @@ h2 {
   font-size: 13px;
 }
 
+.duty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .duty-report .panel-header button {
   border: 1px solid #1769e0;
   border-radius: 6px;
@@ -226,6 +233,12 @@ h2 {
   padding: 8px 12px;
   font-size: 13px;
   font-weight: 760;
+}
+
+.duty-report .panel-header .secondary-duty-action {
+  border-color: #cfd8e6;
+  background: #fff;
+  color: #334155;
 }
 
 .duty-grid {

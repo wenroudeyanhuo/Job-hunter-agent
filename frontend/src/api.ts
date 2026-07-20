@@ -138,3 +138,7 @@ export async function updateSettings(settings: Pick<Settings, "target_cities" | 
 export async function sendFeishuTest(): Promise<void> {
   await request<void>("/api/notifications/feishu/test", { method: "POST" });
 }
+
+export async function sendFeishuReport(): Promise<void> {
+  await request<void>("/api/notifications/feishu/report", { method: "POST" });
+}

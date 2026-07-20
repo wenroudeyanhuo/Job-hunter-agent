@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -45,22 +46,12 @@ func (h *Handlers) GetAgentBriefing(c *gin.Context) {
 }
 
 func (h *Handlers) GetAgentDutyReport(c *gin.Context) {
-	jobList, err := h.Repo.ListJobs(c.Request.Context(), jobs.ListFilter{})
+	report, err := h.buildDutyReport(c.Request.Context())
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
-	sources, err := h.Repo.ListSources(c.Request.Context(), false)
-	if err != nil {
-		respondError(c, http.StatusInternalServerError, err)
-		return
-	}
-	runs, err := h.Repo.ListRuns(c.Request.Context())
-	if err != nil {
-		respondError(c, http.StatusInternalServerError, err)
-		return
-	}
-	c.JSON(http.StatusOK, jobs.BuildAgentDutyReport(jobList, sources, runs))
+	c.JSON(http.StatusOK, report)
 }
 
 func (h *Handlers) ListAgentEvents(c *gin.Context) {
@@ -451,6 +442,94 @@ func (h *Handlers) SendFeishuTest(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "sent"})
+}
+
+func (h *Handlers) SendFeishuReport(c *gin.Context) {
+	webhookURL, err := h.effectiveFeishuWebhookURL(c.Request.Context())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	if webhookURL == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Feishu webhook URL is not configured"})
+		return
+	}
+	report, err := h.buildDutyReport(c.Request.Context())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	if err := notify.SendFeishuWebhook(c.Request.Context(), webhookURL, buildFeishuReportText(report)); err != nil {
+		respondError(c, http.StatusBadGateway, err)
+		return
+	}
+	h.recordAgentEvent(c, jobs.AgentEventInput{
+		Type:    "feishu_report_sent",
+		Title:   "Sent duty report to Feishu",
+		Summary: "I sent the current work queue, decisions, and source issues to your Feishu bot.",
+		Level:   "success",
+	})
+	c.JSON(http.StatusOK, gin.H{"status": "sent"})
+}
+
+func (h *Handlers) buildDutyReport(ctx context.Context) (jobs.AgentDutyReport, error) {
+	jobList, err := h.Repo.ListJobs(ctx, jobs.ListFilter{})
+	if err != nil {
+		return jobs.AgentDutyReport{}, err
+	}
+	sources, err := h.Repo.ListSources(ctx, false)
+	if err != nil {
+		return jobs.AgentDutyReport{}, err
+	}
+	runs, err := h.Repo.ListRuns(ctx)
+	if err != nil {
+		return jobs.AgentDutyReport{}, err
+	}
+	return jobs.BuildAgentDutyReport(jobList, sources, runs), nil
+}
+
+func buildFeishuReportText(report jobs.AgentDutyReport) string {
+	var b strings.Builder
+	b.WriteString("Job Hunter Agent duty report\n\n")
+	b.WriteString(report.Headline)
+	b.WriteString("\n\nSummary:\n")
+	b.WriteString(fmt.Sprintf("- New jobs: %d\n", report.Summary.NewJobs))
+	b.WriteString(fmt.Sprintf("- Strong matches: %d\n", report.Summary.StrongMatches))
+	b.WriteString(fmt.Sprintf("- Manual check: %d\n", report.Summary.ManualCheck))
+	b.WriteString(fmt.Sprintf("- Source issues: %d\n", report.Summary.SourceIssues))
+	if len(report.TodaysWork) > 0 {
+		b.WriteString("\nToday's work:\n")
+		for _, item := range report.TodaysWork {
+			b.WriteString(fmt.Sprintf("- %s (%d): %s\n", item.Title, item.Count, item.Detail))
+		}
+	}
+	if len(report.NeedsDecision) > 0 {
+		b.WriteString("\nNeeds your decision:\n")
+		limit := len(report.NeedsDecision)
+		if limit > 5 {
+			limit = 5
+		}
+		for i := 0; i < limit; i++ {
+			item := report.NeedsDecision[i]
+			b.WriteString(fmt.Sprintf("- %s - %s - %s - score %d\n", item.Company, item.JobTitle, item.City, item.Score))
+		}
+	}
+	if len(report.SourceIssues) > 0 {
+		b.WriteString("\nSource issues:\n")
+		limit := len(report.SourceIssues)
+		if limit > 5 {
+			limit = 5
+		}
+		for i := 0; i < limit; i++ {
+			issue := report.SourceIssues[i]
+			b.WriteString(fmt.Sprintf("- %s: %s, %s\n", issue.Name, issue.Status, issue.Reason))
+		}
+	}
+	b.WriteString("\nNext best action: ")
+	b.WriteString(report.NextBestAction.Label)
+	b.WriteString(" - ")
+	b.WriteString(report.NextBestAction.Reason)
+	return b.String()
 }
 
 func (h *Handlers) effectiveFeishuWebhookURL(ctx context.Context) (string, error) {

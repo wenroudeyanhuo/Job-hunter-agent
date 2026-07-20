@@ -14,6 +14,7 @@ import {
   listSources,
   runCrawl,
   runRecommendedCrawl,
+  sendFeishuReport,
   sendFeishuTest,
   seedRecommendedSources,
   updateJobStatus,
@@ -104,6 +105,7 @@ export default function App() {
   const [settingsDraft, setSettingsDraft] = useState(settingsToDraft(defaultSettings));
   const [savingSettings, setSavingSettings] = useState(false);
   const [testingFeishu, setTestingFeishu] = useState(false);
+  const [sendingFeishuReport, setSendingFeishuReport] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [lastRun, setLastRun] = useState<RunSummary | null>(null);
@@ -461,6 +463,21 @@ export default function App() {
     }
   }
 
+  async function handleSendFeishuReport() {
+    setSendingFeishuReport(true);
+    setError("");
+    setNotice("");
+    try {
+      await sendFeishuReport();
+      setNotice("Feishu duty report sent.");
+      await refreshAgentEvents();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not send Feishu duty report");
+    } finally {
+      setSendingFeishuReport(false);
+    }
+  }
+
   async function selectRun(runId: number) {
     setSelectedRunId(runId);
     setRunSources(await listRunSources(runId));
@@ -508,7 +525,16 @@ export default function App() {
 
           {briefing && <AgentBriefingPanel briefing={briefing} onAction={handleAgentAction} busy={running || recommendedRunning} />}
 
-          {dutyReport && <AgentDutyReportPanel report={dutyReport} onAction={handleAgentAction} busy={running || recommendedRunning} />}
+          {dutyReport && (
+            <AgentDutyReportPanel
+              report={dutyReport}
+              onAction={handleAgentAction}
+              onSendFeishu={handleSendFeishuReport}
+              busy={running || recommendedRunning}
+              sendingFeishu={sendingFeishuReport}
+              feishuReady={settings.feishu_configured}
+            />
+          )}
 
           <AgentActivityLog events={agentEvents} />
 
@@ -887,11 +913,17 @@ function AgentBriefingPanel({
 function AgentDutyReportPanel({
   report,
   onAction,
+  onSendFeishu,
   busy,
+  sendingFeishu,
+  feishuReady,
 }: {
   report: AgentDutyReport;
   onAction: (action: string) => void | Promise<void>;
+  onSendFeishu: () => void | Promise<void>;
   busy: boolean;
+  sendingFeishu: boolean;
+  feishuReady: boolean;
 }) {
   const topDecision = report.needs_decision.slice(0, 3);
   const sourceIssues = report.source_issues.slice(0, 3);
@@ -902,9 +934,14 @@ function AgentDutyReportPanel({
           <h2>Today's Work</h2>
           <span>{report.headline}</span>
         </div>
-        <button type="button" onClick={() => onAction(report.next_best_action.action)} disabled={busy}>
-          {report.next_best_action.label}
-        </button>
+        <div className="duty-actions">
+          <button type="button" onClick={() => onAction(report.next_best_action.action)} disabled={busy}>
+            {report.next_best_action.label}
+          </button>
+          <button type="button" className="secondary-duty-action" onClick={onSendFeishu} disabled={sendingFeishu || !feishuReady}>
+            {sendingFeishu ? "Sending..." : "Send to Feishu"}
+          </button>
+        </div>
       </div>
       <div className="duty-grid">
         <div className="duty-column">
