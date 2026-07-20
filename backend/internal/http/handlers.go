@@ -43,6 +43,25 @@ func (h *Handlers) GetAgentBriefing(c *gin.Context) {
 	c.JSON(http.StatusOK, jobs.BuildAgentBriefing(jobList, sources, runs))
 }
 
+func (h *Handlers) GetAgentDutyReport(c *gin.Context) {
+	jobList, err := h.Repo.ListJobs(c.Request.Context(), jobs.ListFilter{})
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	sources, err := h.Repo.ListSources(c.Request.Context(), false)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	runs, err := h.Repo.ListRuns(c.Request.Context())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, jobs.BuildAgentDutyReport(jobList, sources, runs))
+}
+
 func (h *Handlers) ListAgentEvents(c *gin.Context) {
 	events, err := h.Repo.ListAgentEvents(c.Request.Context(), 20)
 	if err != nil {

@@ -109,6 +109,59 @@ export interface AgentBriefing {
   next_actions: AgentNextAction[];
 }
 
+export interface AgentDutyReport {
+  generated_at: string;
+  tone: string;
+  headline: string;
+  summary: AgentDutySummary;
+  todays_work: AgentWorkItem[];
+  needs_decision: AgentDecisionItem[];
+  source_issues: AgentSourceIssue[];
+  next_best_action: AgentReportAction;
+  latest_run?: JobRun;
+}
+
+export interface AgentDutySummary {
+  jobs_to_review: number;
+  strong_matches: number;
+  manual_check: number;
+  source_issues: number;
+  new_jobs: number;
+}
+
+export interface AgentWorkItem {
+  kind: string;
+  title: string;
+  detail: string;
+  priority: number;
+  count: number;
+}
+
+export interface AgentDecisionItem {
+  job_id: number;
+  company: string;
+  job_title: string;
+  city: string;
+  reason: string;
+  score: number;
+}
+
+export interface AgentSourceIssue {
+  source_id: number;
+  name: string;
+  url: string;
+  status: string;
+  reason: string;
+  consecutive_failures: number;
+  last_found_count: number;
+}
+
+export interface AgentReportAction {
+  action: string;
+  label: string;
+  reason: string;
+}
+
 export interface AgentMetrics {
   total_jobs: number;
   strong_matches: number;
