@@ -60,16 +60,27 @@ func TestPublicURLCollectorImportsDiscoveredLinks(t *testing.T) {
 		t.Fatalf("collect: %v", err)
 	}
 
-	if len(jobs) != 2 {
-		t.Fatalf("expected source page and discovered job, got %d", len(jobs))
+	if len(jobs) != 1 {
+		t.Fatalf("expected only discovered concrete job, got %d", len(jobs))
 	}
-	found := false
-	for _, job := range jobs {
-		if job.Title == "Tencent Go Backend Engineer 2027 Campus - Shenzhen" {
-			found = true
-		}
-	}
-	if !found {
+	if jobs[0].Title != "Tencent Go Backend Engineer 2027 Campus - Shenzhen" {
 		t.Fatalf("expected discovered backend job, got %#v", jobs)
+	}
+}
+
+func TestPublicURLCollectorSkipsRecruitmentLandingPageWithoutConcreteJob(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<html><head><title>华为应届生_实习生_留学生_海外本地最新招聘信息-华为校园招聘</title></head><body>校园招聘官网</body></html>`))
+	}))
+	defer server.Close()
+
+	collector := NewPublicURLCollector([]string{server.URL}, server.Client())
+	jobs, err := collector.Collect(context.Background())
+	if err != nil {
+		t.Fatalf("collect: %v", err)
+	}
+
+	if len(jobs) != 0 {
+		t.Fatalf("expected landing page to be skipped, got %#v", jobs)
 	}
 }

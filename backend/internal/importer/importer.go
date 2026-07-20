@@ -1,11 +1,13 @@
 package importer
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -48,6 +50,8 @@ var recruitmentLinkKeywords = []string{
 	"算法",
 	"大模型",
 }
+
+var recruitmentURLPattern = regexp.MustCompile(`https?://[^\s"'\\<>]+|/[^\s"'\\<>]*(?:job|jobs|position|positions|recruit|campus|intern|岗位|职位|校招|社招)[^\s"'\\<>]*`)
 
 func ImportURL(ctx context.Context, rawURL string, client *http.Client) (domain.Job, error) {
 	parsed, err := parseHTTPURL(rawURL)
@@ -135,7 +139,11 @@ func DiscoverLinks(ctx context.Context, rawURL string, client *http.Client, limi
 		return nil, fmt.Errorf("fetch discovery page returned HTTP %d", resp.StatusCode)
 	}
 
-	doc, err := html.Parse(io.LimitReader(resp.Body, maxImportBodyBytes))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxImportBodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("read discovery page: %w", err)
+	}
+	doc, err := html.Parse(bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("parse discovery page: %w", err)
 	}
@@ -172,7 +180,57 @@ func DiscoverLinks(ctx context.Context, rawURL string, client *http.Client, limi
 		}
 	}
 	walk(doc)
+	for _, link := range discoverLinksInText(string(body), parsed, seen, limit-len(links)) {
+		links = append(links, link)
+	}
 	return links, nil
+}
+
+func LooksLikeConcreteJobPosting(job domain.Job) bool {
+	text := cleanText(strings.ToLower(strings.Join([]string{job.Title, job.Description, job.ApplyURL, job.SourceURL}, " ")))
+	roleSignal := containsAny(text,
+		"engineer", "developer", "frontend", "backend", "java", "golang", "go ", "algorithm", "ai application", "llm",
+		"工程师", "开发", "前端", "后端", "java", "go", "算法", "大模型", "ai应用", "实习生",
+	)
+	detailSignal := containsAny(text,
+		"job description", "responsibilities", "requirements", "apply now", "apply online",
+		"岗位职责", "任职要求", "职位描述", "工作职责", "投递", "立即申请",
+	)
+	pathSignal := containsAny(text, "/job/", "/jobs/", "/position/", "/positions/", "requisition", "campus/position")
+	landingSignal := containsAny(text,
+		"招聘官网", "校园招聘官网", "最新招聘信息", "jobs list", "job list", "careers home",
+	)
+
+	if roleSignal && (detailSignal || pathSignal || !landingSignal) {
+		return true
+	}
+	return pathSignal && detailSignal && !landingSignal
+}
+
+func discoverLinksInText(raw string, base *url.URL, seen map[string]struct{}, limit int) []string {
+	if limit <= 0 {
+		return []string{}
+	}
+	raw = strings.ReplaceAll(raw, `\/`, `/`)
+	links := []string{}
+	for _, match := range recruitmentURLPattern.FindAllString(raw, -1) {
+		candidate := strings.Trim(match, `"' ,;)]}`)
+		resolved, err := base.Parse(candidate)
+		if err != nil || (resolved.Scheme != "http" && resolved.Scheme != "https") || resolved.Host == "" {
+			continue
+		}
+		resolved.Fragment = ""
+		link := resolved.String()
+		if _, ok := seen[link]; ok {
+			continue
+		}
+		seen[link] = struct{}{}
+		links = append(links, link)
+		if len(links) >= limit {
+			return links
+		}
+	}
+	return links
 }
 
 func parseHTTPURL(rawURL string) (*url.URL, error) {
