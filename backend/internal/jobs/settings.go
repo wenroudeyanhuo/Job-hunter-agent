@@ -11,27 +11,32 @@ import (
 const appSettingsKey = "app_settings"
 
 type Settings struct {
-	TargetCities          []string   `json:"target_cities"`
-	TargetDirections      []string   `json:"target_directions"`
-	ExcludedKeywords      []string   `json:"excluded_keywords"`
-	CrawlSchedule         []string   `json:"crawl_schedule"`
-	FeishuWebhookURL      string     `json:"feishu_webhook_url"`
-	AutoDutyReportEnabled bool       `json:"auto_duty_report_enabled"`
-	DutyReportTime        string     `json:"duty_report_time"`
-	TaskSLAHours          int        `json:"task_sla_hours"`
-	LastDutyReportSentAt  *time.Time `json:"last_duty_report_sent_at,omitempty"`
-	UpdatedAt             time.Time  `json:"updated_at"`
+	TargetCities                 []string   `json:"target_cities"`
+	TargetDirections             []string   `json:"target_directions"`
+	ExcludedKeywords             []string   `json:"excluded_keywords"`
+	CrawlSchedule                []string   `json:"crawl_schedule"`
+	FeishuWebhookURL             string     `json:"feishu_webhook_url"`
+	AutoDutyReportEnabled        bool       `json:"auto_duty_report_enabled"`
+	AutoSourceDiscoveryEnabled   bool       `json:"auto_source_discovery_enabled"`
+	SourceDiscoveryIntervalHours int        `json:"source_discovery_interval_hours"`
+	DutyReportTime               string     `json:"duty_report_time"`
+	TaskSLAHours                 int        `json:"task_sla_hours"`
+	LastDutyReportSentAt         *time.Time `json:"last_duty_report_sent_at,omitempty"`
+	LastSourceDiscoveryAt        *time.Time `json:"last_source_discovery_at,omitempty"`
+	UpdatedAt                    time.Time  `json:"updated_at"`
 }
 
 func DefaultSettings() Settings {
 	return Settings{
-		TargetCities:     []string{"Shenzhen"},
-		TargetDirections: []string{"frontend", "backend", "java", "go", "algorithm", "ai_application"},
-		ExcludedKeywords: []string{"outsourcing", "training", "bootcamp"},
-		CrawlSchedule:    []string{"09:00", "12:00", "18:00"},
-		DutyReportTime:   "18:00",
-		TaskSLAHours:     24,
-		UpdatedAt:        time.Now().UTC(),
+		TargetCities:                 []string{"Shenzhen"},
+		TargetDirections:             []string{"frontend", "backend", "java", "go", "algorithm", "ai_application"},
+		ExcludedKeywords:             []string{"outsourcing", "training", "bootcamp"},
+		CrawlSchedule:                []string{"09:00", "12:00", "18:00"},
+		AutoSourceDiscoveryEnabled:   true,
+		DutyReportTime:               "18:00",
+		TaskSLAHours:                 24,
+		SourceDiscoveryIntervalHours: 24,
+		UpdatedAt:                    time.Now().UTC(),
 	}
 }
 
@@ -100,6 +105,9 @@ func normalizeSettings(settings Settings) Settings {
 	}
 	if settings.TaskSLAHours <= 0 {
 		settings.TaskSLAHours = defaults.TaskSLAHours
+	}
+	if settings.SourceDiscoveryIntervalHours <= 0 {
+		settings.SourceDiscoveryIntervalHours = defaults.SourceDiscoveryIntervalHours
 	}
 	return settings
 }

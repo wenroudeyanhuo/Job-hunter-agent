@@ -36,22 +36,22 @@ var recruitmentLinkKeywords = []string{
 	"algorithm",
 	"ai",
 	"llm",
-	"招聘",
-	"校招",
-	"秋招",
-	"春招",
-	"应届",
-	"实习",
-	"岗位",
-	"职位",
-	"投递",
-	"前端",
-	"后端",
-	"算法",
-	"大模型",
+	"\u62db\u8058",
+	"\u6821\u62db",
+	"\u79cb\u62db",
+	"\u6625\u62db",
+	"\u5e94\u5c4a",
+	"\u5b9e\u4e60",
+	"\u5c97\u4f4d",
+	"\u804c\u4f4d",
+	"\u6295\u9012",
+	"\u524d\u7aef",
+	"\u540e\u7aef",
+	"\u7b97\u6cd5",
+	"\u5927\u6a21\u578b",
 }
 
-var recruitmentURLPattern = regexp.MustCompile(`https?://[^\s"'\\<>]+|/[^\s"'\\<>]*(?:job|jobs|position|positions|recruit|campus|intern|岗位|职位|校招|社招)[^\s"'\\<>]*`)
+var recruitmentURLPattern = regexp.MustCompile("https?://[^\\s\"'\\\\<>]+|/[^\\s\"'\\\\<>]*(?:job|jobs|position|positions|recruit|campus|intern|\u5c97\u4f4d|\u804c\u4f4d|\u6821\u62db|\u793e\u62db)[^\\s\"'\\\\<>]*")
 
 func ImportURL(ctx context.Context, rawURL string, client *http.Client) (domain.Job, error) {
 	parsed, err := parseHTTPURL(rawURL)
@@ -105,7 +105,7 @@ func ImportURL(ctx context.Context, rawURL string, client *http.Client) (domain.
 	if description != "" {
 		job.Description = description
 	}
-	if containsAny(job.Title+" "+job.Description, "shenzhen", "深圳") {
+	if containsAny(job.Title+" "+job.Description, "shenzhen", "\u6df1\u5733") {
 		job.City = "Shenzhen"
 	}
 	return job, nil
@@ -189,16 +189,16 @@ func DiscoverLinks(ctx context.Context, rawURL string, client *http.Client, limi
 func LooksLikeConcreteJobPosting(job domain.Job) bool {
 	text := cleanText(strings.ToLower(strings.Join([]string{job.Title, job.Description, job.ApplyURL, job.SourceURL}, " ")))
 	landingSignal := containsAny(text,
-		"招聘官网", "校园招聘官网", "校园招聘", "社会招聘", "招聘平台", "最新招聘信息", "校招资讯",
+		"\u62db\u8058\u5b98\u7f51", "\u6821\u56ed\u62db\u8058\u5b98\u7f51", "\u6821\u56ed\u62db\u8058", "\u793e\u4f1a\u62db\u8058", "\u62db\u8058\u5e73\u53f0", "\u6700\u65b0\u62db\u8058\u4fe1\u606f", "\u6821\u62db\u8d44\u8baf",
 		"jobs list", "job list", "/jobs/list", "/static/index.html", "careers home",
 	)
 	roleSignal := containsAny(text,
 		"engineer", "developer", "frontend", "backend", "java engineer", "golang", "go backend", "algorithm", "ai application", "llm",
-		"工程师", "开发", "前端", "后端", "算法", "大模型", "ai应用", "实习生",
+		"\u5de5\u7a0b\u5e08", "\u5f00\u53d1", "\u524d\u7aef", "\u540e\u7aef", "\u7b97\u6cd5", "\u5927\u6a21\u578b", "ai\u5e94\u7528", "\u5b9e\u4e60\u751f",
 	)
 	detailSignal := containsAny(text,
 		"job description", "responsibilities", "requirements", "apply now", "apply online",
-		"岗位职责", "任职要求", "职位描述", "工作职责", "投递", "立即申请",
+		"\u5c97\u4f4d\u804c\u8d23", "\u4efb\u804c\u8981\u6c42", "\u804c\u4f4d\u63cf\u8ff0", "\u5de5\u4f5c\u804c\u8d23", "\u6295\u9012", "\u7acb\u5373\u7533\u8bf7",
 	)
 	pathSignal := containsAny(text, "/job/", "/jobs/", "/position/", "/positions/", "requisition", "campus/position")
 
@@ -259,7 +259,7 @@ func extractTitleAndDescription(node *html.Node) (string, string) {
 		if n.Type == html.ElementNode && n.Data == "title" && n.FirstChild != nil && title == "" {
 			title = cleanText(n.FirstChild.Data)
 		}
-		if n.Type == html.ElementNode && n.Data == "meta" && description == "" {
+		if n.Type == html.ElementNode && n.Data == "meta" {
 			var name string
 			var content string
 			for _, attr := range n.Attr {
@@ -270,7 +270,10 @@ func extractTitleAndDescription(node *html.Node) (string, string) {
 					content = attr.Val
 				}
 			}
-			if name == "description" || name == "og:description" {
+			if title == "" && name == "og:title" {
+				title = cleanText(content)
+			}
+			if description == "" && (name == "description" || name == "og:description" || name == "keywords") {
 				description = cleanText(content)
 			}
 		}

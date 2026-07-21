@@ -1,0 +1,14 @@
+.git
+.uploads
+tmp
+temp
+docs/superpowers/specs
+docs/superpowers/plans
+
+**/node_modules
+**/dist
+**/*.log
+**/*.db
+**/*.sqlite
+**/*.sqlite3
+**/*.exe

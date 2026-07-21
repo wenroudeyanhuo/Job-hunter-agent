@@ -40,6 +40,7 @@ import {
   updateCompanyEnabled,
   updateSettings,
   updateSourceEnabled,
+  validateSourceCandidate,
   rejectSourceCandidate,
 } from "./api";
 import { DigitalEmployee3D } from "./DigitalEmployee3D";
@@ -112,6 +113,8 @@ const defaultSettings: Settings = {
   feishu_webhook_url: "",
   feishu_configured: false,
   auto_duty_report_enabled: false,
+  auto_source_discovery_enabled: true,
+  source_discovery_interval_hours: 24,
   duty_report_time: "18:00",
   task_sla_hours: 24,
   updated_at: "",
@@ -126,7 +129,7 @@ const defaultProfile: CandidateProfile = {
   graduation_year: "",
   internship_preference: "accept_conversion_clear",
   preferred_companies: [],
-  blocked_keywords: ["outsourcing", "training", "bootcamp", "澶栧寘", "鍩硅"],
+  blocked_keywords: ["outsourcing", "training", "bootcamp", "外包", "培训"],
   notes: "",
   updated_at: "",
 };
@@ -154,6 +157,7 @@ export default function App() {
   const [addingSource, setAddingSource] = useState(false);
   const [seedingSources, setSeedingSources] = useState(false);
   const [discoveringSources, setDiscoveringSources] = useState(false);
+  const [validatingSourceCandidateId, setValidatingSourceCandidateId] = useState<number | null>(null);
   const [recommendedRunning, setRecommendedRunning] = useState(false);
   const [settings, setSettings] = useState<Settings>(defaultSettings);
   const [settingsDraft, setSettingsDraft] = useState(settingsToDraft(defaultSettings));
@@ -635,6 +639,23 @@ export default function App() {
     }
   }
 
+  async function handleValidateSourceCandidate(candidate: SourceCandidate) {
+    setValidatingSourceCandidateId(candidate.id);
+    setError("");
+    setNotice("");
+    try {
+      const validated = await validateSourceCandidate(candidate.id);
+      setNotice(`${candidate.name} checked: ${validated.validation_status}.`);
+      await refreshSourceCandidates();
+      await refreshAgentEvents();
+      await refreshAgentState();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not validate source candidate");
+    } finally {
+      setValidatingSourceCandidateId(null);
+    }
+  }
+
   async function handleRecommendedCrawl() {
     setRecommendedRunning(true);
     setError("");
@@ -676,6 +697,8 @@ export default function App() {
         crawl_schedule: parseSettingsList(settingsDraft.crawl_schedule),
         feishu_webhook_url: settingsDraft.feishu_webhook_url.trim(),
         auto_duty_report_enabled: settingsDraft.auto_duty_report_enabled,
+        auto_source_discovery_enabled: settingsDraft.auto_source_discovery_enabled,
+        source_discovery_interval_hours: Number(settingsDraft.source_discovery_interval_hours) || defaultSettings.source_discovery_interval_hours,
         duty_report_time: settingsDraft.duty_report_time.trim(),
         task_sla_hours: Number(settingsDraft.task_sla_hours) || defaultSettings.task_sla_hours,
       });
@@ -1243,7 +1266,9 @@ export default function App() {
           candidates={sourceCandidates}
           onAccept={handleAcceptSourceCandidate}
           onReject={handleRejectSourceCandidate}
+          onValidate={handleValidateSourceCandidate}
           busy={discoveringSources || recommendedRunning}
+          validatingId={validatingSourceCandidateId}
         />
         <form className="source-form" onSubmit={handleAddSource}>
           <input
@@ -1338,12 +1363,29 @@ export default function App() {
             />
             Automatic duty report
           </label>
+          <label className="settings-toggle">
+            <input
+              type="checkbox"
+              checked={settingsDraft.auto_source_discovery_enabled}
+              onChange={(event) => setSettingsDraft((current) => ({ ...current, auto_source_discovery_enabled: event.target.checked }))}
+            />
+            Automatic source discovery
+          </label>
           <label>
             Duty report time
             <input
               value={settingsDraft.duty_report_time}
               onChange={(event) => setSettingsDraft((current) => ({ ...current, duty_report_time: event.target.value }))}
               placeholder="18:00"
+            />
+          </label>
+          <label>
+            Discovery interval hours
+            <input
+              type="number"
+              min="1"
+              value={settingsDraft.source_discovery_interval_hours}
+              onChange={(event) => setSettingsDraft((current) => ({ ...current, source_discovery_interval_hours: event.target.value }))}
             />
           </label>
           <label>
@@ -1824,12 +1866,16 @@ function SourceCandidatesPanel({
   candidates,
   onAccept,
   onReject,
+  onValidate,
   busy,
+  validatingId,
 }: {
   candidates: SourceCandidate[];
   onAccept: (candidate: SourceCandidate) => void | Promise<void>;
   onReject: (candidate: SourceCandidate) => void | Promise<void>;
+  onValidate: (candidate: SourceCandidate) => void | Promise<void>;
   busy: boolean;
+  validatingId: number | null;
 }) {
   const pending = candidates.filter((candidate) => candidate.status === "pending");
   const recent = candidates.filter((candidate) => candidate.status !== "pending").slice(0, 4);
@@ -1859,6 +1905,9 @@ function SourceCandidatesPanel({
               {candidate.validation_reason && <small>{candidate.validation_reason}</small>}
             </div>
             <div className="candidate-actions">
+              <button type="button" onClick={() => onValidate(candidate)} disabled={busy || validatingId === candidate.id}>
+                {validatingId === candidate.id ? "Checking..." : "Validate"}
+              </button>
               <button type="button" onClick={() => onAccept(candidate)} disabled={busy}>
                 Accept
               </button>
@@ -2100,6 +2149,10 @@ function AgentEmployeeSidebar({
             <span>Next {formatDateTime(state.automation.next_duty_report_at)} / SLA {state.automation.task_sla_hours}h</span>
           </div>
           <div>
+            <strong>{state.automation.source_discovery_enabled ? "Source discovery armed" : "Source discovery paused"}</strong>
+            <span>Next {formatDateTime(state.automation.next_source_discovery_due_at)} / every {state.automation.source_discovery_interval_hours}h</span>
+          </div>
+          <div>
             <strong>{state.automation.stale_task_count} stale tasks</strong>
             <span>{state.automation.last_report_sent_at ? `Last sent ${formatDateTime(state.automation.last_report_sent_at)}` : "No automatic report sent yet"}</span>
           </div>
@@ -2281,6 +2334,8 @@ function settingsToDraft(settings: Settings) {
     crawl_schedule: safeSettingsList(settings.crawl_schedule, defaultSettings.crawl_schedule).join("\n"),
     feishu_webhook_url: settings.feishu_webhook_url || "",
     auto_duty_report_enabled: Boolean(settings.auto_duty_report_enabled),
+    auto_source_discovery_enabled: Boolean(settings.auto_source_discovery_enabled),
+    source_discovery_interval_hours: String(settings.source_discovery_interval_hours || defaultSettings.source_discovery_interval_hours),
     duty_report_time: settings.duty_report_time || defaultSettings.duty_report_time,
     task_sla_hours: String(settings.task_sla_hours || defaultSettings.task_sla_hours),
   };
@@ -2309,9 +2364,12 @@ function normalizeSettings(settings: Partial<Settings>): Settings {
     feishu_webhook_url: settings.feishu_webhook_url || "",
     feishu_configured: Boolean(settings.feishu_configured),
     auto_duty_report_enabled: Boolean(settings.auto_duty_report_enabled),
+    auto_source_discovery_enabled: settings.auto_source_discovery_enabled ?? defaultSettings.auto_source_discovery_enabled,
+    source_discovery_interval_hours: settings.source_discovery_interval_hours || defaultSettings.source_discovery_interval_hours,
     duty_report_time: settings.duty_report_time || defaultSettings.duty_report_time,
     task_sla_hours: settings.task_sla_hours || defaultSettings.task_sla_hours,
     last_duty_report_sent_at: settings.last_duty_report_sent_at,
+    last_source_discovery_at: settings.last_source_discovery_at,
     updated_at: settings.updated_at || "",
   };
 }

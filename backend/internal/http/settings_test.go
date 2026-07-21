@@ -18,6 +18,8 @@ func TestSettingsAPIPersistsUpdates(t *testing.T) {
 		"crawl_schedule":["09:00","18:00"],
 		"feishu_webhook_url":"https://open.feishu.cn/open-apis/bot/v2/hook/test",
 		"auto_duty_report_enabled":true,
+		"auto_source_discovery_enabled":true,
+		"source_discovery_interval_hours":8,
 		"duty_report_time":"18:30",
 		"task_sla_hours":6
 	}`)
@@ -44,6 +46,8 @@ func TestSettingsAPIPersistsUpdates(t *testing.T) {
 		FeishuWebhookURL string   `json:"feishu_webhook_url"`
 		FeishuConfigured bool     `json:"feishu_configured"`
 		AutoDutyReport   bool     `json:"auto_duty_report_enabled"`
+		AutoDiscovery    bool     `json:"auto_source_discovery_enabled"`
+		DiscoveryHours   int      `json:"source_discovery_interval_hours"`
 		DutyReportTime   string   `json:"duty_report_time"`
 		TaskSLAHours     int      `json:"task_sla_hours"`
 	}
@@ -64,5 +68,8 @@ func TestSettingsAPIPersistsUpdates(t *testing.T) {
 	}
 	if !settings.AutoDutyReport || settings.DutyReportTime != "18:30" || settings.TaskSLAHours != 6 {
 		t.Fatalf("expected automation settings, got %#v", settings)
+	}
+	if !settings.AutoDiscovery || settings.DiscoveryHours != 8 {
+		t.Fatalf("expected source discovery settings, got %#v", settings)
 	}
 }

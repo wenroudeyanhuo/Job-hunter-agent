@@ -166,9 +166,12 @@ export interface Settings {
   feishu_webhook_url: string;
   feishu_configured: boolean;
   auto_duty_report_enabled: boolean;
+  auto_source_discovery_enabled: boolean;
+  source_discovery_interval_hours: number;
   duty_report_time: string;
   task_sla_hours: number;
   last_duty_report_sent_at?: string;
+  last_source_discovery_at?: string;
   updated_at: string;
 }
 
@@ -246,9 +249,13 @@ export interface AgentOperatingMoment {
 
 export interface AgentAutomationState {
   duty_report_enabled: boolean;
+  source_discovery_enabled: boolean;
   duty_report_time: string;
   last_report_sent_at?: string;
   next_duty_report_at: string;
+  source_discovery_interval_hours: number;
+  last_source_discovery_at?: string;
+  next_source_discovery_due_at: string;
   task_sla_hours: number;
   stale_task_count: number;
   stale_tasks: AgentStaleTask[];

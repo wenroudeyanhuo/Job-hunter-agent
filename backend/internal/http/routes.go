@@ -50,6 +50,7 @@ func NewRouter(handlers *Handlers) http.Handler {
 	api.GET("/sources", handlers.ListSources)
 	api.POST("/sources/discovery/run", handlers.RunSourceDiscovery)
 	api.GET("/sources/candidates", handlers.ListSourceCandidates)
+	api.POST("/sources/candidates/:id/validate", handlers.ValidateSourceCandidate)
 	api.POST("/sources/candidates/:id/accept", handlers.AcceptSourceCandidate)
 	api.POST("/sources/candidates/:id/reject", handlers.RejectSourceCandidate)
 	api.POST("/sources/recommended", handlers.SeedRecommendedSources)
