@@ -67,6 +67,10 @@ Early MVP. The current version provides a Go backend foundation, SQLite persiste
     +-- src                     # React dashboard
 ```
 
+## Third-Party Assets
+
+- `frontend/public/assets/noto-cat-face.svg` is from Google Noto Emoji and is used for the digital employee cat avatar. See `frontend/public/assets/NotoEmoji-LICENSE.txt` for the upstream license.
+
 ## Development
 
 ### Environment
