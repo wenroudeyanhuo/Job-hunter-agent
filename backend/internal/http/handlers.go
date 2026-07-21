@@ -288,6 +288,35 @@ func (h *Handlers) ListJobs(c *gin.Context) {
 	c.JSON(http.StatusOK, list)
 }
 
+func (h *Handlers) GetCandidateProfile(c *gin.Context) {
+	profile, err := h.Repo.GetCandidateProfile(c.Request.Context())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, profile)
+}
+
+func (h *Handlers) UpdateCandidateProfile(c *gin.Context) {
+	var req jobs.CandidateProfile
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid profile payload"})
+		return
+	}
+	profile, err := h.Repo.SaveCandidateProfile(c.Request.Context(), req)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	h.recordAgentEvent(c, jobs.AgentEventInput{
+		Type:    "candidate_profile_updated",
+		Title:   "Updated candidate profile",
+		Summary: "I updated your target cities, directions, skills, and preference signals.",
+		Level:   "success",
+	})
+	c.JSON(http.StatusOK, profile)
+}
+
 func (h *Handlers) GetJob(c *gin.Context) {
 	id, ok := parseID(c)
 	if !ok {
@@ -299,6 +328,29 @@ func (h *Handlers) GetJob(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, job)
+}
+
+func (h *Handlers) GetJobDetail(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	job, err := h.Repo.GetJob(c.Request.Context(), id)
+	if err != nil {
+		respondRepoError(c, err)
+		return
+	}
+	profile, err := h.Repo.GetCandidateProfile(c.Request.Context())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	decisions, err := h.Repo.ListJobDecisions(c.Request.Context(), id)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, jobs.BuildJobDetail(job, profile, decisions))
 }
 
 func (h *Handlers) ImportURL(c *gin.Context) {

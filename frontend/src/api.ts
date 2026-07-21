@@ -5,10 +5,12 @@ import type {
   AgentEvent,
   AgentState,
   AgentTask,
+  CandidateProfile,
   Company,
   CleanupLandingPagesResponse,
   ImportURLResponse,
   Job,
+  JobDetail,
   JobRun,
   JobRunSource,
   JobStatus,
@@ -97,6 +99,28 @@ export async function updateJobStatus(id: number, status: JobStatus): Promise<vo
   await request<void>(`/api/jobs/${id}/status`, {
     method: "PATCH",
     body: JSON.stringify({ status }),
+  });
+}
+
+export async function updateJobNotes(id: number, notes: string): Promise<void> {
+  await request<void>(`/api/jobs/${id}/notes`, {
+    method: "PATCH",
+    body: JSON.stringify({ notes }),
+  });
+}
+
+export async function getJobDetail(id: number): Promise<JobDetail> {
+  return request<JobDetail>(`/api/jobs/${id}/detail`);
+}
+
+export async function getCandidateProfile(): Promise<CandidateProfile> {
+  return request<CandidateProfile>("/api/profile");
+}
+
+export async function updateCandidateProfile(profile: Omit<CandidateProfile, "id" | "updated_at">): Promise<CandidateProfile> {
+  return request<CandidateProfile>("/api/profile", {
+    method: "PATCH",
+    body: JSON.stringify(profile),
   });
 }
 

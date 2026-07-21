@@ -5,6 +5,8 @@ import {
   getAgentBriefing,
   getAgentDutyReport,
   getAgentState,
+  getCandidateProfile,
+  getJobDetail,
   getSettings,
   importURL,
   listAgentEvents,
@@ -23,12 +25,14 @@ import {
   sendFeishuTest,
   seedRecommendedSources,
   updateAgentTaskStatus,
+  updateCandidateProfile,
+  updateJobNotes,
   updateJobStatus,
   updateCompanyEnabled,
   updateSettings,
   updateSourceEnabled,
 } from "./api";
-import type { AgentBriefing, AgentCommandResult, AgentDutyReport, AgentEvent, AgentState, AgentTask, Company, Job, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source } from "./types";
+import type { AgentBriefing, AgentCommandResult, AgentDutyReport, AgentEvent, AgentState, AgentTask, CandidateProfile, Company, Job, JobDetail, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source } from "./types";
 
 const statusLabels: Record<JobStatus | "all", string> = {
   all: "All",
@@ -47,11 +51,12 @@ const sourceHealthLabels: Record<string, string> = {
   unknown: "Unknown",
 };
 
-type AppView = "dashboard" | "opportunities" | "companies" | "runs" | "settings";
+type AppView = "dashboard" | "opportunities" | "profile" | "companies" | "runs" | "settings";
 
 const appViews: Array<{ id: AppView; label: string }> = [
   { id: "dashboard", label: "Dashboard" },
   { id: "opportunities", label: "Opportunities" },
+  { id: "profile", label: "Profile" },
   { id: "companies", label: "Companies" },
   { id: "runs", label: "Runs" },
   { id: "settings", label: "Settings" },
@@ -75,6 +80,19 @@ const categoryLabels: Record<string, string> = {
 };
 
 const directionOptions = ["all", "frontend", "backend", "java", "go", "algorithm", "ai_application"];
+
+type CandidateProfileDraft = {
+  target_cities: string;
+  target_directions: string;
+  skills: string;
+  education: string;
+  graduation_year: string;
+  internship_preference: string;
+  preferred_companies: string;
+  blocked_keywords: string;
+  notes: string;
+};
+
 const defaultSettings: Settings = {
   target_cities: ["Shenzhen"],
   target_directions: ["frontend", "backend", "java", "go", "algorithm", "ai_application"],
@@ -85,6 +103,20 @@ const defaultSettings: Settings = {
   auto_duty_report_enabled: false,
   duty_report_time: "18:00",
   task_sla_hours: 24,
+  updated_at: "",
+};
+
+const defaultProfile: CandidateProfile = {
+  id: 1,
+  target_cities: ["Shenzhen"],
+  target_directions: ["frontend", "backend", "java", "go", "algorithm", "ai_application"],
+  skills: ["Go", "Java", "React", "TypeScript", "Algorithm", "LLM"],
+  education: "",
+  graduation_year: "",
+  internship_preference: "accept_conversion_clear",
+  preferred_companies: [],
+  blocked_keywords: ["outsourcing", "training", "bootcamp", "外包", "培训"],
+  notes: "",
   updated_at: "",
 };
 
@@ -112,6 +144,9 @@ export default function App() {
   const [recommendedRunning, setRecommendedRunning] = useState(false);
   const [settings, setSettings] = useState<Settings>(defaultSettings);
   const [settingsDraft, setSettingsDraft] = useState(settingsToDraft(defaultSettings));
+  const [profile, setProfile] = useState<CandidateProfile>(defaultProfile);
+  const [profileDraft, setProfileDraft] = useState(profileToDraft(defaultProfile));
+  const [savingProfile, setSavingProfile] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
   const [testingFeishu, setTestingFeishu] = useState(false);
   const [sendingFeishuReport, setSendingFeishuReport] = useState(false);
@@ -123,6 +158,8 @@ export default function App() {
   const [dutyReport, setDutyReport] = useState<AgentDutyReport | null>(null);
   const [agentEvents, setAgentEvents] = useState<AgentEvent[]>([]);
   const [agentTasks, setAgentTasks] = useState<AgentTask[]>([]);
+  const [selectedJobDetail, setSelectedJobDetail] = useState<JobDetail | null>(null);
+  const [loadingJobDetail, setLoadingJobDetail] = useState(false);
   const [refreshingTasks, setRefreshingTasks] = useState(false);
   const [commandText, setCommandText] = useState("");
   const [commandResult, setCommandResult] = useState<AgentCommandResult | null>(null);
@@ -160,6 +197,13 @@ export default function App() {
     setSettingsDraft(settingsToDraft(nextSettings));
   }
 
+  async function refreshProfile() {
+    const data = await getCandidateProfile();
+    const nextProfile = normalizeProfile(data);
+    setProfile(nextProfile);
+    setProfileDraft(profileToDraft(nextProfile));
+  }
+
   async function refreshBriefing() {
     const data = await getAgentBriefing();
     setBriefing(data);
@@ -186,7 +230,7 @@ export default function App() {
   }
 
   useEffect(() => {
-    Promise.all([refresh(), refreshSources(), refreshCompanies(), refreshRuns(), refreshSettings(), refreshBriefing(), refreshAgentState(), refreshDutyReport(), refreshAgentEvents(), refreshTasks()])
+    Promise.all([refresh(), refreshSources(), refreshCompanies(), refreshRuns(), refreshSettings(), refreshProfile(), refreshBriefing(), refreshAgentState(), refreshDutyReport(), refreshAgentEvents(), refreshTasks()])
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
@@ -249,6 +293,14 @@ export default function App() {
       done: settings.target_cities.length > 0 && settings.target_directions.length > 0,
       actionLabel: "Edit",
       action: () => setActiveView("settings"),
+    },
+    {
+      id: "candidate_profile",
+      label: "Candidate profile",
+      detail: `${profile.skills.length} skills / ${profile.preferred_companies.length} preferred companies`,
+      done: profile.skills.length > 0 && profile.target_directions.length > 0,
+      actionLabel: "Profile",
+      action: () => setActiveView("profile"),
     },
     {
       id: "crawl_history",
@@ -526,6 +578,38 @@ export default function App() {
     }
   }
 
+  async function handleSaveProfile(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSavingProfile(true);
+    setError("");
+    setNotice("");
+    try {
+      const saved = await updateCandidateProfile({
+        target_cities: parseSettingsList(profileDraft.target_cities),
+        target_directions: parseSettingsList(profileDraft.target_directions),
+        skills: parseSettingsList(profileDraft.skills),
+        education: profileDraft.education.trim(),
+        graduation_year: profileDraft.graduation_year.trim(),
+        internship_preference: profileDraft.internship_preference.trim(),
+        preferred_companies: parseSettingsList(profileDraft.preferred_companies),
+        blocked_keywords: parseSettingsList(profileDraft.blocked_keywords),
+        notes: profileDraft.notes.trim(),
+      });
+      const nextProfile = normalizeProfile(saved);
+      setProfile(nextProfile);
+      setProfileDraft(profileToDraft(nextProfile));
+      setNotice("Candidate profile saved. Job detail fit signals will use it immediately.");
+      if (selectedJobDetail) {
+        await handleOpenJobDetail(selectedJobDetail.job.id);
+      }
+      await refreshAgentEvents();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save candidate profile");
+    } finally {
+      setSavingProfile(false);
+    }
+  }
+
   async function handleSendFeishuTest() {
     setTestingFeishu(true);
     setError("");
@@ -656,9 +740,33 @@ export default function App() {
     setRunSources(await listRunSources(runId));
   }
 
+  async function handleOpenJobDetail(id: number) {
+    setLoadingJobDetail(true);
+    setError("");
+    try {
+      const detail = await getJobDetail(id);
+      setSelectedJobDetail(detail);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not load job detail");
+    } finally {
+      setLoadingJobDetail(false);
+    }
+  }
+
+  async function handleSaveJobNotes(job: Job, notes: string) {
+    await updateJobNotes(job.id, notes);
+    await refresh();
+    await handleOpenJobDetail(job.id);
+    await refreshAgentEvents();
+    setNotice("Job notes saved.");
+  }
+
   async function setJobStatus(id: number, next: JobStatus) {
     await updateJobStatus(id, next);
     setJobs((current) => current.map((job) => (job.id === id ? { ...job, status: next } : job)));
+    if (selectedJobDetail?.job.id === id) {
+      await handleOpenJobDetail(id);
+    }
     await refreshBriefing();
     await refreshDutyReport();
     await refreshAgentEvents();
@@ -851,6 +959,9 @@ export default function App() {
                     <td>{statusLabels[job.status]}</td>
                     <td>
                       <div className="row-actions">
+                        <button onClick={() => handleOpenJobDetail(job.id)} disabled={loadingJobDetail}>
+                          Details
+                        </button>
                         <button onClick={() => setJobStatus(job.id, "interested")}>Interested</button>
                         <button onClick={() => setJobStatus(job.id, "applied")}>Applied</button>
                         <button onClick={() => setJobStatus(job.id, "ignored")}>Ignore</button>
@@ -870,7 +981,26 @@ export default function App() {
           </div>
         </section>
       </section>
+          {selectedJobDetail && (
+            <JobDetailPanel
+              detail={selectedJobDetail}
+              busy={loadingJobDetail}
+              onClose={() => setSelectedJobDetail(null)}
+              onStatus={setJobStatus}
+              onSaveNotes={handleSaveJobNotes}
+            />
+          )}
         </>
+      )}
+
+      {activeView === "profile" && (
+        <ProfilePanel
+          profile={profile}
+          draft={profileDraft}
+          saving={savingProfile}
+          onDraftChange={setProfileDraft}
+          onSubmit={handleSaveProfile}
+        />
       )}
 
       {activeView === "companies" && (
@@ -1094,6 +1224,164 @@ export default function App() {
       </section>
       )}
     </main>
+  );
+}
+
+function ProfilePanel({
+  profile,
+  draft,
+  saving,
+  onDraftChange,
+  onSubmit,
+}: {
+  profile: CandidateProfile;
+  draft: CandidateProfileDraft;
+  saving: boolean;
+  onDraftChange: React.Dispatch<React.SetStateAction<CandidateProfileDraft>>;
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void | Promise<void>;
+}) {
+  return (
+    <section className="profile-panel">
+      <div className="panel-header">
+        <div>
+          <h2>Candidate Profile</h2>
+          <span>Updated {formatDateTime(profile.updated_at)}</span>
+        </div>
+      </div>
+      <form className="profile-grid" onSubmit={onSubmit}>
+        <label>
+          Target cities
+          <textarea value={draft.target_cities} onChange={(event) => onDraftChange((current) => ({ ...current, target_cities: event.target.value }))} />
+        </label>
+        <label>
+          Target directions
+          <textarea value={draft.target_directions} onChange={(event) => onDraftChange((current) => ({ ...current, target_directions: event.target.value }))} />
+        </label>
+        <label>
+          Skills
+          <textarea value={draft.skills} onChange={(event) => onDraftChange((current) => ({ ...current, skills: event.target.value }))} />
+        </label>
+        <label>
+          Preferred companies
+          <textarea value={draft.preferred_companies} onChange={(event) => onDraftChange((current) => ({ ...current, preferred_companies: event.target.value }))} />
+        </label>
+        <label>
+          Education
+          <input value={draft.education} onChange={(event) => onDraftChange((current) => ({ ...current, education: event.target.value }))} placeholder="本科 / 硕士 / 其他" />
+        </label>
+        <label>
+          Graduation year
+          <input value={draft.graduation_year} onChange={(event) => onDraftChange((current) => ({ ...current, graduation_year: event.target.value }))} placeholder="2027" />
+        </label>
+        <label>
+          Internship preference
+          <input value={draft.internship_preference} onChange={(event) => onDraftChange((current) => ({ ...current, internship_preference: event.target.value }))} />
+        </label>
+        <label>
+          Blocked keywords
+          <textarea value={draft.blocked_keywords} onChange={(event) => onDraftChange((current) => ({ ...current, blocked_keywords: event.target.value }))} />
+        </label>
+        <label className="profile-wide">
+          Notes
+          <textarea value={draft.notes} onChange={(event) => onDraftChange((current) => ({ ...current, notes: event.target.value }))} placeholder="写下你更偏好的岗位、团队、不能接受的点" />
+        </label>
+        <button type="submit" disabled={saving}>
+          {saving ? "Saving..." : "Save Profile"}
+        </button>
+      </form>
+    </section>
+  );
+}
+
+function JobDetailPanel({
+  detail,
+  busy,
+  onClose,
+  onStatus,
+  onSaveNotes,
+}: {
+  detail: JobDetail;
+  busy: boolean;
+  onClose: () => void;
+  onStatus: (id: number, status: JobStatus) => void | Promise<void>;
+  onSaveNotes: (job: Job, notes: string) => void | Promise<void>;
+}) {
+  const [notes, setNotes] = useState(detail.job.notes || "");
+
+  useEffect(() => {
+    setNotes(detail.job.notes || "");
+  }, [detail.job.id, detail.job.notes]);
+
+  return (
+    <section className="job-detail-panel">
+      <div className="panel-header">
+        <div>
+          <h2>{detail.job.company} / {detail.job.title}</h2>
+          <span>{detail.job.city || "Unknown city"} / {formatFitVerdict(detail.fit.verdict)}</span>
+        </div>
+        <button type="button" className="secondary-detail-action" onClick={onClose}>
+          Close
+        </button>
+      </div>
+      <div className="job-detail-grid">
+        <div className="fit-card">
+          <span>Profile fit</span>
+          <strong>{detail.fit.score}</strong>
+          <small>{detail.suggested_action.reason}</small>
+          <div className="job-detail-actions">
+            <button type="button" onClick={() => onStatus(detail.job.id, "interested")} disabled={busy}>
+              Interested
+            </button>
+            <button type="button" onClick={() => onStatus(detail.job.id, "applied")} disabled={busy}>
+              Applied
+            </button>
+            <button type="button" onClick={() => onStatus(detail.job.id, "ignored")} disabled={busy}>
+              Ignore
+            </button>
+          </div>
+        </div>
+        <div className="detail-column">
+          <h3>Why It Fits</h3>
+          {[...detail.fit.profile_signals, ...detail.fit.strengths].slice(0, 8).map((item) => (
+            <span className="detail-pill" key={item}>{item}</span>
+          ))}
+          {detail.fit.profile_signals.length === 0 && detail.fit.strengths.length === 0 && <div className="empty-source">No fit signals yet.</div>}
+        </div>
+        <div className="detail-column">
+          <h3>Risks</h3>
+          {detail.fit.risks.slice(0, 8).map((item) => (
+            <span className="risk-pill" key={item}>{item}</span>
+          ))}
+          {detail.fit.risks.length === 0 && <div className="empty-source">No obvious risk signals.</div>}
+        </div>
+      </div>
+      <div className="job-detail-bottom">
+        <form className="notes-box" onSubmit={(event) => { event.preventDefault(); onSaveNotes(detail.job, notes); }}>
+          <label>
+            Decision notes
+            <textarea value={notes} onChange={(event) => setNotes(event.target.value)} />
+          </label>
+          <button type="submit" disabled={busy}>
+            Save Notes
+          </button>
+        </form>
+        <div className="decision-timeline">
+          <h3>Decision History</h3>
+          {detail.decisions.map((decision) => (
+            <div className="decision-row" key={decision.id}>
+              <strong>{formatDecisionAction(decision)}</strong>
+              <span>{decision.notes || decision.reason || `${decision.from_status || "unknown"} -> ${decision.to_status || "unknown"}`}</span>
+              <time>{formatDateTime(decision.created_at)}</time>
+            </div>
+          ))}
+          {detail.decisions.length === 0 && <div className="empty-source">No decision history yet.</div>}
+        </div>
+      </div>
+      <div className="detail-links">
+        {detail.job.apply_url && <a href={detail.job.apply_url} target="_blank" rel="noreferrer">Apply URL</a>}
+        {detail.job.source_url && <a href={detail.job.source_url} target="_blank" rel="noreferrer">Source URL</a>}
+      </div>
+    </section>
   );
 }
 
@@ -1546,6 +1834,20 @@ function settingsToDraft(settings: Settings) {
   };
 }
 
+function profileToDraft(profile: CandidateProfile): CandidateProfileDraft {
+  return {
+    target_cities: safeSettingsList(profile.target_cities, defaultProfile.target_cities).join("\n"),
+    target_directions: safeSettingsList(profile.target_directions, defaultProfile.target_directions).join("\n"),
+    skills: safeSettingsList(profile.skills, defaultProfile.skills).join("\n"),
+    education: profile.education || "",
+    graduation_year: profile.graduation_year || "",
+    internship_preference: profile.internship_preference || defaultProfile.internship_preference,
+    preferred_companies: safeSettingsList(profile.preferred_companies, []).join("\n"),
+    blocked_keywords: safeSettingsList(profile.blocked_keywords, defaultProfile.blocked_keywords).join("\n"),
+    notes: profile.notes || "",
+  };
+}
+
 function normalizeSettings(settings: Partial<Settings>): Settings {
   return {
     target_cities: safeSettingsList(settings.target_cities, defaultSettings.target_cities),
@@ -1559,6 +1861,22 @@ function normalizeSettings(settings: Partial<Settings>): Settings {
     task_sla_hours: settings.task_sla_hours || defaultSettings.task_sla_hours,
     last_duty_report_sent_at: settings.last_duty_report_sent_at,
     updated_at: settings.updated_at || "",
+  };
+}
+
+function normalizeProfile(profile: Partial<CandidateProfile>): CandidateProfile {
+  return {
+    id: profile.id || defaultProfile.id,
+    target_cities: safeSettingsList(profile.target_cities, defaultProfile.target_cities),
+    target_directions: safeSettingsList(profile.target_directions, defaultProfile.target_directions),
+    skills: safeSettingsList(profile.skills, defaultProfile.skills),
+    education: profile.education || "",
+    graduation_year: profile.graduation_year || "",
+    internship_preference: profile.internship_preference || defaultProfile.internship_preference,
+    preferred_companies: safeSettingsList(profile.preferred_companies, []),
+    blocked_keywords: safeSettingsList(profile.blocked_keywords, defaultProfile.blocked_keywords),
+    notes: profile.notes || "",
+    updated_at: profile.updated_at || "",
   };
 }
 
@@ -1605,6 +1923,26 @@ function formatTaskStatus(status: string) {
     done: "Done",
   };
   return labels[status] || status;
+}
+
+function formatFitVerdict(verdict: string) {
+  const labels: Record<string, string> = {
+    strong_fit: "Strong fit",
+    worth_reviewing: "Worth reviewing",
+    manual_check: "Manual check",
+    low_priority: "Low priority",
+  };
+  return labels[verdict] || verdict;
+}
+
+function formatDecisionAction(decision: { action: string; from_status: string; to_status: string }) {
+  if (decision.action === "status_changed") {
+    return `${decision.from_status || "unknown"} -> ${decision.to_status || "unknown"}`;
+  }
+  if (decision.action === "notes_updated") {
+    return "Notes updated";
+  }
+  return decision.action.replace("_", " ");
 }
 
 function Metric({ label, value }: { label: string; value: string | number }) {

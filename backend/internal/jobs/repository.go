@@ -130,6 +130,10 @@ func (r *Repository) ListJobs(ctx context.Context, filter ListFilter) ([]domain.
 }
 
 func (r *Repository) UpdateStatus(ctx context.Context, id int64, status domain.JobStatus) error {
+	current, err := r.GetJob(ctx, id)
+	if err != nil {
+		return err
+	}
 	result, err := r.db.ExecContext(ctx, `
 		UPDATE jobs
 		SET status = ?, updated_at = CURRENT_TIMESTAMP
@@ -145,10 +149,21 @@ func (r *Repository) UpdateStatus(ctx context.Context, id int64, status domain.J
 	if affected == 0 {
 		return sql.ErrNoRows
 	}
+	if current.Status != status {
+		if _, err := r.RecordJobDecision(ctx, JobDecisionInput{
+			JobID:      id,
+			Action:     "status_changed",
+			FromStatus: string(current.Status),
+			ToStatus:   string(status),
+		}); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
 func (r *Repository) UpdateNotes(ctx context.Context, id int64, notes string) error {
+	notes = strings.TrimSpace(notes)
 	result, err := r.db.ExecContext(ctx, `
 		UPDATE jobs
 		SET notes = ?, updated_at = CURRENT_TIMESTAMP
@@ -163,6 +178,13 @@ func (r *Repository) UpdateNotes(ctx context.Context, id int64, notes string) er
 	}
 	if affected == 0 {
 		return sql.ErrNoRows
+	}
+	if _, err := r.RecordJobDecision(ctx, JobDecisionInput{
+		JobID:  id,
+		Action: "notes_updated",
+		Notes:  notes,
+	}); err != nil {
+		return err
 	}
 	return nil
 }

@@ -18,6 +18,46 @@ export interface Job {
   notes: string;
 }
 
+export interface CandidateProfile {
+  id: number;
+  target_cities: string[];
+  target_directions: string[];
+  skills: string[];
+  education: string;
+  graduation_year: string;
+  internship_preference: string;
+  preferred_companies: string[];
+  blocked_keywords: string[];
+  notes: string;
+  updated_at: string;
+}
+
+export interface JobDecision {
+  id: number;
+  job_id: number;
+  action: string;
+  reason: string;
+  from_status: string;
+  to_status: string;
+  notes: string;
+  created_at: string;
+}
+
+export interface JobFitSummary {
+  score: number;
+  verdict: string;
+  strengths: string[];
+  risks: string[];
+  profile_signals: string[];
+}
+
+export interface JobDetail {
+  job: Job;
+  fit: JobFitSummary;
+  decisions: JobDecision[];
+  suggested_action: AgentReportAction;
+}
+
 export interface RunSummary {
   sources_total: number;
   sources_success: number;

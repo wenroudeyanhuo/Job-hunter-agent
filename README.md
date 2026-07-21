@@ -17,6 +17,8 @@ Early MVP. The current version provides a Go backend foundation, SQLite persiste
 - Deduplication by application URL and normalized company/title/city.
 - Scheduled crawl runner for 09:00, 12:00, and 18:00.
 - React dashboard for reviewing jobs, filtering by status/direction, updating status, and running a crawl.
+- Candidate profile page for cities, directions, skills, education, preferred companies, blocked keywords, and notes.
+- Job detail panel with profile-aware fit signals, risks, suggested action, notes, and decision history.
 - Daily agent task queue generated from recommended jobs, manual decisions, source issues, and crawl history.
 - Digital employee sidebar with an agent profile, avatar, maturity score, capability map, operating cycle, and mainstream capability gaps.
 - Command Center for rule-based natural-language workflow commands such as changing target cities/directions, refreshing tasks, running a crawl, and sending Feishu reports.
@@ -29,6 +31,8 @@ Early MVP. The current version provides a Go backend foundation, SQLite persiste
 - Scores jobs for Shenzhen-focused frontend, backend, Java, Go, algorithm, and AI application development roles.
 - Filters obvious outsourcing, training, low-quality, and unclear-conversion internship content.
 - Provides a local dashboard for reviewing jobs and updating status.
+- Builds a local candidate profile and uses it to explain why a role fits or carries risk.
+- Records job decisions such as interested, applied, ignored, and notes updates as a timeline.
 - Generates a daily task queue for recommended jobs, human decisions, unhealthy sources, and crawl setup.
 - Shows what the assistant can already do, where it is weaker than mainstream digital employees, and which capability should be improved next.
 - Accepts simple workflow commands from the digital employee sidebar. Current parsing is deterministic and transparent, not LLM-based.
@@ -129,9 +133,11 @@ After the backend and frontend are running:
 7. Refresh Daily Tasks on the Dashboard to turn the current pipeline into an actionable work queue.
 8. Use the digital employee sidebar to inspect maturity, capabilities, current gaps, and the daily operating cycle.
 9. Configure Automatic duty report, Duty report time, and Task SLA hours in Settings if you want stale-task tracking and scheduled reporting.
-10. Try Command Center commands such as `只看深圳 Go 后端，刷新任务`, `run crawl`, or `发送飞书日报`.
-11. Use Snooze, Complete, or Ignore in Daily Tasks to keep the assistant's work queue accurate.
-12. Use Send to Feishu from the duty report when you want the assistant to push the current task queue and summary to your bot.
+10. Go to Profile and write your candidate signals: target cities, directions, skills, preferred companies, blocked keywords, and notes.
+11. Try Command Center commands such as `只看深圳 Go 后端，刷新任务`, `run crawl`, or `发送飞书日报`.
+12. Open Details from an opportunity to review fit signals, risks, suggested action, notes, and decision history.
+13. Use Snooze, Complete, or Ignore in Daily Tasks to keep the assistant's work queue accurate.
+14. Use Send to Feishu from the duty report when you want the assistant to push the current task queue and summary to your bot.
 
 ## Local Data
 
@@ -151,7 +157,7 @@ Local databases, logs, build outputs, private planning docs, and environment fil
 - Improve parsing for company, role, city, deadline, and application URL.
 - Add richer follow-up reminders and escalation channels for daily agent tasks.
 - Upgrade the Command Center from rule-based parsing to optional LLM-backed planning.
-- Add job detail view with notes and application metadata.
+- Turn interested/applied jobs into follow-up tasks with dates and application metadata.
 - Add optional Feishu Base or spreadsheet sync.
 - Explore resume matching and assisted application workflows after the collection pipeline is reliable.
 
