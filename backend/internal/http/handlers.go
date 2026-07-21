@@ -46,6 +46,15 @@ func (h *Handlers) GetAgentBriefing(c *gin.Context) {
 	c.JSON(http.StatusOK, jobs.BuildAgentBriefing(jobList, sources, runs))
 }
 
+func (h *Handlers) GetAgentState(c *gin.Context) {
+	state, err := h.buildAgentState(c.Request.Context())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, state)
+}
+
 func (h *Handlers) GetAgentDutyReport(c *gin.Context) {
 	report, err := h.buildDutyReport(c.Request.Context())
 	if err != nil {
@@ -53,6 +62,33 @@ func (h *Handlers) GetAgentDutyReport(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, report)
+}
+
+func (h *Handlers) buildAgentState(ctx context.Context) (jobs.AgentState, error) {
+	jobList, err := h.Repo.ListJobs(ctx, jobs.ListFilter{})
+	if err != nil {
+		return jobs.AgentState{}, err
+	}
+	sources, err := h.Repo.ListSources(ctx, false)
+	if err != nil {
+		return jobs.AgentState{}, err
+	}
+	runs, err := h.Repo.ListRuns(ctx)
+	if err != nil {
+		return jobs.AgentState{}, err
+	}
+	tasks, err := h.Repo.ListAgentTasks(ctx, time.Now().UTC().Format("2006-01-02"))
+	if err != nil {
+		return jobs.AgentState{}, err
+	}
+	settings, err := h.Repo.GetSettings(ctx)
+	if err != nil {
+		return jobs.AgentState{}, err
+	}
+	if strings.TrimSpace(settings.FeishuWebhookURL) == "" {
+		settings.FeishuWebhookURL = strings.TrimSpace(h.FeishuWebhookURL)
+	}
+	return jobs.BuildAgentState(jobList, sources, runs, tasks, settings), nil
 }
 
 func (h *Handlers) ListAgentEvents(c *gin.Context) {
