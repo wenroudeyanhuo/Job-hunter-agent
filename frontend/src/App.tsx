@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  acceptSourceCandidate,
   cleanupLandingPages,
   createSource,
   getAgentChatStatus,
@@ -19,6 +20,7 @@ import {
   listJobs,
   listRunSources,
   listRuns,
+  listSourceCandidates,
   listSources,
   refreshAgentTasks,
   runAutomationDutyReport,
@@ -26,6 +28,7 @@ import {
   runCrawl,
   runAgentCommand,
   runRecommendedCrawl,
+  runSourceDiscovery,
   saveAgentReviewSnapshot,
   sendFeishuReport,
   sendFeishuTest,
@@ -37,9 +40,10 @@ import {
   updateCompanyEnabled,
   updateSettings,
   updateSourceEnabled,
+  rejectSourceCandidate,
 } from "./api";
 import { DigitalEmployee3D } from "./DigitalEmployee3D";
-import type { AgentBriefing, AgentChatMessage, AgentChatStatus, AgentCommandResult, AgentDutyReport, AgentEvent, AgentReview, AgentReviewHistory, AgentState, AgentTask, CandidateProfile, Company, Job, JobDetail, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source } from "./types";
+import type { AgentBriefing, AgentChatMessage, AgentChatStatus, AgentCommandResult, AgentDutyReport, AgentEvent, AgentReview, AgentReviewHistory, AgentState, AgentTask, CandidateProfile, Company, Job, JobDetail, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source, SourceCandidate } from "./types";
 
 const statusLabels: Record<JobStatus | "all", string> = {
   all: "All",
@@ -139,6 +143,7 @@ export default function App() {
   const [cleaningLandingPages, setCleaningLandingPages] = useState(false);
   const [importURLValue, setImportURLValue] = useState("");
   const [sources, setSources] = useState<Source[]>([]);
+  const [sourceCandidates, setSourceCandidates] = useState<SourceCandidate[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [runs, setRuns] = useState<JobRun[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
@@ -148,6 +153,7 @@ export default function App() {
   const [companyQuery, setCompanyQuery] = useState("");
   const [addingSource, setAddingSource] = useState(false);
   const [seedingSources, setSeedingSources] = useState(false);
+  const [discoveringSources, setDiscoveringSources] = useState(false);
   const [recommendedRunning, setRecommendedRunning] = useState(false);
   const [settings, setSettings] = useState<Settings>(defaultSettings);
   const [settingsDraft, setSettingsDraft] = useState(settingsToDraft(defaultSettings));
@@ -189,6 +195,11 @@ export default function App() {
   async function refreshSources() {
     const data = await listSources();
     setSources(data);
+  }
+
+  async function refreshSourceCandidates() {
+    const data = await listSourceCandidates();
+    setSourceCandidates(data);
   }
 
   async function refreshCompanies() {
@@ -261,7 +272,7 @@ export default function App() {
   }
 
   useEffect(() => {
-    Promise.all([refresh(), refreshSources(), refreshCompanies(), refreshRuns(), refreshSettings(), refreshProfile(), refreshBriefing(), refreshAgentState(), refreshDutyReport(), refreshAgentReview(), refreshAgentReviewHistory(), refreshAgentEvents(), refreshTasks(), refreshChat()])
+    Promise.all([refresh(), refreshSources(), refreshSourceCandidates(), refreshCompanies(), refreshRuns(), refreshSettings(), refreshProfile(), refreshBriefing(), refreshAgentState(), refreshDutyReport(), refreshAgentReview(), refreshAgentReviewHistory(), refreshAgentEvents(), refreshTasks(), refreshChat()])
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
@@ -386,6 +397,10 @@ export default function App() {
         return;
       case "refresh_tasks":
         await handleRefreshAgentTasks();
+        return;
+      case "discover_sources":
+        setActiveView("companies");
+        await handleRunSourceDiscovery();
         return;
       case "review_strong_matches":
         setActiveView("opportunities");
@@ -567,6 +582,56 @@ export default function App() {
       setError(err instanceof Error ? err.message : "Could not add recommended sources");
     } finally {
       setSeedingSources(false);
+    }
+  }
+
+  async function handleRunSourceDiscovery() {
+    setDiscoveringSources(true);
+    setError("");
+    setNotice("");
+    try {
+      const result = await runSourceDiscovery(settings.target_cities, settings.target_directions);
+      setNotice(`Source discovery finished. Proposed ${result.created} new candidates and skipped ${result.duplicated} duplicates.`);
+      await refreshSourceCandidates();
+      await refreshAgentEvents();
+      await refreshAgentReview();
+      await refreshAgentReviewHistory();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not discover source candidates");
+    } finally {
+      setDiscoveringSources(false);
+    }
+  }
+
+  async function handleAcceptSourceCandidate(candidate: SourceCandidate) {
+    setError("");
+    setNotice("");
+    try {
+      await acceptSourceCandidate(candidate.id);
+      setNotice(`${candidate.name} accepted into active sources.`);
+      await refreshSourceCandidates();
+      await refreshSources();
+      await refreshCompanies();
+      await refreshBriefing();
+      await refreshDutyReport();
+      await refreshAgentReview();
+      await refreshAgentReviewHistory();
+      await refreshAgentEvents();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not accept source candidate");
+    }
+  }
+
+  async function handleRejectSourceCandidate(candidate: SourceCandidate) {
+    setError("");
+    setNotice("");
+    try {
+      await rejectSourceCandidate(candidate.id);
+      setNotice(`${candidate.name} rejected.`);
+      await refreshSourceCandidates();
+      await refreshAgentEvents();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not reject source candidate");
     }
   }
 
@@ -1167,10 +1232,19 @@ export default function App() {
           <button type="button" onClick={handleSeedRecommendedSources} disabled={seedingSources || recommendedRunning}>
             {seedingSources ? "Adding..." : "Add Recommended"}
           </button>
+          <button type="button" onClick={handleRunSourceDiscovery} disabled={discoveringSources || recommendedRunning}>
+            {discoveringSources ? "Discovering..." : "Discover Sources"}
+          </button>
           <button type="button" className="strong-action" onClick={handleRecommendedCrawl} disabled={recommendedRunning || seedingSources}>
             {recommendedRunning ? "Running..." : "Add & Crawl"}
           </button>
         </div>
+        <SourceCandidatesPanel
+          candidates={sourceCandidates}
+          onAccept={handleAcceptSourceCandidate}
+          onReject={handleRejectSourceCandidate}
+          busy={discoveringSources || recommendedRunning}
+        />
         <form className="source-form" onSubmit={handleAddSource}>
           <input
             value={sourceURLValue}
@@ -1742,6 +1816,67 @@ function AgentReviewPanel({
           ))}
         </div>
       </div>
+    </section>
+  );
+}
+
+function SourceCandidatesPanel({
+  candidates,
+  onAccept,
+  onReject,
+  busy,
+}: {
+  candidates: SourceCandidate[];
+  onAccept: (candidate: SourceCandidate) => void | Promise<void>;
+  onReject: (candidate: SourceCandidate) => void | Promise<void>;
+  busy: boolean;
+}) {
+  const pending = candidates.filter((candidate) => candidate.status === "pending");
+  const recent = candidates.filter((candidate) => candidate.status !== "pending").slice(0, 4);
+  return (
+    <section className="candidate-panel">
+      <div className="panel-header">
+        <h2>Source Discovery</h2>
+        <span>{pending.length} pending / {candidates.length} total</span>
+      </div>
+      <div className="candidate-list">
+        {pending.slice(0, 8).map((candidate) => (
+          <div className="candidate-row" key={candidate.id}>
+            <div>
+              <div className="candidate-title">
+                <strong>{candidate.name}</strong>
+                <b>{candidate.confidence}</b>
+              </div>
+              <div className="source-meta">
+                <span>{categoryLabels[candidate.category] || candidate.category}</span>
+                <span>{candidate.parser_type || "generic"}</span>
+                <span>{candidate.validation_status}</span>
+              </div>
+              <a href={candidate.url} target="_blank" rel="noreferrer">
+                {candidate.url}
+              </a>
+              <small>{candidate.reason}</small>
+              {candidate.validation_reason && <small>{candidate.validation_reason}</small>}
+            </div>
+            <div className="candidate-actions">
+              <button type="button" onClick={() => onAccept(candidate)} disabled={busy}>
+                Accept
+              </button>
+              <button type="button" onClick={() => onReject(candidate)} disabled={busy}>
+                Reject
+              </button>
+            </div>
+          </div>
+        ))}
+        {pending.length === 0 && <div className="empty-source">No pending candidates. Run discovery to let the agent propose new entrances.</div>}
+      </div>
+      {recent.length > 0 && (
+        <div className="candidate-history">
+          {recent.map((candidate) => (
+            <span key={candidate.id}>{candidate.status}: {candidate.name}</span>
+          ))}
+        </div>
+      )}
     </section>
   );
 }

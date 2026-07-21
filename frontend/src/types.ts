@@ -119,6 +119,30 @@ export interface Source {
   last_found_count: number;
 }
 
+export interface SourceCandidate {
+  id: number;
+  name: string;
+  url: string;
+  category: string;
+  parser_type: string;
+  discovered_by: string;
+  reason: string;
+  confidence: number;
+  status: string;
+  validation_status: string;
+  validation_reason: string;
+  last_checked_at?: string;
+  source_id: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SourceDiscoveryResult {
+  total: number;
+  created: number;
+  duplicated: number;
+}
+
 export interface Company {
   id: number;
   name: string;

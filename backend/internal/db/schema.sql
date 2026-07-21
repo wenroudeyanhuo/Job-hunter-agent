@@ -191,3 +191,23 @@ CREATE TABLE IF NOT EXISTS agent_review_snapshots (
 );
 
 CREATE INDEX IF NOT EXISTS idx_agent_review_snapshots_captured_at ON agent_review_snapshots(captured_at);
+
+CREATE TABLE IF NOT EXISTS source_candidates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    url TEXT NOT NULL UNIQUE,
+    category TEXT NOT NULL DEFAULT 'discovery',
+    parser_type TEXT NOT NULL DEFAULT 'generic',
+    discovered_by TEXT NOT NULL DEFAULT 'agent',
+    reason TEXT NOT NULL DEFAULT '',
+    confidence INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'pending',
+    validation_status TEXT NOT NULL DEFAULT 'unchecked',
+    validation_reason TEXT NOT NULL DEFAULT '',
+    last_checked_at TIMESTAMP NULL,
+    source_id INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_source_candidates_status ON source_candidates(status, confidence);

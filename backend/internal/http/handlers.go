@@ -825,6 +825,86 @@ func (h *Handlers) ListSources(c *gin.Context) {
 	c.JSON(http.StatusOK, sources)
 }
 
+func (h *Handlers) RunSourceDiscovery(c *gin.Context) {
+	var req jobs.SourceDiscoveryInput
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid discovery payload"})
+		return
+	}
+	if len(req.TargetCities) == 0 || len(req.TargetDirections) == 0 {
+		settings, err := h.Repo.GetSettings(c.Request.Context())
+		if err != nil {
+			respondError(c, http.StatusInternalServerError, err)
+			return
+		}
+		if len(req.TargetCities) == 0 {
+			req.TargetCities = settings.TargetCities
+		}
+		if len(req.TargetDirections) == 0 {
+			req.TargetDirections = settings.TargetDirections
+		}
+	}
+	result, err := h.Repo.DiscoverSourceCandidates(c.Request.Context(), req)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	h.recordAgentEvent(c, jobs.AgentEventInput{
+		Type:    "source_candidates_discovered",
+		Title:   "Discovered source candidates",
+		Summary: "I proposed " + strconv.Itoa(result.Created) + " new source candidates and skipped " + strconv.Itoa(result.Duplicated) + " duplicates.",
+		Level:   "success",
+	})
+	c.JSON(http.StatusCreated, result)
+}
+
+func (h *Handlers) ListSourceCandidates(c *gin.Context) {
+	candidates, err := h.Repo.ListSourceCandidates(c.Request.Context(), jobs.SourceCandidateFilter{Status: c.Query("status")})
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, candidates)
+}
+
+func (h *Handlers) AcceptSourceCandidate(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	candidate, source, err := h.Repo.AcceptSourceCandidate(c.Request.Context(), id)
+	if err != nil {
+		respondRepoError(c, err)
+		return
+	}
+	h.recordAgentEvent(c, jobs.AgentEventInput{
+		Type:    "source_candidate_accepted",
+		Title:   "Accepted source candidate",
+		Summary: "I promoted " + candidate.Name + " into active crawl sources.",
+		Level:   "success",
+	})
+	c.JSON(http.StatusCreated, gin.H{"candidate": candidate, "source": source})
+}
+
+func (h *Handlers) RejectSourceCandidate(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	candidate, err := h.Repo.UpdateSourceCandidateStatus(c.Request.Context(), id, jobs.SourceCandidateStatusRejected)
+	if err != nil {
+		respondRepoError(c, err)
+		return
+	}
+	h.recordAgentEvent(c, jobs.AgentEventInput{
+		Type:    "source_candidate_rejected",
+		Title:   "Rejected source candidate",
+		Summary: "I will stop recommending " + candidate.Name + " unless discovery logic changes later.",
+		Level:   "info",
+	})
+	c.JSON(http.StatusOK, candidate)
+}
+
 func (h *Handlers) ListCompanies(c *gin.Context) {
 	companies, err := h.Repo.ListCompanies(c.Request.Context())
 	if err != nil {

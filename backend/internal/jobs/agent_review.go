@@ -161,12 +161,32 @@ func BuildAgentReview(jobList []domain.Job, sources []Source, runs []domain.JobR
 	}
 
 	review.NextSteps = buildReviewSteps(strongMatches, manualJobs, sourceIssues, len(runs), enabledSources, openTasks)
+	if enabledSources > 0 && enabledSources < 8 {
+		review.NextSteps = appendReviewStep(review.NextSteps, AgentReviewStep{
+			Label:  "Discover new sources",
+			Reason: "The source pool is still narrow, so I should look for more candidate entrances.",
+			Action: "discover_sources",
+		})
+	}
 	review.Focus = buildReviewFocus(review.NextSteps)
 	review.Health = buildReviewHealth(enabledSources, sourceIssues, manualJobs, openTasks, staleTasks, escalatedTasks, len(runs))
 	sort.SliceStable(review.Findings, func(i, j int) bool {
 		return findingWeight(review.Findings[i]) > findingWeight(review.Findings[j])
 	})
 	return review
+}
+
+func appendReviewStep(steps []AgentReviewStep, step AgentReviewStep) []AgentReviewStep {
+	for _, existing := range steps {
+		if existing.Action == step.Action {
+			return steps
+		}
+	}
+	next := append(append([]AgentReviewStep{}, steps...), step)
+	if len(next) > 4 {
+		return next[:4]
+	}
+	return next
 }
 
 func (r *AgentReview) addFinding(kind string, title string, detail string, level string, metric int) {
