@@ -112,14 +112,14 @@ func BuildLocalAgentChatReply(input string, context AgentChatContext) AgentChatR
 	reply := AgentChatReply{Source: "local"}
 	if strings.Contains(text, "模型") || strings.Contains(text, "model") {
 		if context.ModelEnabled {
-			reply.Content = "我已经检测到模型配置，可以用模型来理解更自由的对话；同时我仍会保留本地规则作为兜底。"
+			reply.Content = "我已经检测到模型配置，可以用模型理解更自由的对话；同时我仍会保留本地规则作为兜底。"
 		} else {
 			reply.Content = "现在我处于本地规则模式，还没有检测到模型密钥。配置 LLM_API_KEY 和 LLM_MODEL 后，我就能切换到模型对话。"
 		}
 		return reply
 	}
 	if strings.Contains(text, "今天") || strings.Contains(text, "做什么") || strings.Contains(text, "推荐") || strings.Contains(text, "投") {
-		reply.Content = fmt.Sprintf("我建议先处理今天的闭环：%d 个开放任务、%d 个强匹配岗位、%d 个需要你决策的岗位、%d 个来源异常。优先级是先看强匹配，再处理人工决策，最后修来源。", context.OpenTasks, context.StrongMatches, context.ManualDecisions, context.SourceIssues)
+		reply.Content = fmt.Sprintf("我建议先处理今天的闭环：%d 个开放任务、%d 个强匹配岗位、%d 个需要你决策的岗位、%d 个来源异常。优先级是先修来源，再看强匹配，最后清理人工判断队列。", context.OpenTasks, context.StrongMatches, context.ManualDecisions, context.SourceIssues)
 		reply.Actions = append(reply.Actions, AgentCommandAction{Type: "review_strong_matches", Target: "opportunities", Detail: "Open strong opportunities first."})
 		if context.ManualDecisions > 0 {
 			reply.Actions = append(reply.Actions, AgentCommandAction{Type: "review_manual_check", Target: "opportunities", Detail: "Resolve manual decisions."})
@@ -127,11 +127,11 @@ func BuildLocalAgentChatReply(input string, context AgentChatContext) AgentChatR
 		return reply
 	}
 	if strings.Contains(text, "采集") || strings.Contains(text, "crawl") {
-		reply.Content = "可以，我可以帮你发起采集。为了避免误触，我会把它作为建议动作展示，你确认后执行。"
+		reply.Content = "可以，我可以帮你发起采集。为了避免误操作，我会把它作为建议动作展示，你确认后再执行。"
 		reply.Actions = append(reply.Actions, AgentCommandAction{Type: "run_crawl", Target: "sources", Detail: "Run a manual crawl."})
 		return reply
 	}
-	reply.Content = "我在。你可以问我今天该投哪些岗位、为什么某个岗位适合你、哪些任务快过期，或者让我刷新任务/运行采集。"
+	reply.Content = "我在。你可以问我今天该投哪些岗位、为什么某个岗位适合你、哪些任务快过期，或者让我刷新任务、运行采集。"
 	return reply
 }
 

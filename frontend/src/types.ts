@@ -119,6 +119,30 @@ export interface Source {
   last_found_count: number;
 }
 
+export interface SourceCandidate {
+  id: number;
+  name: string;
+  url: string;
+  category: string;
+  parser_type: string;
+  discovered_by: string;
+  reason: string;
+  confidence: number;
+  status: string;
+  validation_status: string;
+  validation_reason: string;
+  last_checked_at?: string;
+  source_id: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SourceDiscoveryResult {
+  total: number;
+  created: number;
+  duplicated: number;
+}
+
 export interface Company {
   id: number;
   name: string;
@@ -287,7 +311,80 @@ export interface AgentDutyReport {
   source_issues: AgentSourceIssue[];
   tasks: AgentTask[];
   next_best_action: AgentReportAction;
+  trend_summary: string;
   latest_run?: JobRun;
+}
+
+export interface AgentReview {
+  generated_at: string;
+  health: AgentReviewHealth;
+  focus: AgentReviewFocus;
+  stats: AgentReviewStats;
+  findings: AgentReviewFinding[];
+  decisions: AgentReviewDecision[];
+  next_steps: AgentReviewStep[];
+}
+
+export interface AgentReviewStats {
+  tracked_jobs: number;
+  new_jobs: number;
+  strong_matches: number;
+  manual_decisions: number;
+  source_issues: number;
+  open_tasks: number;
+  applied_jobs: number;
+}
+
+export interface AgentReviewHealth {
+  score: number;
+  label: string;
+  reason: string;
+}
+
+export interface AgentReviewFocus {
+  title: string;
+  detail: string;
+  action: string;
+}
+
+export interface AgentReviewFinding {
+  kind: string;
+  title: string;
+  detail: string;
+  level: string;
+  metric: number;
+}
+
+export interface AgentReviewDecision {
+  question: string;
+  context: string;
+  action: string;
+}
+
+export interface AgentReviewStep {
+  label: string;
+  reason: string;
+  action: string;
+}
+
+export interface AgentReviewSnapshot {
+  id: number;
+  trigger_type: string;
+  captured_at: string;
+  health_score: number;
+  health_label: string;
+  focus_title: string;
+  focus_action: string;
+  stats: AgentReviewStats;
+  review: AgentReview;
+  created_at: string;
+}
+
+export interface AgentReviewHistory {
+  generated_at: string;
+  snapshots: AgentReviewSnapshot[];
+  delta: AgentReviewStats;
+  summary: string;
 }
 
 export interface AgentDutySummary {

@@ -77,6 +77,11 @@ func BuildFeishuDutyReport(report jobs.AgentDutyReport) string {
 	b.WriteString(fmt.Sprintf("- Done tasks: %d\n", report.Summary.DoneTasks))
 	b.WriteString(fmt.Sprintf("- Stale tasks: %d\n", report.Summary.StaleTasks))
 	b.WriteString(fmt.Sprintf("- Escalated tasks: %d\n", report.Summary.EscalatedTasks))
+	if strings.TrimSpace(report.TrendSummary) != "" {
+		b.WriteString("\nTrend:\n")
+		b.WriteString(report.TrendSummary)
+		b.WriteString("\n")
+	}
 	if len(report.Tasks) > 0 {
 		b.WriteString("\nDaily tasks:\n")
 		written := 0

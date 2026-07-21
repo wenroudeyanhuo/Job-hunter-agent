@@ -170,3 +170,44 @@ CREATE TABLE IF NOT EXISTS agent_chat_messages (
 );
 
 CREATE INDEX IF NOT EXISTS idx_agent_chat_messages_created_at ON agent_chat_messages(created_at);
+
+CREATE TABLE IF NOT EXISTS agent_review_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    trigger_type TEXT NOT NULL DEFAULT '',
+    captured_at TIMESTAMP NOT NULL,
+    health_score INTEGER NOT NULL DEFAULT 0,
+    health_label TEXT NOT NULL DEFAULT '',
+    focus_title TEXT NOT NULL DEFAULT '',
+    focus_action TEXT NOT NULL DEFAULT '',
+    tracked_jobs INTEGER NOT NULL DEFAULT 0,
+    new_jobs INTEGER NOT NULL DEFAULT 0,
+    strong_matches INTEGER NOT NULL DEFAULT 0,
+    manual_decisions INTEGER NOT NULL DEFAULT 0,
+    source_issues INTEGER NOT NULL DEFAULT 0,
+    open_tasks INTEGER NOT NULL DEFAULT 0,
+    applied_jobs INTEGER NOT NULL DEFAULT 0,
+    review_json TEXT NOT NULL DEFAULT '{}',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_review_snapshots_captured_at ON agent_review_snapshots(captured_at);
+
+CREATE TABLE IF NOT EXISTS source_candidates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    url TEXT NOT NULL UNIQUE,
+    category TEXT NOT NULL DEFAULT 'discovery',
+    parser_type TEXT NOT NULL DEFAULT 'generic',
+    discovered_by TEXT NOT NULL DEFAULT 'agent',
+    reason TEXT NOT NULL DEFAULT '',
+    confidence INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'pending',
+    validation_status TEXT NOT NULL DEFAULT 'unchecked',
+    validation_reason TEXT NOT NULL DEFAULT '',
+    last_checked_at TIMESTAMP NULL,
+    source_id INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_source_candidates_status ON source_candidates(status, confidence);

@@ -316,6 +316,7 @@ func (h *Handlers) RunAutomationDutyReport(c *gin.Context) {
 		Summary: "I sent the scheduled duty report and updated the last sent time.",
 		Level:   "success",
 	})
+	h.snapshotAgentReview(c, "auto_duty_report_sent")
 	c.JSON(http.StatusOK, gin.H{"status": "sent", "sent_at": now})
 }
 
@@ -326,6 +327,68 @@ func (h *Handlers) GetAgentDutyReport(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, report)
+}
+
+func (h *Handlers) GetAgentReview(c *gin.Context) {
+	review, err := h.buildAgentReview(c.Request.Context())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, review)
+}
+
+func (h *Handlers) CreateAgentReviewSnapshot(c *gin.Context) {
+	var req struct {
+		TriggerType string `json:"trigger_type"`
+	}
+	_ = c.ShouldBindJSON(&req)
+	review, err := h.buildAgentReview(c.Request.Context())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	snapshot, err := h.Repo.CreateAgentReviewSnapshot(c.Request.Context(), review, req.TriggerType)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	h.recordAgentEvent(c, jobs.AgentEventInput{
+		Type:    "agent_review_snapshotted",
+		Title:   "Saved review snapshot",
+		Summary: "I saved the current review so future trend reports can compare progress.",
+		Level:   "info",
+	})
+	c.JSON(http.StatusCreated, snapshot)
+}
+
+func (h *Handlers) ListAgentReviewHistory(c *gin.Context) {
+	snapshots, err := h.Repo.ListAgentReviewSnapshots(c.Request.Context(), 14)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, jobs.BuildAgentReviewHistory(snapshots))
+}
+
+func (h *Handlers) buildAgentReview(ctx context.Context) (jobs.AgentReview, error) {
+	jobList, err := h.Repo.ListJobs(ctx, jobs.ListFilter{})
+	if err != nil {
+		return jobs.AgentReview{}, err
+	}
+	sources, err := h.Repo.ListSources(ctx, false)
+	if err != nil {
+		return jobs.AgentReview{}, err
+	}
+	runs, err := h.Repo.ListRuns(ctx)
+	if err != nil {
+		return jobs.AgentReview{}, err
+	}
+	tasks, err := h.Repo.ListAgentTasks(ctx, time.Now().UTC().Format("2006-01-02"))
+	if err != nil {
+		return jobs.AgentReview{}, err
+	}
+	return jobs.BuildAgentReview(jobList, sources, runs, tasks), nil
 }
 
 func (h *Handlers) buildAgentState(ctx context.Context) (jobs.AgentState, error) {
@@ -399,6 +462,7 @@ func (h *Handlers) RefreshAgentTasks(c *gin.Context) {
 		Summary: "I rebuilt today's recruiting work queue from jobs, sources, and crawl history.",
 		Level:   "info",
 	})
+	h.snapshotAgentReview(c, "tasks_refreshed")
 	c.JSON(http.StatusOK, tasks)
 }
 
@@ -659,6 +723,7 @@ func (h *Handlers) RunCrawl(c *gin.Context) {
 	summary.LandingPagesIgnored = cleanup.Ignored
 	h.recordCrawlEvent(c, "crawl_completed", "Manual crawl completed", summary)
 	h.refreshAgentTasksAfterCrawl(c)
+	h.snapshotAgentReview(c, "crawl_completed")
 	c.JSON(http.StatusOK, summary)
 }
 
@@ -681,6 +746,7 @@ func (h *Handlers) RunRecommendedCrawl(c *gin.Context) {
 	summary.LandingPagesIgnored = cleanup.Ignored
 	h.recordCrawlEvent(c, "recommended_crawl_completed", "Recommended crawl completed", summary)
 	h.refreshAgentTasksAfterCrawl(c)
+	h.snapshotAgentReview(c, "recommended_crawl_completed")
 	c.JSON(http.StatusOK, gin.H{
 		"seeded":  seeded.Created,
 		"sources": seeded,
@@ -757,6 +823,86 @@ func (h *Handlers) ListSources(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, sources)
+}
+
+func (h *Handlers) RunSourceDiscovery(c *gin.Context) {
+	var req jobs.SourceDiscoveryInput
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid discovery payload"})
+		return
+	}
+	if len(req.TargetCities) == 0 || len(req.TargetDirections) == 0 {
+		settings, err := h.Repo.GetSettings(c.Request.Context())
+		if err != nil {
+			respondError(c, http.StatusInternalServerError, err)
+			return
+		}
+		if len(req.TargetCities) == 0 {
+			req.TargetCities = settings.TargetCities
+		}
+		if len(req.TargetDirections) == 0 {
+			req.TargetDirections = settings.TargetDirections
+		}
+	}
+	result, err := h.Repo.DiscoverSourceCandidates(c.Request.Context(), req)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	h.recordAgentEvent(c, jobs.AgentEventInput{
+		Type:    "source_candidates_discovered",
+		Title:   "Discovered source candidates",
+		Summary: "I proposed " + strconv.Itoa(result.Created) + " new source candidates and skipped " + strconv.Itoa(result.Duplicated) + " duplicates.",
+		Level:   "success",
+	})
+	c.JSON(http.StatusCreated, result)
+}
+
+func (h *Handlers) ListSourceCandidates(c *gin.Context) {
+	candidates, err := h.Repo.ListSourceCandidates(c.Request.Context(), jobs.SourceCandidateFilter{Status: c.Query("status")})
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, candidates)
+}
+
+func (h *Handlers) AcceptSourceCandidate(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	candidate, source, err := h.Repo.AcceptSourceCandidate(c.Request.Context(), id)
+	if err != nil {
+		respondRepoError(c, err)
+		return
+	}
+	h.recordAgentEvent(c, jobs.AgentEventInput{
+		Type:    "source_candidate_accepted",
+		Title:   "Accepted source candidate",
+		Summary: "I promoted " + candidate.Name + " into active crawl sources.",
+		Level:   "success",
+	})
+	c.JSON(http.StatusCreated, gin.H{"candidate": candidate, "source": source})
+}
+
+func (h *Handlers) RejectSourceCandidate(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	candidate, err := h.Repo.UpdateSourceCandidateStatus(c.Request.Context(), id, jobs.SourceCandidateStatusRejected)
+	if err != nil {
+		respondRepoError(c, err)
+		return
+	}
+	h.recordAgentEvent(c, jobs.AgentEventInput{
+		Type:    "source_candidate_rejected",
+		Title:   "Rejected source candidate",
+		Summary: "I will stop recommending " + candidate.Name + " unless discovery logic changes later.",
+		Level:   "info",
+	})
+	c.JSON(http.StatusOK, candidate)
 }
 
 func (h *Handlers) ListCompanies(c *gin.Context) {
@@ -897,6 +1043,7 @@ func (h *Handlers) SendFeishuReport(c *gin.Context) {
 		Summary: "I sent the current work queue, decisions, and source issues to your Feishu bot.",
 		Level:   "success",
 	})
+	h.snapshotAgentReview(c, "feishu_report_sent")
 	c.JSON(http.StatusOK, gin.H{"status": "sent"})
 }
 
@@ -918,7 +1065,13 @@ func (h *Handlers) buildDutyReport(ctx context.Context) (jobs.AgentDutyReport, e
 	if err != nil {
 		return jobs.AgentDutyReport{}, err
 	}
-	return jobs.AddTasksToDutyReport(report, tasks), nil
+	report = jobs.AddTasksToDutyReport(report, tasks)
+	snapshots, err := h.Repo.ListAgentReviewSnapshots(ctx, 2)
+	if err != nil {
+		return jobs.AgentDutyReport{}, err
+	}
+	report.TrendSummary = jobs.BuildAgentReviewHistory(snapshots).Summary
+	return report, nil
 }
 
 func (h *Handlers) effectiveFeishuWebhookURL(ctx context.Context) (string, error) {
@@ -978,6 +1131,17 @@ func (h *Handlers) recordAgentEvent(c *gin.Context, input jobs.AgentEventInput) 
 
 func (h *Handlers) refreshAgentTasksAfterCrawl(c *gin.Context) {
 	if _, err := h.Repo.SyncAgentTasks(c.Request.Context(), time.Now().UTC()); err != nil {
+		_ = c.Error(err)
+	}
+}
+
+func (h *Handlers) snapshotAgentReview(c *gin.Context, triggerType string) {
+	review, err := h.buildAgentReview(c.Request.Context())
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+	if _, err := h.Repo.CreateAgentReviewSnapshot(c.Request.Context(), review, triggerType); err != nil {
 		_ = c.Error(err)
 	}
 }

@@ -1059,6 +1059,15 @@ h2 {
   font-weight: 720;
 }
 
+.duty-trend {
+  border-top: 1px solid #edf1f7;
+  background: #f8fafc;
+  color: #475569;
+  padding: 10px 16px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .metric {
   min-height: 88px;
   border: 1px solid #e3e8f2;
@@ -1198,6 +1207,236 @@ h2 {
   padding: 7px 10px;
   font-size: 12px;
   font-weight: 760;
+}
+
+.agent-review {
+  overflow: hidden;
+  border: 1px solid #cbd8ea;
+  border-radius: 8px;
+  background: #fff;
+  margin-bottom: 16px;
+}
+
+.review-lead {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr) auto auto;
+  gap: 16px;
+  align-items: center;
+  border-bottom: 1px solid #edf1f7;
+  padding: 16px;
+}
+
+.review-score {
+  display: grid;
+  place-items: center;
+  min-height: 86px;
+  border-radius: 8px;
+  background: #10233f;
+  color: #fff;
+}
+
+.review-score strong {
+  font-size: 30px;
+  line-height: 1;
+}
+
+.review-score span {
+  margin-top: 6px;
+  color: #b7d8ff;
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.review-lead h2 {
+  margin: 0;
+  color: #111827;
+  font-size: 20px;
+}
+
+.review-lead p {
+  margin: 6px 0 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.review-lead button,
+.review-decision button {
+  border: 1px solid #1769e0;
+  border-radius: 6px;
+  background: #1769e0;
+  color: #fff;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 760;
+}
+
+.review-lead .secondary-review-action {
+  border-color: #cfd8e6;
+  background: #fff;
+  color: #334155;
+}
+
+.review-trend {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 0.9fr);
+  gap: 16px;
+  align-items: center;
+  border-bottom: 1px solid #edf1f7;
+  background: #f8fafc;
+  padding: 12px 16px;
+}
+
+.review-trend strong,
+.review-trend span {
+  display: block;
+}
+
+.review-trend strong {
+  color: #18212f;
+  font-size: 14px;
+}
+
+.review-trend span {
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.trend-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.trend-metric {
+  border: 1px solid #dde6f2;
+  border-radius: 8px;
+  background: #fff;
+  padding: 8px 10px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.trend-metric b {
+  display: block;
+  color: #18212f;
+  font-size: 16px;
+}
+
+.trend-good b {
+  color: #167145;
+}
+
+.trend-bad b {
+  color: #b42318;
+}
+
+.review-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.review-column {
+  min-width: 0;
+  border-right: 1px solid #edf1f7;
+  padding: 14px 16px;
+}
+
+.review-column:last-child {
+  border-right: 0;
+}
+
+.review-column h3 {
+  margin: 0 0 10px;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 820;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.review-finding,
+.review-decision,
+.review-memory,
+.review-step {
+  border-bottom: 1px solid #edf1f7;
+  padding: 10px 0;
+}
+
+.review-finding {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+}
+
+.review-finding strong,
+.review-decision strong,
+.review-memory strong,
+.review-step strong {
+  display: block;
+  color: #18212f;
+  font-size: 14px;
+}
+
+.review-finding span,
+.review-decision span,
+.review-memory span,
+.review-memory small,
+.review-step span {
+  display: block;
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.review-next-heading {
+  margin-top: 16px !important;
+}
+
+.review-finding b {
+  color: #1769e0;
+  font-size: 18px;
+}
+
+.finding-critical {
+  box-shadow: inset 3px 0 0 #d92d20;
+  padding-left: 10px;
+}
+
+.finding-warning {
+  box-shadow: inset 3px 0 0 #f0b429;
+  padding-left: 10px;
+}
+
+.finding-positive {
+  box-shadow: inset 3px 0 0 #167145;
+  padding-left: 10px;
+}
+
+.review-decision button {
+  margin-top: 9px;
+  padding: 7px 10px;
+  font-size: 12px;
+}
+
+.review-step {
+  display: block;
+  width: 100%;
+  border-top: 0;
+  border-right: 0;
+  border-left: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.review-step:last-child,
+.review-finding:last-child,
+.review-decision:last-child,
+.review-memory:last-of-type {
+  border-bottom: 0;
 }
 
 .tasks-panel {
@@ -1644,6 +1883,98 @@ td {
   border-color: #1769e0;
   background: #1769e0;
   color: #fff;
+}
+
+.candidate-panel {
+  border-bottom: 1px solid #edf1f7;
+  background: #fff;
+}
+
+.candidate-list {
+  display: grid;
+}
+
+.candidate-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: start;
+  border-bottom: 1px solid #edf1f7;
+  padding: 13px 16px;
+}
+
+.candidate-row:last-child {
+  border-bottom: 0;
+}
+
+.candidate-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.candidate-title strong {
+  color: #18212f;
+  font-size: 14px;
+}
+
+.candidate-title b {
+  border-radius: 999px;
+  background: #e8f7ef;
+  color: #167145;
+  padding: 4px 9px;
+  font-size: 12px;
+}
+
+.candidate-row a,
+.candidate-row small {
+  display: block;
+  margin-top: 5px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+
+.candidate-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.candidate-actions button {
+  border: 1px solid #d5deeb;
+  border-radius: 6px;
+  background: #fff;
+  color: #334155;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.candidate-actions button:first-child {
+  border-color: #1769e0;
+  background: #1769e0;
+  color: #fff;
+}
+
+.candidate-history {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-top: 1px solid #edf1f7;
+  background: #f8fafc;
+  padding: 10px 16px;
+}
+
+.candidate-history span {
+  border-radius: 999px;
+  background: #eef2f7;
+  color: #475569;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 720;
 }
 
 .source-form input {
@@ -2150,10 +2481,19 @@ td {
   .summary-grid,
   .dashboard-workbench,
   .agent-briefing,
+  .review-body,
   .readiness-grid,
   .duty-grid,
   .company-grid,
   .workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .review-lead {
+    grid-template-columns: 1fr;
+  }
+
+  .review-trend {
     grid-template-columns: 1fr;
   }
 

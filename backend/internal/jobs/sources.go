@@ -355,7 +355,7 @@ func companyNameFromSource(sourceName string) string {
 	name := strings.TrimSpace(sourceName)
 	replacers := []string{
 		" Careers", " Campus", " Jobs", " Talent",
-		" 校招", " 招聘",
+		" Campus Recruitment", " Recruitment",
 	}
 	for _, suffix := range replacers {
 		name = strings.TrimSuffix(name, suffix)

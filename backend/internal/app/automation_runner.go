@@ -57,6 +57,9 @@ func (r *automationRunner) Tick(ctx context.Context, now time.Time) (bool, error
 		Summary: "I sent the scheduled duty report from the automation scheduler.",
 		Level:   "success",
 	})
+	if review, err := r.buildAgentReview(ctx); err == nil {
+		_, _ = r.repo.CreateAgentReviewSnapshot(ctx, review, "automation_tick")
+	}
 	return true, nil
 }
 
@@ -78,5 +81,31 @@ func (r *automationRunner) buildDutyReport(ctx context.Context) (jobs.AgentDutyR
 		return jobs.AgentDutyReport{}, err
 	}
 	report := jobs.BuildAgentDutyReport(jobList, sources, runs)
-	return jobs.AddTasksToDutyReport(report, tasks), nil
+	report = jobs.AddTasksToDutyReport(report, tasks)
+	snapshots, err := r.repo.ListAgentReviewSnapshots(ctx, 2)
+	if err != nil {
+		return jobs.AgentDutyReport{}, err
+	}
+	report.TrendSummary = jobs.BuildAgentReviewHistory(snapshots).Summary
+	return report, nil
+}
+
+func (r *automationRunner) buildAgentReview(ctx context.Context) (jobs.AgentReview, error) {
+	jobList, err := r.repo.ListJobs(ctx, jobs.ListFilter{})
+	if err != nil {
+		return jobs.AgentReview{}, err
+	}
+	sources, err := r.repo.ListSources(ctx, false)
+	if err != nil {
+		return jobs.AgentReview{}, err
+	}
+	runs, err := r.repo.ListRuns(ctx)
+	if err != nil {
+		return jobs.AgentReview{}, err
+	}
+	tasks, err := r.repo.ListAgentTasks(ctx, time.Now().UTC().Format("2006-01-02"))
+	if err != nil {
+		return jobs.AgentReview{}, err
+	}
+	return jobs.BuildAgentReview(jobList, sources, runs, tasks), nil
 }

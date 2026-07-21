@@ -6,6 +6,9 @@ import type {
   AgentCommandResult,
   AgentDutyReport,
   AgentEvent,
+  AgentReview,
+  AgentReviewHistory,
+  AgentReviewSnapshot,
   AgentState,
   AgentTask,
   CandidateProfile,
@@ -22,6 +25,8 @@ import type {
   SeedSourcesResult,
   Settings,
   Source,
+  SourceCandidate,
+  SourceDiscoveryResult,
 } from "./types";
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
@@ -81,6 +86,21 @@ export async function runAgentChat(message: string, activeView: string): Promise
 
 export async function getAgentDutyReport(): Promise<AgentDutyReport> {
   return request<AgentDutyReport>("/api/agent/report");
+}
+
+export async function getAgentReview(): Promise<AgentReview> {
+  return request<AgentReview>("/api/agent/review");
+}
+
+export async function saveAgentReviewSnapshot(triggerType = "manual"): Promise<AgentReviewSnapshot> {
+  return request<AgentReviewSnapshot>("/api/agent/review/snapshot", {
+    method: "POST",
+    body: JSON.stringify({ trigger_type: triggerType }),
+  });
+}
+
+export async function getAgentReviewHistory(): Promise<AgentReviewHistory> {
+  return request<AgentReviewHistory>("/api/agent/review/history");
 }
 
 export async function listAgentEvents(): Promise<AgentEvent[]> {
@@ -171,6 +191,27 @@ export async function cleanupLandingPages(): Promise<CleanupLandingPagesResponse
 export async function listSources(): Promise<Source[]> {
   const sources = await request<Source[] | null>("/api/sources");
   return Array.isArray(sources) ? sources : [];
+}
+
+export async function runSourceDiscovery(targetCities: string[], targetDirections: string[]): Promise<SourceDiscoveryResult> {
+  return request<SourceDiscoveryResult>("/api/sources/discovery/run", {
+    method: "POST",
+    body: JSON.stringify({ target_cities: targetCities, target_directions: targetDirections }),
+  });
+}
+
+export async function listSourceCandidates(status = ""): Promise<SourceCandidate[]> {
+  const query = status ? `?status=${encodeURIComponent(status)}` : "";
+  const candidates = await request<SourceCandidate[] | null>(`/api/sources/candidates${query}`);
+  return Array.isArray(candidates) ? candidates : [];
+}
+
+export async function acceptSourceCandidate(id: number): Promise<{ candidate: SourceCandidate; source: Source }> {
+  return request<{ candidate: SourceCandidate; source: Source }>(`/api/sources/candidates/${id}/accept`, { method: "POST" });
+}
+
+export async function rejectSourceCandidate(id: number): Promise<SourceCandidate> {
+  return request<SourceCandidate>(`/api/sources/candidates/${id}/reject`, { method: "POST" });
 }
 
 export async function createSource(url: string, name = ""): Promise<Source> {
