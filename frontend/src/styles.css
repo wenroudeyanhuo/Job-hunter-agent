@@ -443,7 +443,7 @@ h2 {
   position: relative;
   display: grid;
   justify-items: center;
-  width: 154px;
+  width: 158px;
   min-height: 184px;
   overflow: hidden;
   border: 1px solid rgba(146, 166, 196, 0.55);
@@ -484,7 +484,7 @@ h2 {
 }
 
 .employee-fab-status {
-  margin-top: -4px;
+  margin-top: -2px;
   color: #18a36d;
   font-size: 12px;
   font-weight: 800;
@@ -497,17 +497,89 @@ h2 {
   line-height: 1.1;
 }
 
-.employee-3d-stage {
+.employee-avatar-stage {
   position: relative;
   z-index: 1;
-  width: 136px;
-  height: 144px;
+  display: grid;
+  place-items: center;
+  width: 138px;
+  height: 142px;
 }
 
-.employee-3d-stage canvas {
+.employee-avatar-svg {
   display: block;
   width: 100% !important;
   height: 100% !important;
+}
+
+.avatar-person {
+  transform-origin: 90px 92px;
+  animation: avatar-breathe 4.8s ease-in-out infinite;
+}
+
+.avatar-signal,
+.avatar-orbit {
+  transform-origin: 90px 90px;
+  animation: avatar-signal 3.6s ease-in-out infinite;
+}
+
+.avatar-core {
+  transform-origin: 90px 128px;
+  animation: avatar-core 2.2s ease-in-out infinite;
+}
+
+.avatar-thinking .avatar-core,
+.avatar-thinking .avatar-signal {
+  animation-duration: 1.1s;
+}
+
+.avatar-thinking .avatar-eye-left,
+.avatar-thinking .avatar-eye-right {
+  animation: avatar-blink 0.9s ease-in-out infinite;
+}
+
+@keyframes avatar-breathe {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes avatar-signal {
+  0%,
+  100% {
+    opacity: 0.62;
+    transform: scale(0.98);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.03);
+  }
+}
+
+@keyframes avatar-core {
+  0%,
+  100% {
+    transform: scale(0.95);
+    opacity: 0.75;
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 1;
+  }
+}
+
+@keyframes avatar-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
 }
 
 .employee-chat-card {
@@ -2005,12 +2077,12 @@ td {
   }
 
   .employee-fab {
-    width: 118px;
-    min-height: 142px;
+    width: 122px;
+    min-height: 144px;
   }
 
-  .employee-3d-stage {
-    width: 104px;
+  .employee-avatar-stage {
+    width: 108px;
     height: 112px;
   }
 
