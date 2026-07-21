@@ -7,6 +7,8 @@ import type {
   AgentDutyReport,
   AgentEvent,
   AgentReview,
+  AgentReviewHistory,
+  AgentReviewSnapshot,
   AgentState,
   AgentTask,
   CandidateProfile,
@@ -86,6 +88,17 @@ export async function getAgentDutyReport(): Promise<AgentDutyReport> {
 
 export async function getAgentReview(): Promise<AgentReview> {
   return request<AgentReview>("/api/agent/review");
+}
+
+export async function saveAgentReviewSnapshot(triggerType = "manual"): Promise<AgentReviewSnapshot> {
+  return request<AgentReviewSnapshot>("/api/agent/review/snapshot", {
+    method: "POST",
+    body: JSON.stringify({ trigger_type: triggerType }),
+  });
+}
+
+export async function getAgentReviewHistory(): Promise<AgentReviewHistory> {
+  return request<AgentReviewHistory>("/api/agent/review/history");
 }
 
 export async function listAgentEvents(): Promise<AgentEvent[]> {

@@ -25,6 +25,8 @@ func NewRouter(handlers *Handlers) http.Handler {
 	api.POST("/agent/automation/duty-report", handlers.RunAutomationDutyReport)
 	api.GET("/agent/report", handlers.GetAgentDutyReport)
 	api.GET("/agent/review", handlers.GetAgentReview)
+	api.POST("/agent/review/snapshot", handlers.CreateAgentReviewSnapshot)
+	api.GET("/agent/review/history", handlers.ListAgentReviewHistory)
 	api.GET("/agent/events", handlers.ListAgentEvents)
 	api.GET("/agent/tasks", handlers.ListAgentTasks)
 	api.POST("/agent/tasks/refresh", handlers.RefreshAgentTasks)

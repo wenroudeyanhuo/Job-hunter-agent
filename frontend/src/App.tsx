@@ -6,6 +6,7 @@ import {
   getAgentBriefing,
   getAgentDutyReport,
   getAgentReview,
+  getAgentReviewHistory,
   getAgentState,
   getCandidateProfile,
   getJobDetail,
@@ -25,6 +26,7 @@ import {
   runCrawl,
   runAgentCommand,
   runRecommendedCrawl,
+  saveAgentReviewSnapshot,
   sendFeishuReport,
   sendFeishuTest,
   seedRecommendedSources,
@@ -37,7 +39,7 @@ import {
   updateSourceEnabled,
 } from "./api";
 import { DigitalEmployee3D } from "./DigitalEmployee3D";
-import type { AgentBriefing, AgentChatMessage, AgentChatStatus, AgentCommandResult, AgentDutyReport, AgentEvent, AgentReview, AgentState, AgentTask, CandidateProfile, Company, Job, JobDetail, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source } from "./types";
+import type { AgentBriefing, AgentChatMessage, AgentChatStatus, AgentCommandResult, AgentDutyReport, AgentEvent, AgentReview, AgentReviewHistory, AgentState, AgentTask, CandidateProfile, Company, Job, JobDetail, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source } from "./types";
 
 const statusLabels: Record<JobStatus | "all", string> = {
   all: "All",
@@ -120,7 +122,7 @@ const defaultProfile: CandidateProfile = {
   graduation_year: "",
   internship_preference: "accept_conversion_clear",
   preferred_companies: [],
-  blocked_keywords: ["outsourcing", "training", "bootcamp", "外包", "培训"],
+  blocked_keywords: ["outsourcing", "training", "bootcamp", "澶栧寘", "鍩硅"],
   notes: "",
   updated_at: "",
 };
@@ -162,6 +164,7 @@ export default function App() {
   const [agentState, setAgentState] = useState<AgentState | null>(null);
   const [dutyReport, setDutyReport] = useState<AgentDutyReport | null>(null);
   const [agentReview, setAgentReview] = useState<AgentReview | null>(null);
+  const [agentReviewHistory, setAgentReviewHistory] = useState<AgentReviewHistory | null>(null);
   const [agentEvents, setAgentEvents] = useState<AgentEvent[]>([]);
   const [agentTasks, setAgentTasks] = useState<AgentTask[]>([]);
   const [chatStatus, setChatStatus] = useState<AgentChatStatus | null>(null);
@@ -175,6 +178,7 @@ export default function App() {
   const [commandText, setCommandText] = useState("");
   const [commandResult, setCommandResult] = useState<AgentCommandResult | null>(null);
   const [runningCommand, setRunningCommand] = useState(false);
+  const [savingReviewSnapshot, setSavingReviewSnapshot] = useState(false);
 
   async function refresh(nextStatus = status) {
     setError("");
@@ -235,6 +239,11 @@ export default function App() {
     setAgentReview(data);
   }
 
+  async function refreshAgentReviewHistory() {
+    const data = await getAgentReviewHistory();
+    setAgentReviewHistory(data);
+  }
+
   async function refreshAgentEvents() {
     const data = await listAgentEvents();
     setAgentEvents(data);
@@ -252,7 +261,7 @@ export default function App() {
   }
 
   useEffect(() => {
-    Promise.all([refresh(), refreshSources(), refreshCompanies(), refreshRuns(), refreshSettings(), refreshProfile(), refreshBriefing(), refreshAgentState(), refreshDutyReport(), refreshAgentReview(), refreshAgentEvents(), refreshTasks(), refreshChat()])
+    Promise.all([refresh(), refreshSources(), refreshCompanies(), refreshRuns(), refreshSettings(), refreshProfile(), refreshBriefing(), refreshAgentState(), refreshDutyReport(), refreshAgentReview(), refreshAgentReviewHistory(), refreshAgentEvents(), refreshTasks(), refreshChat()])
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
@@ -410,6 +419,7 @@ export default function App() {
       await refreshBriefing();
       await refreshDutyReport();
       await refreshAgentReview();
+      await refreshAgentReviewHistory();
       await refreshAgentEvents();
       await refreshTasks();
       await refreshAgentState();
@@ -444,6 +454,7 @@ export default function App() {
       await refreshBriefing();
       await refreshDutyReport();
       await refreshAgentReview();
+      await refreshAgentReviewHistory();
       await refreshAgentEvents();
       await refreshTasks();
       await refreshAgentState();
@@ -469,6 +480,7 @@ export default function App() {
       await refreshBriefing();
       await refreshDutyReport();
       await refreshAgentReview();
+      await refreshAgentReviewHistory();
       await refreshAgentEvents();
       await refreshTasks();
       await refreshAgentState();
@@ -498,6 +510,7 @@ export default function App() {
       await refreshBriefing();
       await refreshDutyReport();
       await refreshAgentReview();
+      await refreshAgentReviewHistory();
       await refreshAgentEvents();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not add source");
@@ -512,6 +525,7 @@ export default function App() {
     await refreshBriefing();
     await refreshDutyReport();
     await refreshAgentReview();
+      await refreshAgentReviewHistory();
     await refreshTasks();
     await refreshAgentState();
   }
@@ -523,6 +537,7 @@ export default function App() {
     await refreshBriefing();
     await refreshDutyReport();
     await refreshAgentReview();
+      await refreshAgentReviewHistory();
     await refreshAgentEvents();
     await refreshTasks();
     await refreshAgentState();
@@ -544,6 +559,7 @@ export default function App() {
       await refreshBriefing();
       await refreshDutyReport();
       await refreshAgentReview();
+      await refreshAgentReviewHistory();
       await refreshAgentEvents();
       await refreshTasks();
       await refreshAgentState();
@@ -571,6 +587,7 @@ export default function App() {
       await refreshBriefing();
       await refreshDutyReport();
       await refreshAgentReview();
+      await refreshAgentReviewHistory();
       await refreshAgentEvents();
       await refreshTasks();
       await refreshAgentState();
@@ -603,6 +620,7 @@ export default function App() {
       setNotice("Settings saved. Future crawl and scoring steps can use these preferences.");
       await refreshDutyReport();
       await refreshAgentReview();
+      await refreshAgentReviewHistory();
       await refreshTasks();
       await refreshAgentState();
     } catch (err) {
@@ -669,6 +687,7 @@ export default function App() {
       await refreshAgentEvents();
       await refreshDutyReport();
       await refreshAgentReview();
+      await refreshAgentReviewHistory();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not send Feishu duty report");
     } finally {
@@ -686,6 +705,7 @@ export default function App() {
       await refreshSettings();
       await refreshDutyReport();
       await refreshAgentReview();
+      await refreshAgentReviewHistory();
       await refreshAgentEvents();
       await refreshAgentState();
     } catch (err) {
@@ -705,6 +725,7 @@ export default function App() {
       setNotice("Daily tasks refreshed from the current recruiting pipeline.");
       await refreshDutyReport();
       await refreshAgentReview();
+      await refreshAgentReviewHistory();
       await refreshAgentEvents();
       await refreshAgentState();
     } catch (err) {
@@ -737,6 +758,7 @@ export default function App() {
     await refreshTasks();
     await refreshDutyReport();
     await refreshAgentReview();
+      await refreshAgentReviewHistory();
     await refreshAgentEvents();
     await refreshAgentState();
   }
@@ -764,6 +786,7 @@ export default function App() {
       await refreshBriefing();
       await refreshDutyReport();
       await refreshAgentReview();
+      await refreshAgentReviewHistory();
       await refreshAgentEvents();
       await refreshTasks();
       await refreshAgentState();
@@ -828,6 +851,23 @@ export default function App() {
     setNotice("Job notes saved.");
   }
 
+  async function handleSaveReviewSnapshot() {
+    setSavingReviewSnapshot(true);
+    setError("");
+    setNotice("");
+    try {
+      await saveAgentReviewSnapshot("manual");
+      await refreshAgentReview();
+      await refreshAgentReviewHistory();
+      await refreshAgentEvents();
+      setNotice("Review snapshot saved for trend comparison.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save review snapshot");
+    } finally {
+      setSavingReviewSnapshot(false);
+    }
+  }
+
   async function setJobStatus(id: number, next: JobStatus) {
     await updateJobStatus(id, next);
     setJobs((current) => current.map((job) => (job.id === id ? { ...job, status: next } : job)));
@@ -837,6 +877,7 @@ export default function App() {
     await refreshBriefing();
     await refreshDutyReport();
     await refreshAgentReview();
+    await refreshAgentReviewHistory();
     await refreshAgentEvents();
     await refreshTasks();
     await refreshAgentState();
@@ -877,7 +918,16 @@ export default function App() {
 
             <ProductReadinessPanel items={readinessItems} busy={running || seedingSources || recommendedRunning} />
 
-            {agentReview && <AgentReviewPanel review={agentReview} onAction={handleAgentAction} busy={running || recommendedRunning} />}
+            {agentReview && (
+              <AgentReviewPanel
+                review={agentReview}
+                history={agentReviewHistory}
+                onAction={handleAgentAction}
+                onSaveSnapshot={handleSaveReviewSnapshot}
+                busy={running || recommendedRunning}
+                savingSnapshot={savingReviewSnapshot}
+              />
+            )}
 
             <AgentTasksPanel
               tasks={agentTasks}
@@ -1592,21 +1642,29 @@ function AgentDutyReportPanel({
         <span>{report.summary.escalated_tasks} escalated</span>
         <span>{report.summary.done_tasks} done</span>
       </div>
+      {report.trend_summary && <div className="duty-trend">{report.trend_summary}</div>}
     </section>
   );
 }
 
 function AgentReviewPanel({
   review,
+  history,
   onAction,
+  onSaveSnapshot,
   busy,
+  savingSnapshot,
 }: {
   review: AgentReview;
+  history: AgentReviewHistory | null;
   onAction: (action: string) => void | Promise<void>;
+  onSaveSnapshot: () => void | Promise<void>;
   busy: boolean;
+  savingSnapshot: boolean;
 }) {
   const topFindings = review.findings.slice(0, 4);
   const decisions = review.decisions.slice(0, 2);
+  const recentSnapshots = history?.snapshots.slice(0, 3) || [];
   return (
     <section className={`agent-review review-${review.health.label.toLowerCase().replace(/\s+/g, "-")}`}>
       <div className="review-lead">
@@ -1621,6 +1679,23 @@ function AgentReviewPanel({
         <button type="button" onClick={() => onAction(review.focus.action)} disabled={busy}>
           Take Action
         </button>
+        <button className="secondary-review-action" type="button" onClick={onSaveSnapshot} disabled={busy || savingSnapshot}>
+          {savingSnapshot ? "Saving..." : "Save Snapshot"}
+        </button>
+      </div>
+      <div className="review-trend">
+        <div>
+          <strong>Trend Review</strong>
+          <span>{history?.summary || "No trend memory yet. Save a snapshot after meaningful changes."}</span>
+        </div>
+        <div className="trend-metrics">
+          <TrendMetric label="Jobs" value={history?.delta.tracked_jobs || 0} />
+          <TrendMetric label="Strong" value={history?.delta.strong_matches || 0} />
+          <TrendMetric label="Manual" value={history?.delta.manual_decisions || 0} />
+          <TrendMetric label="Sources" value={history?.delta.source_issues || 0} inverse />
+          <TrendMetric label="Tasks" value={history?.delta.open_tasks || 0} inverse />
+          <TrendMetric label="Applied" value={history?.delta.applied_jobs || 0} />
+        </div>
       </div>
       <div className="review-body">
         <div className="review-column">
@@ -1649,7 +1724,16 @@ function AgentReviewPanel({
           {decisions.length === 0 && <div className="empty-source">No decision is blocking me right now.</div>}
         </div>
         <div className="review-column">
-          <h3>Next Steps</h3>
+          <h3>Recent Memory</h3>
+          {recentSnapshots.map((snapshot) => (
+            <div className="review-memory" key={snapshot.id}>
+              <strong>{snapshot.health_label} / {snapshot.focus_title}</strong>
+              <span>{snapshot.trigger_type} / {formatDateTime(snapshot.captured_at)}</span>
+              <small>{snapshot.stats.strong_matches} strong / {snapshot.stats.source_issues} source issues / {snapshot.stats.open_tasks} tasks</small>
+            </div>
+          ))}
+          {recentSnapshots.length === 0 && <div className="empty-source">No saved snapshots yet.</div>}
+          <h3 className="review-next-heading">Next Steps</h3>
           {review.next_steps.map((step) => (
             <button className="review-step" type="button" key={`${step.action}-${step.label}`} onClick={() => onAction(step.action)} disabled={busy}>
               <strong>{step.label}</strong>
@@ -1659,6 +1743,16 @@ function AgentReviewPanel({
         </div>
       </div>
     </section>
+  );
+}
+
+function TrendMetric({ label, value, inverse = false }: { label: string; value: number; inverse?: boolean }) {
+  const status = value === 0 ? "flat" : inverse ? (value < 0 ? "good" : "bad") : value > 0 ? "good" : "bad";
+  return (
+    <span className={`trend-metric trend-${status}`}>
+      <b>{signedDisplay(value)}</b>
+      {label}
+    </span>
   );
 }
 
@@ -2166,6 +2260,13 @@ function formatDecisionAction(decision: { action: string; from_status: string; t
     return "Notes updated";
   }
   return decision.action.replace("_", " ");
+}
+
+function signedDisplay(value: number) {
+  if (value > 0) {
+    return `+${value}`;
+  }
+  return String(value);
 }
 
 function Metric({ label, value }: { label: string; value: string | number }) {

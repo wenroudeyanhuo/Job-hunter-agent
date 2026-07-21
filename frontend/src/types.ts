@@ -287,6 +287,7 @@ export interface AgentDutyReport {
   source_issues: AgentSourceIssue[];
   tasks: AgentTask[];
   next_best_action: AgentReportAction;
+  trend_summary: string;
   latest_run?: JobRun;
 }
 
@@ -294,9 +295,20 @@ export interface AgentReview {
   generated_at: string;
   health: AgentReviewHealth;
   focus: AgentReviewFocus;
+  stats: AgentReviewStats;
   findings: AgentReviewFinding[];
   decisions: AgentReviewDecision[];
   next_steps: AgentReviewStep[];
+}
+
+export interface AgentReviewStats {
+  tracked_jobs: number;
+  new_jobs: number;
+  strong_matches: number;
+  manual_decisions: number;
+  source_issues: number;
+  open_tasks: number;
+  applied_jobs: number;
 }
 
 export interface AgentReviewHealth {
@@ -329,6 +341,26 @@ export interface AgentReviewStep {
   label: string;
   reason: string;
   action: string;
+}
+
+export interface AgentReviewSnapshot {
+  id: number;
+  trigger_type: string;
+  captured_at: string;
+  health_score: number;
+  health_label: string;
+  focus_title: string;
+  focus_action: string;
+  stats: AgentReviewStats;
+  review: AgentReview;
+  created_at: string;
+}
+
+export interface AgentReviewHistory {
+  generated_at: string;
+  snapshots: AgentReviewSnapshot[];
+  delta: AgentReviewStats;
+  summary: string;
 }
 
 export interface AgentDutySummary {

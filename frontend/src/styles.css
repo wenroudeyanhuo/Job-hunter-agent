@@ -1059,6 +1059,15 @@ h2 {
   font-weight: 720;
 }
 
+.duty-trend {
+  border-top: 1px solid #edf1f7;
+  background: #f8fafc;
+  color: #475569;
+  padding: 10px 16px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .metric {
   min-height: 88px;
   border: 1px solid #e3e8f2;
@@ -1210,7 +1219,7 @@ h2 {
 
 .review-lead {
   display: grid;
-  grid-template-columns: 112px minmax(0, 1fr) auto;
+  grid-template-columns: 112px minmax(0, 1fr) auto auto;
   gap: 16px;
   align-items: center;
   border-bottom: 1px solid #edf1f7;
@@ -1262,6 +1271,68 @@ h2 {
   font-weight: 760;
 }
 
+.review-lead .secondary-review-action {
+  border-color: #cfd8e6;
+  background: #fff;
+  color: #334155;
+}
+
+.review-trend {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 0.9fr);
+  gap: 16px;
+  align-items: center;
+  border-bottom: 1px solid #edf1f7;
+  background: #f8fafc;
+  padding: 12px 16px;
+}
+
+.review-trend strong,
+.review-trend span {
+  display: block;
+}
+
+.review-trend strong {
+  color: #18212f;
+  font-size: 14px;
+}
+
+.review-trend span {
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.trend-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.trend-metric {
+  border: 1px solid #dde6f2;
+  border-radius: 8px;
+  background: #fff;
+  padding: 8px 10px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.trend-metric b {
+  display: block;
+  color: #18212f;
+  font-size: 16px;
+}
+
+.trend-good b {
+  color: #167145;
+}
+
+.trend-bad b {
+  color: #b42318;
+}
+
 .review-body {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr);
@@ -1288,6 +1359,7 @@ h2 {
 
 .review-finding,
 .review-decision,
+.review-memory,
 .review-step {
   border-bottom: 1px solid #edf1f7;
   padding: 10px 0;
@@ -1301,6 +1373,7 @@ h2 {
 
 .review-finding strong,
 .review-decision strong,
+.review-memory strong,
 .review-step strong {
   display: block;
   color: #18212f;
@@ -1309,12 +1382,18 @@ h2 {
 
 .review-finding span,
 .review-decision span,
+.review-memory span,
+.review-memory small,
 .review-step span {
   display: block;
   margin-top: 4px;
   color: #64748b;
   font-size: 12px;
   line-height: 1.4;
+}
+
+.review-next-heading {
+  margin-top: 16px !important;
 }
 
 .review-finding b {
@@ -1355,7 +1434,8 @@ h2 {
 
 .review-step:last-child,
 .review-finding:last-child,
-.review-decision:last-child {
+.review-decision:last-child,
+.review-memory:last-of-type {
   border-bottom: 0;
 }
 
@@ -2318,6 +2398,10 @@ td {
   }
 
   .review-lead {
+    grid-template-columns: 1fr;
+  }
+
+  .review-trend {
     grid-template-columns: 1fr;
   }
 

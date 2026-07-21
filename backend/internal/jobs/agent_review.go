@@ -11,9 +11,20 @@ type AgentReview struct {
 	GeneratedAt time.Time             `json:"generated_at"`
 	Health      AgentReviewHealth     `json:"health"`
 	Focus       AgentReviewFocus      `json:"focus"`
+	Stats       AgentReviewStats      `json:"stats"`
 	Findings    []AgentReviewFinding  `json:"findings"`
 	Decisions   []AgentReviewDecision `json:"decisions"`
 	NextSteps   []AgentReviewStep     `json:"next_steps"`
+}
+
+type AgentReviewStats struct {
+	TrackedJobs     int `json:"tracked_jobs"`
+	NewJobs         int `json:"new_jobs"`
+	StrongMatches   int `json:"strong_matches"`
+	ManualDecisions int `json:"manual_decisions"`
+	SourceIssues    int `json:"source_issues"`
+	OpenTasks       int `json:"open_tasks"`
+	AppliedJobs     int `json:"applied_jobs"`
 }
 
 type AgentReviewHealth struct {
@@ -135,6 +146,15 @@ func BuildAgentReview(jobList []domain.Job, sources []Source, runs []domain.JobR
 	}
 	if appliedJobs == 0 && interestedJobs > 0 {
 		review.addFinding("conversion", "Interested jobs have not converted to applications", "The next bottleneck is moving selected roles into applied status.", "warning", interestedJobs)
+	}
+	review.Stats = AgentReviewStats{
+		TrackedJobs:     len(jobList),
+		NewJobs:         newJobs,
+		StrongMatches:   strongMatches,
+		ManualDecisions: manualJobs,
+		SourceIssues:    sourceIssues,
+		OpenTasks:       openTasks,
+		AppliedJobs:     appliedJobs,
 	}
 	if len(review.Findings) == 0 {
 		review.addFinding("steady", "No blocking issue found", "I will keep watching scheduled crawls and report changes.", "info", openTasks)

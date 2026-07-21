@@ -6,6 +6,7 @@ import (
 
 	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/crawl"
 	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/domain"
+	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/jobs"
 )
 
 func TestBuildFeishuSummary(t *testing.T) {
@@ -35,5 +36,20 @@ func TestBuildFeishuSummary(t *testing.T) {
 		if !strings.Contains(text, want) {
 			t.Fatalf("expected summary to contain %q, got:\n%s", want, text)
 		}
+	}
+}
+
+func TestBuildFeishuDutyReportIncludesTrendSummary(t *testing.T) {
+	text := BuildFeishuDutyReport(jobs.AgentDutyReport{
+		Headline:     "I found work that needs your decision today.",
+		TrendSummary: "Compared with the previous snapshot: strong matches +2, source issues -1, open tasks 0.",
+		NextBestAction: jobs.AgentReportAction{
+			Label:  "Review strong matches",
+			Reason: "These are the most promising roles.",
+		},
+	})
+
+	if !strings.Contains(text, "Trend:") || !strings.Contains(text, "strong matches +2") {
+		t.Fatalf("expected trend summary in duty report, got:\n%s", text)
 	}
 }

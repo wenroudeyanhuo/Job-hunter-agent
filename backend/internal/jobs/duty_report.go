@@ -17,6 +17,7 @@ type AgentDutyReport struct {
 	SourceIssues   []AgentSourceIssue  `json:"source_issues"`
 	Tasks          []AgentTask         `json:"tasks"`
 	NextBestAction AgentReportAction   `json:"next_best_action"`
+	TrendSummary   string              `json:"trend_summary"`
 	LatestRun      *domain.JobRun      `json:"latest_run,omitempty"`
 }
 

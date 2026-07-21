@@ -140,6 +140,72 @@ func TestAgentReviewAPI(t *testing.T) {
 	}
 }
 
+func TestAgentReviewSnapshotAndHistoryAPI(t *testing.T) {
+	repo, handler := testRouter(t, nil)
+	if _, err := repo.CreateJob(t.Context(), domain.Job{
+		Company:    "Tencent",
+		Title:      "Go Backend Engineer",
+		City:       "Shenzhen",
+		MatchScore: 88,
+		Status:     domain.StatusNew,
+	}); err != nil {
+		t.Fatalf("seed job: %v", err)
+	}
+	if _, err := repo.CreateSource(t.Context(), jobs.SourceInput{
+		Name:       "Tencent Careers",
+		URL:        "https://careers.tencent.com/",
+		Enabled:    true,
+		ParserType: "tencent_api",
+	}); err != nil {
+		t.Fatalf("seed source: %v", err)
+	}
+	if _, err := repo.SyncAgentTasks(t.Context(), time.Now().UTC()); err != nil {
+		t.Fatalf("sync tasks: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/agent/review/snapshot", strings.NewReader(`{"trigger_type":"test"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	if _, err := repo.CreateJob(t.Context(), domain.Job{
+		Company:    "DJI",
+		Title:      "AI Application Engineer",
+		City:       "Shenzhen",
+		MatchScore: 93,
+		Status:     domain.StatusNew,
+	}); err != nil {
+		t.Fatalf("seed second job: %v", err)
+	}
+	req = httptest.NewRequest(http.MethodPost, "/api/agent/review/snapshot", strings.NewReader(`{"trigger_type":"test"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 second snapshot, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/agent/review/history", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var response jobs.AgentReviewHistory
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode history: %v", err)
+	}
+	if len(response.Snapshots) != 2 {
+		t.Fatalf("expected two snapshots, got %#v", response.Snapshots)
+	}
+	if response.Delta.StrongMatches != 1 || response.Delta.TrackedJobs != 1 {
+		t.Fatalf("expected positive trend delta, got %#v", response.Delta)
+	}
+}
+
 func TestAgentTasksAPIRefreshesAndCompletesTasks(t *testing.T) {
 	repo, handler := testRouter(t, nil)
 	if _, err := repo.CreateJob(t.Context(), domain.Job{
