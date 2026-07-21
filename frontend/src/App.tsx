@@ -16,6 +16,7 @@ import {
   listSources,
   refreshAgentTasks,
   runCrawl,
+  runAgentCommand,
   runRecommendedCrawl,
   sendFeishuReport,
   sendFeishuTest,
@@ -26,7 +27,7 @@ import {
   updateSettings,
   updateSourceEnabled,
 } from "./api";
-import type { AgentBriefing, AgentDutyReport, AgentEvent, AgentState, AgentTask, Company, Job, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source } from "./types";
+import type { AgentBriefing, AgentCommandResult, AgentDutyReport, AgentEvent, AgentState, AgentTask, Company, Job, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source } from "./types";
 
 const statusLabels: Record<JobStatus | "all", string> = {
   all: "All",
@@ -119,6 +120,9 @@ export default function App() {
   const [agentEvents, setAgentEvents] = useState<AgentEvent[]>([]);
   const [agentTasks, setAgentTasks] = useState<AgentTask[]>([]);
   const [refreshingTasks, setRefreshingTasks] = useState(false);
+  const [commandText, setCommandText] = useState("");
+  const [commandResult, setCommandResult] = useState<AgentCommandResult | null>(null);
+  const [runningCommand, setRunningCommand] = useState(false);
 
   async function refresh(nextStatus = status) {
     setError("");
@@ -573,6 +577,38 @@ export default function App() {
     await refreshAgentState();
   }
 
+  async function handleRunAgentCommand(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const value = commandText.trim();
+    if (!value) {
+      setError("Type a command for the agent first.");
+      return;
+    }
+    setRunningCommand(true);
+    setError("");
+    setNotice("");
+    try {
+      const result = await runAgentCommand(value);
+      setCommandResult(result);
+      setCommandText("");
+      setNotice(result.summary || "Command processed.");
+      await refreshSettings();
+      await refresh();
+      await refreshSources();
+      await refreshCompanies();
+      await refreshRuns();
+      await refreshBriefing();
+      await refreshDutyReport();
+      await refreshAgentEvents();
+      await refreshTasks();
+      await refreshAgentState();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not run command");
+    } finally {
+      setRunningCommand(false);
+    }
+  }
+
   async function selectRun(runId: number) {
     setSelectedRunId(runId);
     setRunSources(await listRunSources(runId));
@@ -665,6 +701,11 @@ export default function App() {
               refreshingTasks={refreshingTasks}
               sendingFeishu={sendingFeishuReport}
               feishuReady={settings.feishu_configured}
+              commandText={commandText}
+              commandResult={commandResult}
+              runningCommand={runningCommand}
+              onCommandTextChange={setCommandText}
+              onRunCommand={handleRunAgentCommand}
             />
           )}
         </section>
@@ -1196,6 +1237,11 @@ function AgentEmployeeSidebar({
   refreshingTasks,
   sendingFeishu,
   feishuReady,
+  commandText,
+  commandResult,
+  runningCommand,
+  onCommandTextChange,
+  onRunCommand,
 }: {
   state: AgentState;
   onRefreshTasks: () => void | Promise<void>;
@@ -1203,6 +1249,11 @@ function AgentEmployeeSidebar({
   refreshingTasks: boolean;
   sendingFeishu: boolean;
   feishuReady: boolean;
+  commandText: string;
+  commandResult: AgentCommandResult | null;
+  runningCommand: boolean;
+  onCommandTextChange: (value: string) => void;
+  onRunCommand: (event: React.FormEvent<HTMLFormElement>) => void | Promise<void>;
 }) {
   const topGaps = state.gaps.slice(0, 3);
   return (
@@ -1220,6 +1271,30 @@ function AgentEmployeeSidebar({
         <strong>{state.profile.role}</strong>
         <p>{state.profile.mission}</p>
       </div>
+
+      <form className="command-center" onSubmit={onRunCommand}>
+        <label>
+          Command Center
+          <textarea
+            value={commandText}
+            onChange={(event) => onCommandTextChange(event.target.value)}
+            placeholder="只看深圳 Go 后端，刷新任务"
+          />
+        </label>
+        <button type="submit" disabled={runningCommand}>
+          {runningCommand ? "Working..." : "Run Command"}
+        </button>
+        {commandResult && (
+          <div className="command-result">
+            <strong>{commandResult.intent}</strong>
+            <span>{commandResult.summary}</span>
+            {commandResult.actions.length > 0 && (
+              <small>{commandResult.actions.map((action) => action.type).join(" / ")}</small>
+            )}
+            {commandResult.needs.length > 0 && <small>{commandResult.needs.join(" ")}</small>}
+          </div>
+        )}
+      </form>
 
       <div className="employee-focus">
         <span>Current Focus</span>

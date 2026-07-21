@@ -224,3 +224,58 @@ func TestAgentStateAPIReportsDigitalEmployeeReadiness(t *testing.T) {
 		t.Fatalf("expected capabilities and gaps, got %#v", response)
 	}
 }
+
+func TestAgentCommandAPIUpdatesPreferencesAndRefreshesTasks(t *testing.T) {
+	repo, handler := testRouter(t, nil)
+	if _, err := repo.CreateJob(t.Context(), domain.Job{
+		Company:    "Tencent",
+		Title:      "Go Backend Engineer",
+		City:       "Shenzhen",
+		MatchScore: 88,
+		Status:     domain.StatusNew,
+	}); err != nil {
+		t.Fatalf("seed job: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/agent/commands", strings.NewReader(`{"text":"只看深圳和广州 Go 后端，刷新任务"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var response jobs.AgentCommandResult
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode command result: %v", err)
+	}
+	if len(response.Actions) < 2 {
+		t.Fatalf("expected settings and task actions, got %#v", response)
+	}
+	settings, err := repo.GetSettings(t.Context())
+	if err != nil {
+		t.Fatalf("get settings: %v", err)
+	}
+	if !containsString(settings.TargetCities, "深圳") || !containsString(settings.TargetCities, "广州") {
+		t.Fatalf("expected command to update cities, got %#v", settings.TargetCities)
+	}
+	if !containsString(settings.TargetDirections, "go") || !containsString(settings.TargetDirections, "backend") {
+		t.Fatalf("expected command to update directions, got %#v", settings.TargetDirections)
+	}
+	tasks, err := repo.ListAgentTasks(t.Context(), time.Now().UTC().Format("2006-01-02"))
+	if err != nil {
+		t.Fatalf("list tasks: %v", err)
+	}
+	if len(tasks) == 0 {
+		t.Fatalf("expected refreshed tasks")
+	}
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}

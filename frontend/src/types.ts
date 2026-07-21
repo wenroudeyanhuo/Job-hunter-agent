@@ -175,6 +175,20 @@ export interface AgentOperatingMoment {
   state: string;
 }
 
+export interface AgentCommandResult {
+  input: string;
+  intent: string;
+  summary: string;
+  actions: AgentCommandAction[];
+  needs: string[];
+}
+
+export interface AgentCommandAction {
+  type: string;
+  target: string;
+  detail: string;
+}
+
 export interface AgentDutyReport {
   generated_at: string;
   tone: string;
