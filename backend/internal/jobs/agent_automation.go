@@ -39,8 +39,11 @@ func BuildAgentAutomationState(settings Settings, tasks []AgentTask, now time.Ti
 		if task.Status == AgentTaskStatusDone || task.CreatedAt.IsZero() {
 			continue
 		}
+		if task.Status == AgentTaskStatusSnoozed && task.SnoozedUntil != nil && task.SnoozedUntil.After(now) {
+			continue
+		}
 		ageHours := int(now.Sub(task.CreatedAt).Hours())
-		if ageHours < settings.TaskSLAHours {
+		if task.Status != AgentTaskStatusStale && task.Status != AgentTaskStatusEscalated && ageHours < settings.TaskSLAHours {
 			continue
 		}
 		state.StaleTasks = append(state.StaleTasks, AgentStaleTask{

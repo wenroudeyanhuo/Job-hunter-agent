@@ -232,6 +232,8 @@ export interface AgentDutySummary {
   new_jobs: number;
   open_tasks: number;
   done_tasks: number;
+  stale_tasks: number;
+  escalated_tasks: number;
 }
 
 export interface AgentTask {
@@ -240,13 +242,16 @@ export interface AgentTask {
   kind: string;
   title: string;
   detail: string;
-  status: "open" | "done" | string;
+  status: "open" | "stale" | "escalated" | "snoozed" | "done" | string;
   priority: number;
   count: number;
   subject_id: number;
   job_id: number;
   source_id: number;
   action: string;
+  completion_reason: string;
+  snoozed_until?: string;
+  escalated_at?: string;
   created_at: string;
   updated_at: string;
   completed_at?: string;

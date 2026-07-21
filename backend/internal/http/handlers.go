@@ -224,6 +224,20 @@ func (h *Handlers) RefreshAgentTasks(c *gin.Context) {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
+	settings, err := h.Repo.GetSettings(c.Request.Context())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	if _, err := h.Repo.EscalateAgentTasks(c.Request.Context(), time.Now().UTC(), settings); err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	tasks, err = h.Repo.ListAgentTasks(c.Request.Context(), time.Now().UTC().Format("2006-01-02"))
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
 	h.recordAgentEvent(c, jobs.AgentEventInput{
 		Type:    "agent_tasks_refreshed",
 		Title:   "Refreshed daily tasks",
@@ -239,13 +253,19 @@ func (h *Handlers) UpdateAgentTask(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Status string `json:"status"`
+		Status           string     `json:"status"`
+		CompletionReason string     `json:"completion_reason"`
+		SnoozedUntil     *time.Time `json:"snoozed_until"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.Status) == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "status is required"})
 		return
 	}
-	if err := h.Repo.UpdateAgentTaskStatus(c.Request.Context(), id, req.Status); err != nil {
+	if err := h.Repo.UpdateAgentTask(c.Request.Context(), id, jobs.AgentTaskUpdate{
+		Status:           req.Status,
+		CompletionReason: req.CompletionReason,
+		SnoozedUntil:     req.SnoozedUntil,
+	}); err != nil {
 		respondRepoError(c, err)
 		return
 	}
@@ -691,15 +711,7 @@ func (h *Handlers) buildDutyReport(ctx context.Context) (jobs.AgentDutyReport, e
 	if err != nil {
 		return jobs.AgentDutyReport{}, err
 	}
-	report.Tasks = tasks
-	for _, task := range tasks {
-		if task.Status == jobs.AgentTaskStatusDone {
-			report.Summary.DoneTasks++
-		} else {
-			report.Summary.OpenTasks++
-		}
-	}
-	return report, nil
+	return jobs.AddTasksToDutyReport(report, tasks), nil
 }
 
 func (h *Handlers) effectiveFeishuWebhookURL(ctx context.Context) (string, error) {

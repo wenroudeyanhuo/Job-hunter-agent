@@ -21,13 +21,15 @@ type AgentDutyReport struct {
 }
 
 type AgentDutySummary struct {
-	JobsToReview  int `json:"jobs_to_review"`
-	StrongMatches int `json:"strong_matches"`
-	ManualCheck   int `json:"manual_check"`
-	SourceIssues  int `json:"source_issues"`
-	NewJobs       int `json:"new_jobs"`
-	OpenTasks     int `json:"open_tasks"`
-	DoneTasks     int `json:"done_tasks"`
+	JobsToReview   int `json:"jobs_to_review"`
+	StrongMatches  int `json:"strong_matches"`
+	ManualCheck    int `json:"manual_check"`
+	SourceIssues   int `json:"source_issues"`
+	NewJobs        int `json:"new_jobs"`
+	OpenTasks      int `json:"open_tasks"`
+	DoneTasks      int `json:"done_tasks"`
+	StaleTasks     int `json:"stale_tasks"`
+	EscalatedTasks int `json:"escalated_tasks"`
 }
 
 type AgentWorkItem struct {
@@ -169,6 +171,25 @@ func BuildAgentDutyReport(jobList []domain.Job, sources []Source, runs []domain.
 	} else if report.Summary.JobsToReview > 0 || report.LatestRun == nil {
 		report.Tone = "needs_work"
 		report.Headline = "I found work that needs your decision today."
+	}
+	return report
+}
+
+func AddTasksToDutyReport(report AgentDutyReport, tasks []AgentTask) AgentDutyReport {
+	report.Tasks = tasks
+	for _, task := range tasks {
+		switch task.Status {
+		case AgentTaskStatusDone:
+			report.Summary.DoneTasks++
+		case AgentTaskStatusStale:
+			report.Summary.OpenTasks++
+			report.Summary.StaleTasks++
+		case AgentTaskStatusEscalated:
+			report.Summary.OpenTasks++
+			report.Summary.EscalatedTasks++
+		default:
+			report.Summary.OpenTasks++
+		}
 	}
 	return report
 }

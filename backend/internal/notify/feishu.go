@@ -75,6 +75,8 @@ func BuildFeishuDutyReport(report jobs.AgentDutyReport) string {
 	b.WriteString(fmt.Sprintf("- Source issues: %d\n", report.Summary.SourceIssues))
 	b.WriteString(fmt.Sprintf("- Open tasks: %d\n", report.Summary.OpenTasks))
 	b.WriteString(fmt.Sprintf("- Done tasks: %d\n", report.Summary.DoneTasks))
+	b.WriteString(fmt.Sprintf("- Stale tasks: %d\n", report.Summary.StaleTasks))
+	b.WriteString(fmt.Sprintf("- Escalated tasks: %d\n", report.Summary.EscalatedTasks))
 	if len(report.Tasks) > 0 {
 		b.WriteString("\nDaily tasks:\n")
 		written := 0
@@ -82,7 +84,7 @@ func BuildFeishuDutyReport(report jobs.AgentDutyReport) string {
 			if task.Status == jobs.AgentTaskStatusDone {
 				continue
 			}
-			b.WriteString(fmt.Sprintf("- %s: %s\n", task.Title, task.Detail))
+			b.WriteString(fmt.Sprintf("- [%s] %s: %s\n", task.Status, task.Title, task.Detail))
 			written++
 			if written >= 5 {
 				break

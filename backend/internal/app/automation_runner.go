@@ -36,6 +36,9 @@ func (r *automationRunner) Tick(ctx context.Context, now time.Time) (bool, error
 	if webhookURL == "" {
 		return false, nil
 	}
+	if _, err := r.repo.EscalateAgentTasks(ctx, now, settings); err != nil {
+		return false, err
+	}
 	report, err := r.buildDutyReport(ctx)
 	if err != nil {
 		return false, err
@@ -75,13 +78,5 @@ func (r *automationRunner) buildDutyReport(ctx context.Context) (jobs.AgentDutyR
 		return jobs.AgentDutyReport{}, err
 	}
 	report := jobs.BuildAgentDutyReport(jobList, sources, runs)
-	report.Tasks = tasks
-	for _, task := range tasks {
-		if task.Status == jobs.AgentTaskStatusDone {
-			report.Summary.DoneTasks++
-		} else {
-			report.Summary.OpenTasks++
-		}
-	}
-	return report, nil
+	return jobs.AddTasksToDutyReport(report, tasks), nil
 }

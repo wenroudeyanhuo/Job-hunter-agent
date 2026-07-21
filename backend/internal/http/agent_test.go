@@ -149,6 +149,61 @@ func TestAgentTasksAPIRefreshesAndCompletesTasks(t *testing.T) {
 	}
 }
 
+func TestAgentTaskAPIStoresSnoozeAndCompletionReason(t *testing.T) {
+	repo, handler := testRouter(t, nil)
+	if _, err := repo.CreateJob(t.Context(), domain.Job{
+		Company:    "Tencent",
+		Title:      "Go Backend Engineer",
+		City:       "Shenzhen",
+		MatchScore: 88,
+		Status:     domain.StatusNew,
+	}); err != nil {
+		t.Fatalf("seed job: %v", err)
+	}
+	tasks, err := repo.SyncAgentTasks(t.Context(), time.Now().UTC())
+	if err != nil {
+		t.Fatalf("sync tasks: %v", err)
+	}
+	snoozedUntil := time.Now().UTC().Add(24 * time.Hour).Format(time.RFC3339)
+	req := httptest.NewRequest(
+		http.MethodPatch,
+		"/api/agent/tasks/"+strconv.FormatInt(tasks[0].ID, 10),
+		strings.NewReader(`{"status":"snoozed","snoozed_until":"`+snoozedUntil+`"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+	updated, err := repo.GetAgentTask(t.Context(), tasks[0].ID)
+	if err != nil {
+		t.Fatalf("get task: %v", err)
+	}
+	if updated.Status != jobs.AgentTaskStatusSnoozed || updated.SnoozedUntil == nil {
+		t.Fatalf("expected snoozed task, got %#v", updated)
+	}
+
+	req = httptest.NewRequest(
+		http.MethodPatch,
+		"/api/agent/tasks/"+strconv.FormatInt(tasks[0].ID, 10),
+		strings.NewReader(`{"status":"done","completion_reason":"Not a fit"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+	updated, err = repo.GetAgentTask(t.Context(), tasks[0].ID)
+	if err != nil {
+		t.Fatalf("get completed task: %v", err)
+	}
+	if updated.Status != jobs.AgentTaskStatusDone || updated.CompletionReason != "Not a fit" {
+		t.Fatalf("expected completed task reason, got %#v", updated)
+	}
+}
+
 func TestAgentDutyReportIncludesDailyTaskState(t *testing.T) {
 	repo, handler := testRouter(t, nil)
 	if _, err := repo.CreateJob(t.Context(), domain.Job{

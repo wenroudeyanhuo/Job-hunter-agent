@@ -594,9 +594,26 @@ export default function App() {
   }
 
   async function handleTaskDone(task: AgentTask) {
-    await updateAgentTaskStatus(task.id, "done");
-    setAgentTasks((current) => current.map((item) => (item.id === task.id ? { ...item, status: "done" } : item)));
+    await updateAgentTaskStatus(task.id, "done", { completion_reason: "Completed from dashboard" });
     setNotice("Task completed.");
+    await refreshAfterTaskMutation();
+  }
+
+  async function handleTaskSnooze(task: AgentTask) {
+    const snoozedUntil = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    await updateAgentTaskStatus(task.id, "snoozed", { snoozed_until: snoozedUntil });
+    setNotice("Task snoozed for 24 hours.");
+    await refreshAfterTaskMutation();
+  }
+
+  async function handleTaskIgnore(task: AgentTask) {
+    await updateAgentTaskStatus(task.id, "done", { completion_reason: "Ignored from dashboard" });
+    setNotice("Task ignored.");
+    await refreshAfterTaskMutation();
+  }
+
+  async function refreshAfterTaskMutation() {
+    await refreshTasks();
     await refreshDutyReport();
     await refreshAgentEvents();
     await refreshAgentState();
@@ -688,6 +705,8 @@ export default function App() {
               tasks={agentTasks}
               onAction={handleAgentAction}
               onComplete={handleTaskDone}
+              onSnooze={handleTaskSnooze}
+              onIgnore={handleTaskIgnore}
               onRefresh={handleRefreshAgentTasks}
               refreshing={refreshingTasks}
               busy={running || recommendedRunning}
@@ -1198,6 +1217,8 @@ function AgentDutyReportPanel({
         <span>{report.summary.manual_check} manual</span>
         <span>{report.summary.source_issues} source issues</span>
         <span>{report.summary.open_tasks} open tasks</span>
+        <span>{report.summary.stale_tasks} stale</span>
+        <span>{report.summary.escalated_tasks} escalated</span>
         <span>{report.summary.done_tasks} done</span>
       </div>
     </section>
@@ -1231,6 +1252,8 @@ function AgentTasksPanel({
   tasks,
   onAction,
   onComplete,
+  onSnooze,
+  onIgnore,
   onRefresh,
   refreshing,
   busy,
@@ -1238,17 +1261,21 @@ function AgentTasksPanel({
   tasks: AgentTask[];
   onAction: (action: string) => void | Promise<void>;
   onComplete: (task: AgentTask) => void | Promise<void>;
+  onSnooze: (task: AgentTask) => void | Promise<void>;
+  onIgnore: (task: AgentTask) => void | Promise<void>;
   onRefresh: () => void | Promise<void>;
   refreshing: boolean;
   busy: boolean;
 }) {
   const openTasks = tasks.filter((task) => task.status !== "done");
   const doneTasks = tasks.length - openTasks.length;
+  const staleTasks = tasks.filter((task) => task.status === "stale").length;
+  const escalatedTasks = tasks.filter((task) => task.status === "escalated").length;
   return (
     <section className="tasks-panel">
       <div className="panel-header">
         <h2>Daily Tasks</h2>
-        <span>{openTasks.length} open / {doneTasks} done</span>
+        <span>{openTasks.length} open / {staleTasks} stale / {escalatedTasks} escalated / {doneTasks} done</span>
       </div>
       <div className="tasks-toolbar">
         <span>{tasks.length > 0 ? `Work date ${tasks[0].task_date}` : "No task queue generated yet"}</span>
@@ -1257,24 +1284,40 @@ function AgentTasksPanel({
         </button>
       </div>
       <div className="task-list">
-        {tasks.map((task) => (
-          <div className={task.status === "done" ? "task-row task-done" : "task-row"} key={task.id}>
-            <div>
-              <strong>{task.title}</strong>
-              <span>{task.detail}</span>
-            </div>
-            <div className="task-actions">
-              {task.action && (
-                <button type="button" onClick={() => onAction(task.action)} disabled={busy}>
-                  Open
+        {tasks.map((task) => {
+          const isDone = task.status === "done";
+          const isSnoozed = task.status === "snoozed";
+          return (
+            <div className={`task-row task-${task.status}`} key={task.id}>
+              <div>
+                <div className="task-title-line">
+                  <strong>{task.title}</strong>
+                  <b className={`task-status status-${task.status}`}>{formatTaskStatus(task.status)}</b>
+                </div>
+                <span>{task.detail}</span>
+                {task.snoozed_until && <small>Snoozed until {formatDateTime(task.snoozed_until)}</small>}
+                {task.escalated_at && <small>Escalated at {formatDateTime(task.escalated_at)}</small>}
+                {task.completion_reason && <small>{task.completion_reason}</small>}
+              </div>
+              <div className="task-actions">
+                {task.action && (
+                  <button type="button" onClick={() => onAction(task.action)} disabled={busy}>
+                    Open
+                  </button>
+                )}
+                <button type="button" onClick={() => onSnooze(task)} disabled={busy || isDone || isSnoozed}>
+                  {isSnoozed ? "Snoozed" : "Snooze"}
                 </button>
-              )}
-              <button type="button" onClick={() => onComplete(task)} disabled={task.status === "done"}>
-                {task.status === "done" ? "Done" : "Complete"}
-              </button>
+                <button type="button" onClick={() => onComplete(task)} disabled={busy || isDone}>
+                  {isDone ? "Done" : "Complete"}
+                </button>
+                <button type="button" onClick={() => onIgnore(task)} disabled={busy || isDone}>
+                  Ignore
+                </button>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
         {tasks.length === 0 && <div className="empty-source">Refresh tasks after setting companies and running a crawl.</div>}
       </div>
     </section>
@@ -1400,7 +1443,7 @@ function AgentEmployeeSidebar({
             {state.automation.stale_tasks.slice(0, 3).map((task) => (
               <div className="stale-task" key={task.id}>
                 <strong>{task.title}</strong>
-                <span>{task.age_hours}h open / {task.detail}</span>
+                <span>{task.age_hours}h pending / {task.detail}</span>
               </div>
             ))}
           </div>
@@ -1551,6 +1594,17 @@ function formatDateTime(value: string) {
     return value;
   }
   return date.toLocaleString();
+}
+
+function formatTaskStatus(status: string) {
+  const labels: Record<string, string> = {
+    open: "Open",
+    stale: "Stale",
+    escalated: "Escalated",
+    snoozed: "Snoozed",
+    done: "Done",
+  };
+  return labels[status] || status;
 }
 
 function Metric({ label, value }: { label: string; value: string | number }) {

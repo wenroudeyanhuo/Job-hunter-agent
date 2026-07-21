@@ -77,10 +77,14 @@ export async function refreshAgentTasks(): Promise<AgentTask[]> {
   return Array.isArray(tasks) ? tasks : [];
 }
 
-export async function updateAgentTaskStatus(id: number, status: "open" | "done"): Promise<void> {
+export async function updateAgentTaskStatus(
+  id: number,
+  status: "open" | "stale" | "escalated" | "snoozed" | "done",
+  options: { completion_reason?: string; snoozed_until?: string } = {},
+): Promise<void> {
   await request<void>(`/api/agent/tasks/${id}`, {
     method: "PATCH",
-    body: JSON.stringify({ status }),
+    body: JSON.stringify({ status, ...options }),
   });
 }
 
