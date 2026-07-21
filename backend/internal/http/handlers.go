@@ -3,7 +3,6 @@ package httpapi
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -107,7 +106,7 @@ func (h *Handlers) RunAgentCommand(c *gin.Context) {
 				respondError(c, http.StatusInternalServerError, err)
 				return
 			}
-			if err := notify.SendFeishuWebhook(c.Request.Context(), webhookURL, buildFeishuReportText(report)); err != nil {
+			if err := notify.SendFeishuWebhook(c.Request.Context(), webhookURL, notify.BuildFeishuDutyReport(report)); err != nil {
 				respondError(c, http.StatusBadGateway, err)
 				return
 			}
@@ -146,7 +145,7 @@ func (h *Handlers) RunAutomationDutyReport(c *gin.Context) {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
-	if err := notify.SendFeishuWebhook(c.Request.Context(), webhookURL, buildFeishuReportText(report)); err != nil {
+	if err := notify.SendFeishuWebhook(c.Request.Context(), webhookURL, notify.BuildFeishuDutyReport(report)); err != nil {
 		respondError(c, http.StatusBadGateway, err)
 		return
 	}
@@ -661,7 +660,7 @@ func (h *Handlers) SendFeishuReport(c *gin.Context) {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
-	if err := notify.SendFeishuWebhook(c.Request.Context(), webhookURL, buildFeishuReportText(report)); err != nil {
+	if err := notify.SendFeishuWebhook(c.Request.Context(), webhookURL, notify.BuildFeishuDutyReport(report)); err != nil {
 		respondError(c, http.StatusBadGateway, err)
 		return
 	}
@@ -701,66 +700,6 @@ func (h *Handlers) buildDutyReport(ctx context.Context) (jobs.AgentDutyReport, e
 		}
 	}
 	return report, nil
-}
-
-func buildFeishuReportText(report jobs.AgentDutyReport) string {
-	var b strings.Builder
-	b.WriteString("Job Hunter Agent duty report\n\n")
-	b.WriteString(report.Headline)
-	b.WriteString("\n\nSummary:\n")
-	b.WriteString(fmt.Sprintf("- New jobs: %d\n", report.Summary.NewJobs))
-	b.WriteString(fmt.Sprintf("- Strong matches: %d\n", report.Summary.StrongMatches))
-	b.WriteString(fmt.Sprintf("- Manual check: %d\n", report.Summary.ManualCheck))
-	b.WriteString(fmt.Sprintf("- Source issues: %d\n", report.Summary.SourceIssues))
-	b.WriteString(fmt.Sprintf("- Open tasks: %d\n", report.Summary.OpenTasks))
-	b.WriteString(fmt.Sprintf("- Done tasks: %d\n", report.Summary.DoneTasks))
-	if len(report.Tasks) > 0 {
-		b.WriteString("\nDaily tasks:\n")
-		written := 0
-		for _, task := range report.Tasks {
-			if task.Status == jobs.AgentTaskStatusDone {
-				continue
-			}
-			b.WriteString(fmt.Sprintf("- %s: %s\n", task.Title, task.Detail))
-			written++
-			if written >= 5 {
-				break
-			}
-		}
-	}
-	if len(report.TodaysWork) > 0 {
-		b.WriteString("\nToday's work:\n")
-		for _, item := range report.TodaysWork {
-			b.WriteString(fmt.Sprintf("- %s (%d): %s\n", item.Title, item.Count, item.Detail))
-		}
-	}
-	if len(report.NeedsDecision) > 0 {
-		b.WriteString("\nNeeds your decision:\n")
-		limit := len(report.NeedsDecision)
-		if limit > 5 {
-			limit = 5
-		}
-		for i := 0; i < limit; i++ {
-			item := report.NeedsDecision[i]
-			b.WriteString(fmt.Sprintf("- %s - %s - %s - score %d\n", item.Company, item.JobTitle, item.City, item.Score))
-		}
-	}
-	if len(report.SourceIssues) > 0 {
-		b.WriteString("\nSource issues:\n")
-		limit := len(report.SourceIssues)
-		if limit > 5 {
-			limit = 5
-		}
-		for i := 0; i < limit; i++ {
-			issue := report.SourceIssues[i]
-			b.WriteString(fmt.Sprintf("- %s: %s, %s\n", issue.Name, issue.Status, issue.Reason))
-		}
-	}
-	b.WriteString("\nNext best action: ")
-	b.WriteString(report.NextBestAction.Label)
-	b.WriteString(" - ")
-	b.WriteString(report.NextBestAction.Reason)
-	return b.String()
 }
 
 func (h *Handlers) effectiveFeishuWebhookURL(ctx context.Context) (string, error) {

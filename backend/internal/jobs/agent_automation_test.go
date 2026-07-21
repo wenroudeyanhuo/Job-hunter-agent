@@ -38,3 +38,31 @@ func TestBuildAgentAutomationStateFindsStaleTasks(t *testing.T) {
 		t.Fatalf("expected next report time")
 	}
 }
+
+func TestShouldSendDutyReportOncePerDayAfterConfiguredTime(t *testing.T) {
+	now := time.Date(2026, 7, 21, 18, 5, 0, 0, time.UTC)
+	settings := DefaultSettings()
+	settings.AutoDutyReportEnabled = true
+	settings.DutyReportTime = "18:00"
+
+	if !ShouldSendDutyReport(settings, now) {
+		t.Fatal("expected duty report to be due")
+	}
+
+	sent := time.Date(2026, 7, 21, 18, 1, 0, 0, time.UTC)
+	settings.LastDutyReportSentAt = &sent
+	if ShouldSendDutyReport(settings, now) {
+		t.Fatal("expected duty report not to send twice on the same day")
+	}
+}
+
+func TestShouldSendDutyReportWaitsUntilConfiguredTime(t *testing.T) {
+	now := time.Date(2026, 7, 21, 17, 59, 0, 0, time.UTC)
+	settings := DefaultSettings()
+	settings.AutoDutyReportEnabled = true
+	settings.DutyReportTime = "18:00"
+
+	if ShouldSendDutyReport(settings, now) {
+		t.Fatal("expected duty report to wait until configured time")
+	}
+}
