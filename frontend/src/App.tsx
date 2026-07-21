@@ -1867,7 +1867,8 @@ function GlobalEmployeeChat({
     <aside className={open ? "global-employee open" : "global-employee"} aria-label="Digital employee chat">
       <button type="button" className="employee-fab" onClick={onToggle} aria-label="Toggle digital employee chat">
         <DigitalEmployee3D active={open} thinking={sending} />
-        <span>{sending ? "Thinking" : "Ask me"}</span>
+        <span className="employee-fab-status">{sending ? "Analyzing" : status?.configured ? "Model online" : "Local online"}</span>
+        <strong>Qiu Zhao</strong>
       </button>
       {open && (
         <section className="employee-chat-card">

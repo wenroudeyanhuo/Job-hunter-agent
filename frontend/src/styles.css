@@ -440,28 +440,68 @@ h2 {
 }
 
 .employee-fab {
+  position: relative;
   display: grid;
-  place-items: center;
-  width: 136px;
-  min-height: 156px;
-  border: 1px solid #cfd8e6;
+  justify-items: center;
+  width: 154px;
+  min-height: 184px;
+  overflow: hidden;
+  border: 1px solid rgba(146, 166, 196, 0.55);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.94);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(245, 249, 255, 0.96)),
+    #fff;
   color: #18212f;
-  padding: 8px;
+  padding: 10px 10px 11px;
   box-shadow: 0 18px 42px rgba(15, 23, 42, 0.16);
 }
 
-.employee-fab span {
-  margin-top: -8px;
-  color: #1769e0;
+.employee-fab::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 4px;
+  background: linear-gradient(90deg, #1769e0, #18a36d);
+}
+
+.employee-fab::after {
+  content: "";
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #18a36d;
+  box-shadow: 0 0 0 4px rgba(24, 163, 109, 0.14);
+}
+
+.employee-fab-status,
+.employee-fab strong {
+  position: relative;
+  z-index: 1;
+  display: block;
+}
+
+.employee-fab-status {
+  margin-top: -4px;
+  color: #18a36d;
   font-size: 12px;
   font-weight: 800;
 }
 
+.employee-fab strong {
+  margin-top: 2px;
+  color: #18212f;
+  font-size: 13px;
+  line-height: 1.1;
+}
+
 .employee-3d-stage {
-  width: 124px;
-  height: 140px;
+  position: relative;
+  z-index: 1;
+  width: 136px;
+  height: 144px;
 }
 
 .employee-3d-stage canvas {
@@ -1965,13 +2005,13 @@ td {
   }
 
   .employee-fab {
-    width: 104px;
-    min-height: 124px;
+    width: 118px;
+    min-height: 142px;
   }
 
   .employee-3d-stage {
-    width: 94px;
-    height: 108px;
+    width: 104px;
+    height: 112px;
   }
 
   .employee-chat-card {
