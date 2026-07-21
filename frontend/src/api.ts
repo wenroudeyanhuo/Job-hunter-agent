@@ -77,10 +77,14 @@ export async function refreshAgentTasks(): Promise<AgentTask[]> {
   return Array.isArray(tasks) ? tasks : [];
 }
 
-export async function updateAgentTaskStatus(id: number, status: "open" | "done"): Promise<void> {
+export async function updateAgentTaskStatus(
+  id: number,
+  status: "open" | "stale" | "escalated" | "snoozed" | "done",
+  options: { completion_reason?: string; snoozed_until?: string } = {},
+): Promise<void> {
   await request<void>(`/api/agent/tasks/${id}`, {
     method: "PATCH",
-    body: JSON.stringify({ status }),
+    body: JSON.stringify({ status, ...options }),
   });
 }
 
@@ -159,7 +163,19 @@ export async function getSettings(): Promise<Settings> {
   return request<Settings>("/api/settings");
 }
 
-export async function updateSettings(settings: Pick<Settings, "target_cities" | "target_directions" | "excluded_keywords" | "crawl_schedule" | "feishu_webhook_url">): Promise<Settings> {
+export async function updateSettings(
+  settings: Pick<
+    Settings,
+    | "target_cities"
+    | "target_directions"
+    | "excluded_keywords"
+    | "crawl_schedule"
+    | "feishu_webhook_url"
+    | "auto_duty_report_enabled"
+    | "duty_report_time"
+    | "task_sla_hours"
+  >,
+): Promise<Settings> {
   return request<Settings>("/api/settings", {
     method: "PATCH",
     body: JSON.stringify(settings),
@@ -172,4 +188,8 @@ export async function sendFeishuTest(): Promise<void> {
 
 export async function sendFeishuReport(): Promise<void> {
   await request<void>("/api/notifications/feishu/report", { method: "POST" });
+}
+
+export async function runAutomationDutyReport(): Promise<void> {
+  await request<void>("/api/agent/automation/duty-report", { method: "POST" });
 }

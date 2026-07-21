@@ -15,6 +15,7 @@ import {
   listRuns,
   listSources,
   refreshAgentTasks,
+  runAutomationDutyReport,
   runCrawl,
   runAgentCommand,
   runRecommendedCrawl,
@@ -81,6 +82,9 @@ const defaultSettings: Settings = {
   crawl_schedule: ["09:00", "12:00", "18:00"],
   feishu_webhook_url: "",
   feishu_configured: false,
+  auto_duty_report_enabled: false,
+  duty_report_time: "18:00",
+  task_sla_hours: 24,
   updated_at: "",
 };
 
@@ -504,6 +508,9 @@ export default function App() {
         excluded_keywords: parseSettingsList(settingsDraft.excluded_keywords),
         crawl_schedule: parseSettingsList(settingsDraft.crawl_schedule),
         feishu_webhook_url: settingsDraft.feishu_webhook_url.trim(),
+        auto_duty_report_enabled: settingsDraft.auto_duty_report_enabled,
+        duty_report_time: settingsDraft.duty_report_time.trim(),
+        task_sla_hours: Number(settingsDraft.task_sla_hours) || defaultSettings.task_sla_hours,
       });
       const nextSettings = normalizeSettings(saved);
       setSettings(nextSettings);
@@ -550,6 +557,24 @@ export default function App() {
     }
   }
 
+  async function handleRunAutomationDutyReport() {
+    setSendingFeishuReport(true);
+    setError("");
+    setNotice("");
+    try {
+      await runAutomationDutyReport();
+      setNotice("Automatic duty report sent.");
+      await refreshSettings();
+      await refreshDutyReport();
+      await refreshAgentEvents();
+      await refreshAgentState();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not run automatic duty report");
+    } finally {
+      setSendingFeishuReport(false);
+    }
+  }
+
   async function handleRefreshAgentTasks() {
     setRefreshingTasks(true);
     setError("");
@@ -569,9 +594,26 @@ export default function App() {
   }
 
   async function handleTaskDone(task: AgentTask) {
-    await updateAgentTaskStatus(task.id, "done");
-    setAgentTasks((current) => current.map((item) => (item.id === task.id ? { ...item, status: "done" } : item)));
+    await updateAgentTaskStatus(task.id, "done", { completion_reason: "Completed from dashboard" });
     setNotice("Task completed.");
+    await refreshAfterTaskMutation();
+  }
+
+  async function handleTaskSnooze(task: AgentTask) {
+    const snoozedUntil = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    await updateAgentTaskStatus(task.id, "snoozed", { snoozed_until: snoozedUntil });
+    setNotice("Task snoozed for 24 hours.");
+    await refreshAfterTaskMutation();
+  }
+
+  async function handleTaskIgnore(task: AgentTask) {
+    await updateAgentTaskStatus(task.id, "done", { completion_reason: "Ignored from dashboard" });
+    setNotice("Task ignored.");
+    await refreshAfterTaskMutation();
+  }
+
+  async function refreshAfterTaskMutation() {
+    await refreshTasks();
     await refreshDutyReport();
     await refreshAgentEvents();
     await refreshAgentState();
@@ -663,6 +705,8 @@ export default function App() {
               tasks={agentTasks}
               onAction={handleAgentAction}
               onComplete={handleTaskDone}
+              onSnooze={handleTaskSnooze}
+              onIgnore={handleTaskIgnore}
               onRefresh={handleRefreshAgentTasks}
               refreshing={refreshingTasks}
               busy={running || recommendedRunning}
@@ -701,6 +745,7 @@ export default function App() {
               refreshingTasks={refreshingTasks}
               sendingFeishu={sendingFeishuReport}
               feishuReady={settings.feishu_configured}
+              onRunAutomationDutyReport={handleRunAutomationDutyReport}
               commandText={commandText}
               commandResult={commandResult}
               runningCommand={runningCommand}
@@ -961,6 +1006,31 @@ export default function App() {
               placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..."
             />
           </label>
+          <label className="settings-toggle">
+            <input
+              type="checkbox"
+              checked={settingsDraft.auto_duty_report_enabled}
+              onChange={(event) => setSettingsDraft((current) => ({ ...current, auto_duty_report_enabled: event.target.checked }))}
+            />
+            Automatic duty report
+          </label>
+          <label>
+            Duty report time
+            <input
+              value={settingsDraft.duty_report_time}
+              onChange={(event) => setSettingsDraft((current) => ({ ...current, duty_report_time: event.target.value }))}
+              placeholder="18:00"
+            />
+          </label>
+          <label>
+            Task SLA hours
+            <input
+              type="number"
+              min="1"
+              value={settingsDraft.task_sla_hours}
+              onChange={(event) => setSettingsDraft((current) => ({ ...current, task_sla_hours: event.target.value }))}
+            />
+          </label>
           <button type="submit" disabled={savingSettings}>
             {savingSettings ? "Saving..." : "Save Settings"}
           </button>
@@ -1147,6 +1217,8 @@ function AgentDutyReportPanel({
         <span>{report.summary.manual_check} manual</span>
         <span>{report.summary.source_issues} source issues</span>
         <span>{report.summary.open_tasks} open tasks</span>
+        <span>{report.summary.stale_tasks} stale</span>
+        <span>{report.summary.escalated_tasks} escalated</span>
         <span>{report.summary.done_tasks} done</span>
       </div>
     </section>
@@ -1180,6 +1252,8 @@ function AgentTasksPanel({
   tasks,
   onAction,
   onComplete,
+  onSnooze,
+  onIgnore,
   onRefresh,
   refreshing,
   busy,
@@ -1187,17 +1261,21 @@ function AgentTasksPanel({
   tasks: AgentTask[];
   onAction: (action: string) => void | Promise<void>;
   onComplete: (task: AgentTask) => void | Promise<void>;
+  onSnooze: (task: AgentTask) => void | Promise<void>;
+  onIgnore: (task: AgentTask) => void | Promise<void>;
   onRefresh: () => void | Promise<void>;
   refreshing: boolean;
   busy: boolean;
 }) {
   const openTasks = tasks.filter((task) => task.status !== "done");
   const doneTasks = tasks.length - openTasks.length;
+  const staleTasks = tasks.filter((task) => task.status === "stale").length;
+  const escalatedTasks = tasks.filter((task) => task.status === "escalated").length;
   return (
     <section className="tasks-panel">
       <div className="panel-header">
         <h2>Daily Tasks</h2>
-        <span>{openTasks.length} open / {doneTasks} done</span>
+        <span>{openTasks.length} open / {staleTasks} stale / {escalatedTasks} escalated / {doneTasks} done</span>
       </div>
       <div className="tasks-toolbar">
         <span>{tasks.length > 0 ? `Work date ${tasks[0].task_date}` : "No task queue generated yet"}</span>
@@ -1206,24 +1284,40 @@ function AgentTasksPanel({
         </button>
       </div>
       <div className="task-list">
-        {tasks.map((task) => (
-          <div className={task.status === "done" ? "task-row task-done" : "task-row"} key={task.id}>
-            <div>
-              <strong>{task.title}</strong>
-              <span>{task.detail}</span>
-            </div>
-            <div className="task-actions">
-              {task.action && (
-                <button type="button" onClick={() => onAction(task.action)} disabled={busy}>
-                  Open
+        {tasks.map((task) => {
+          const isDone = task.status === "done";
+          const isSnoozed = task.status === "snoozed";
+          return (
+            <div className={`task-row task-${task.status}`} key={task.id}>
+              <div>
+                <div className="task-title-line">
+                  <strong>{task.title}</strong>
+                  <b className={`task-status status-${task.status}`}>{formatTaskStatus(task.status)}</b>
+                </div>
+                <span>{task.detail}</span>
+                {task.snoozed_until && <small>Snoozed until {formatDateTime(task.snoozed_until)}</small>}
+                {task.escalated_at && <small>Escalated at {formatDateTime(task.escalated_at)}</small>}
+                {task.completion_reason && <small>{task.completion_reason}</small>}
+              </div>
+              <div className="task-actions">
+                {task.action && (
+                  <button type="button" onClick={() => onAction(task.action)} disabled={busy}>
+                    Open
+                  </button>
+                )}
+                <button type="button" onClick={() => onSnooze(task)} disabled={busy || isDone || isSnoozed}>
+                  {isSnoozed ? "Snoozed" : "Snooze"}
                 </button>
-              )}
-              <button type="button" onClick={() => onComplete(task)} disabled={task.status === "done"}>
-                {task.status === "done" ? "Done" : "Complete"}
-              </button>
+                <button type="button" onClick={() => onComplete(task)} disabled={busy || isDone}>
+                  {isDone ? "Done" : "Complete"}
+                </button>
+                <button type="button" onClick={() => onIgnore(task)} disabled={busy || isDone}>
+                  Ignore
+                </button>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
         {tasks.length === 0 && <div className="empty-source">Refresh tasks after setting companies and running a crawl.</div>}
       </div>
     </section>
@@ -1234,6 +1328,7 @@ function AgentEmployeeSidebar({
   state,
   onRefreshTasks,
   onSendFeishu,
+  onRunAutomationDutyReport,
   refreshingTasks,
   sendingFeishu,
   feishuReady,
@@ -1246,6 +1341,7 @@ function AgentEmployeeSidebar({
   state: AgentState;
   onRefreshTasks: () => void | Promise<void>;
   onSendFeishu: () => void | Promise<void>;
+  onRunAutomationDutyReport: () => void | Promise<void>;
   refreshingTasks: boolean;
   sendingFeishu: boolean;
   feishuReady: boolean;
@@ -1325,7 +1421,34 @@ function AgentEmployeeSidebar({
         <button type="button" onClick={onSendFeishu} disabled={sendingFeishu || !feishuReady}>
           {sendingFeishu ? "Sending..." : "Send Duty Report"}
         </button>
+        <button type="button" onClick={onRunAutomationDutyReport} disabled={sendingFeishu || !feishuReady || !state.automation.duty_report_enabled}>
+          Run Auto Report
+        </button>
       </div>
+
+      <section className="employee-section">
+        <h3>Automation</h3>
+        <div className="automation-panel">
+          <div>
+            <strong>{state.automation.duty_report_enabled ? "Duty report armed" : "Duty report paused"}</strong>
+            <span>Next {formatDateTime(state.automation.next_duty_report_at)} / SLA {state.automation.task_sla_hours}h</span>
+          </div>
+          <div>
+            <strong>{state.automation.stale_task_count} stale tasks</strong>
+            <span>{state.automation.last_report_sent_at ? `Last sent ${formatDateTime(state.automation.last_report_sent_at)}` : "No automatic report sent yet"}</span>
+          </div>
+        </div>
+        {state.automation.stale_tasks.length > 0 && (
+          <div className="stale-task-list">
+            {state.automation.stale_tasks.slice(0, 3).map((task) => (
+              <div className="stale-task" key={task.id}>
+                <strong>{task.title}</strong>
+                <span>{task.age_hours}h pending / {task.detail}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       <section className="employee-section">
         <h3>Capabilities</h3>
@@ -1417,6 +1540,9 @@ function settingsToDraft(settings: Settings) {
     excluded_keywords: safeSettingsList(settings.excluded_keywords, defaultSettings.excluded_keywords).join("\n"),
     crawl_schedule: safeSettingsList(settings.crawl_schedule, defaultSettings.crawl_schedule).join("\n"),
     feishu_webhook_url: settings.feishu_webhook_url || "",
+    auto_duty_report_enabled: Boolean(settings.auto_duty_report_enabled),
+    duty_report_time: settings.duty_report_time || defaultSettings.duty_report_time,
+    task_sla_hours: String(settings.task_sla_hours || defaultSettings.task_sla_hours),
   };
 }
 
@@ -1428,6 +1554,10 @@ function normalizeSettings(settings: Partial<Settings>): Settings {
     crawl_schedule: safeSettingsList(settings.crawl_schedule, defaultSettings.crawl_schedule),
     feishu_webhook_url: settings.feishu_webhook_url || "",
     feishu_configured: Boolean(settings.feishu_configured),
+    auto_duty_report_enabled: Boolean(settings.auto_duty_report_enabled),
+    duty_report_time: settings.duty_report_time || defaultSettings.duty_report_time,
+    task_sla_hours: settings.task_sla_hours || defaultSettings.task_sla_hours,
+    last_duty_report_sent_at: settings.last_duty_report_sent_at,
     updated_at: settings.updated_at || "",
   };
 }
@@ -1453,6 +1583,28 @@ function parseSettingsList(value: string) {
       seen.add(key);
       return true;
     });
+}
+
+function formatDateTime(value: string) {
+  if (!value) {
+    return "not scheduled";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleString();
+}
+
+function formatTaskStatus(status: string) {
+  const labels: Record<string, string> = {
+    open: "Open",
+    stale: "Stale",
+    escalated: "Escalated",
+    snoozed: "Snoozed",
+    done: "Done",
+  };
+  return labels[status] || status;
 }
 
 function Metric({ label, value }: { label: string; value: string | number }) {

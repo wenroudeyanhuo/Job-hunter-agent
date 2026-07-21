@@ -109,6 +109,135 @@ func TestRepositorySyncAgentTasksKeepsCompletedTasksDone(t *testing.T) {
 	}
 }
 
+func TestRepositoryEscalatesOpenTasksBySLA(t *testing.T) {
+	ctx := context.Background()
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	repo := NewRepository(conn)
+	if _, err := repo.CreateJob(ctx, domain.Job{
+		Company:    "Tencent",
+		Title:      "Go Backend Engineer",
+		City:       "Shenzhen",
+		MatchScore: 90,
+		Status:     domain.StatusNew,
+	}); err != nil {
+		t.Fatalf("seed job: %v", err)
+	}
+	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
+	if _, err := repo.CreateRun(ctx, "manual", now.Add(-time.Hour)); err != nil {
+		t.Fatalf("seed run: %v", err)
+	}
+	tasks, err := repo.SyncAgentTasks(ctx, now)
+	if err != nil {
+		t.Fatalf("sync tasks: %v", err)
+	}
+	if len(tasks) == 0 {
+		t.Fatal("expected synced task")
+	}
+	if _, err := repo.db.ExecContext(ctx, `UPDATE agent_tasks SET created_at = ? WHERE id = ?`, now.Add(-5*time.Hour), tasks[0].ID); err != nil {
+		t.Fatalf("age task: %v", err)
+	}
+
+	result, err := repo.EscalateAgentTasks(ctx, now, Settings{TaskSLAHours: 4})
+	if err != nil {
+		t.Fatalf("escalate tasks: %v", err)
+	}
+	if result.Stale != 1 || result.Escalated != 0 {
+		t.Fatalf("expected one stale task, got %#v", result)
+	}
+	updated, err := repo.GetAgentTask(ctx, tasks[0].ID)
+	if err != nil {
+		t.Fatalf("get task: %v", err)
+	}
+	if updated.Status != AgentTaskStatusStale {
+		t.Fatalf("expected stale task, got %#v", updated)
+	}
+
+	if _, err := repo.db.ExecContext(ctx, `UPDATE agent_tasks SET status = ?, created_at = ? WHERE id = ?`, AgentTaskStatusOpen, now.Add(-9*time.Hour), tasks[0].ID); err != nil {
+		t.Fatalf("reset task age: %v", err)
+	}
+	result, err = repo.EscalateAgentTasks(ctx, now, Settings{TaskSLAHours: 4})
+	if err != nil {
+		t.Fatalf("escalate old task: %v", err)
+	}
+	if result.Escalated != 1 {
+		t.Fatalf("expected one escalated task, got %#v", result)
+	}
+	updated, err = repo.GetAgentTask(ctx, tasks[0].ID)
+	if err != nil {
+		t.Fatalf("get escalated task: %v", err)
+	}
+	if updated.Status != AgentTaskStatusEscalated || updated.EscalatedAt == nil {
+		t.Fatalf("expected escalated task with timestamp, got %#v", updated)
+	}
+}
+
+func TestRepositorySnoozesTasksAndKeepsCompletionReason(t *testing.T) {
+	ctx := context.Background()
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	repo := NewRepository(conn)
+	if _, err := repo.CreateJob(ctx, domain.Job{
+		Company:    "Tencent",
+		Title:      "Go Backend Engineer",
+		City:       "Shenzhen",
+		MatchScore: 90,
+		Status:     domain.StatusNew,
+	}); err != nil {
+		t.Fatalf("seed job: %v", err)
+	}
+	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
+	if _, err := repo.CreateRun(ctx, "manual", now.Add(-time.Hour)); err != nil {
+		t.Fatalf("seed run: %v", err)
+	}
+	tasks, err := repo.SyncAgentTasks(ctx, now)
+	if err != nil {
+		t.Fatalf("sync tasks: %v", err)
+	}
+	snoozedUntil := now.Add(24 * time.Hour)
+	if err := repo.UpdateAgentTask(ctx, tasks[0].ID, AgentTaskUpdate{
+		Status:       AgentTaskStatusSnoozed,
+		SnoozedUntil: &snoozedUntil,
+	}); err != nil {
+		t.Fatalf("snooze task: %v", err)
+	}
+	if _, err := repo.db.ExecContext(ctx, `UPDATE agent_tasks SET created_at = ? WHERE id = ?`, now.Add(-12*time.Hour), tasks[0].ID); err != nil {
+		t.Fatalf("age task: %v", err)
+	}
+	result, err := repo.EscalateAgentTasks(ctx, now, Settings{TaskSLAHours: 4})
+	if err != nil {
+		t.Fatalf("escalate snoozed task: %v", err)
+	}
+	if result.Stale != 0 || result.Escalated != 0 {
+		t.Fatalf("expected snoozed task not to escalate, got %#v", result)
+	}
+	updated, err := repo.GetAgentTask(ctx, tasks[0].ID)
+	if err != nil {
+		t.Fatalf("get snoozed task: %v", err)
+	}
+	if updated.Status != AgentTaskStatusSnoozed || updated.SnoozedUntil == nil {
+		t.Fatalf("expected snoozed task, got %#v", updated)
+	}
+
+	if err := repo.UpdateAgentTask(ctx, tasks[0].ID, AgentTaskUpdate{
+		Status:           AgentTaskStatusDone,
+		CompletionReason: "Applied from career portal",
+	}); err != nil {
+		t.Fatalf("complete task: %v", err)
+	}
+	updated, err = repo.GetAgentTask(ctx, tasks[0].ID)
+	if err != nil {
+		t.Fatalf("get completed task: %v", err)
+	}
+	if updated.Status != AgentTaskStatusDone || updated.CompletionReason != "Applied from career portal" || updated.CompletedAt == nil {
+		t.Fatalf("expected completed task with reason, got %#v", updated)
+	}
+}
+
 func assertTask(t *testing.T, tasks []AgentTask, kind string, subjectID int64) {
 	t.Helper()
 	for _, task := range tasks {

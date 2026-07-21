@@ -149,6 +149,61 @@ func TestAgentTasksAPIRefreshesAndCompletesTasks(t *testing.T) {
 	}
 }
 
+func TestAgentTaskAPIStoresSnoozeAndCompletionReason(t *testing.T) {
+	repo, handler := testRouter(t, nil)
+	if _, err := repo.CreateJob(t.Context(), domain.Job{
+		Company:    "Tencent",
+		Title:      "Go Backend Engineer",
+		City:       "Shenzhen",
+		MatchScore: 88,
+		Status:     domain.StatusNew,
+	}); err != nil {
+		t.Fatalf("seed job: %v", err)
+	}
+	tasks, err := repo.SyncAgentTasks(t.Context(), time.Now().UTC())
+	if err != nil {
+		t.Fatalf("sync tasks: %v", err)
+	}
+	snoozedUntil := time.Now().UTC().Add(24 * time.Hour).Format(time.RFC3339)
+	req := httptest.NewRequest(
+		http.MethodPatch,
+		"/api/agent/tasks/"+strconv.FormatInt(tasks[0].ID, 10),
+		strings.NewReader(`{"status":"snoozed","snoozed_until":"`+snoozedUntil+`"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+	updated, err := repo.GetAgentTask(t.Context(), tasks[0].ID)
+	if err != nil {
+		t.Fatalf("get task: %v", err)
+	}
+	if updated.Status != jobs.AgentTaskStatusSnoozed || updated.SnoozedUntil == nil {
+		t.Fatalf("expected snoozed task, got %#v", updated)
+	}
+
+	req = httptest.NewRequest(
+		http.MethodPatch,
+		"/api/agent/tasks/"+strconv.FormatInt(tasks[0].ID, 10),
+		strings.NewReader(`{"status":"done","completion_reason":"Not a fit"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+	updated, err = repo.GetAgentTask(t.Context(), tasks[0].ID)
+	if err != nil {
+		t.Fatalf("get completed task: %v", err)
+	}
+	if updated.Status != jobs.AgentTaskStatusDone || updated.CompletionReason != "Not a fit" {
+		t.Fatalf("expected completed task reason, got %#v", updated)
+	}
+}
+
 func TestAgentDutyReportIncludesDailyTaskState(t *testing.T) {
 	repo, handler := testRouter(t, nil)
 	if _, err := repo.CreateJob(t.Context(), domain.Job{
@@ -223,6 +278,9 @@ func TestAgentStateAPIReportsDigitalEmployeeReadiness(t *testing.T) {
 	if len(response.Capabilities) == 0 || len(response.Gaps) == 0 {
 		t.Fatalf("expected capabilities and gaps, got %#v", response)
 	}
+	if response.Automation.TaskSLAHours == 0 {
+		t.Fatalf("expected automation state, got %#v", response.Automation)
+	}
 }
 
 func TestAgentCommandAPIUpdatesPreferencesAndRefreshesTasks(t *testing.T) {
@@ -268,6 +326,58 @@ func TestAgentCommandAPIUpdatesPreferencesAndRefreshesTasks(t *testing.T) {
 	}
 	if len(tasks) == 0 {
 		t.Fatalf("expected refreshed tasks")
+	}
+}
+
+func TestAgentAutomationDutyReportSendsAndRecordsLastSent(t *testing.T) {
+	var received string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			Content struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode webhook: %v", err)
+		}
+		received = payload.Content.Text
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	repo, handler := testRouter(t, nil)
+	settings := jobs.DefaultSettings()
+	settings.FeishuWebhookURL = server.URL
+	settings.AutoDutyReportEnabled = true
+	if _, err := repo.SaveSettings(t.Context(), settings); err != nil {
+		t.Fatalf("save settings: %v", err)
+	}
+	if _, err := repo.CreateJob(t.Context(), domain.Job{
+		Company:    "Tencent",
+		Title:      "Go Backend Engineer",
+		City:       "Shenzhen",
+		MatchScore: 88,
+		Status:     domain.StatusNew,
+	}); err != nil {
+		t.Fatalf("seed job: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/agent/automation/duty-report", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(received, "Job Hunter Agent duty report") {
+		t.Fatalf("expected duty report payload, got %q", received)
+	}
+	updated, err := repo.GetSettings(t.Context())
+	if err != nil {
+		t.Fatalf("get settings: %v", err)
+	}
+	if updated.LastDutyReportSentAt == nil {
+		t.Fatalf("expected last report timestamp")
 	}
 }
 

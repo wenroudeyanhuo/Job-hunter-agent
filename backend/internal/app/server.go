@@ -15,9 +15,10 @@ import (
 )
 
 type Application struct {
-	Handler http.Handler
-	DB      *sql.DB
-	Runner  crawl.Runnable
+	Handler    http.Handler
+	DB         *sql.DB
+	Runner     crawl.Runnable
+	Automation *automationRunner
 }
 
 func NewServer() http.Handler {
@@ -47,10 +48,11 @@ func NewApplication(cfg config.Config) (*Application, error) {
 	collectors := []crawl.Collector{crawl.SeedCollector{}, crawl.NewDBSourceCollector(repo, nil)}
 	baseRunner := crawl.NewRunner(repo, collectors)
 	runner := newNotifyingRunner(baseRunner, repo, cfg.FeishuWebhookURL)
+	automation := newAutomationRunner(repo, cfg.FeishuWebhookURL)
 	handler := httpapi.NewRouter(&httpapi.Handlers{
 		Repo:             repo,
 		Runner:           runner,
 		FeishuWebhookURL: cfg.FeishuWebhookURL,
 	})
-	return &Application{Handler: handler, DB: conn, Runner: runner}, nil
+	return &Application{Handler: handler, DB: conn, Runner: runner, Automation: automation}, nil
 }

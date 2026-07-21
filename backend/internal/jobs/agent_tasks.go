@@ -12,8 +12,11 @@ import (
 )
 
 const (
-	AgentTaskStatusOpen = "open"
-	AgentTaskStatusDone = "done"
+	AgentTaskStatusOpen      = "open"
+	AgentTaskStatusStale     = "stale"
+	AgentTaskStatusEscalated = "escalated"
+	AgentTaskStatusSnoozed   = "snoozed"
+	AgentTaskStatusDone      = "done"
 
 	AgentTaskKindReviewStrongMatch = "review_strong_match"
 	AgentTaskKindDecideManualJob   = "decide_manual_job"
@@ -22,21 +25,24 @@ const (
 )
 
 type AgentTask struct {
-	ID          int64      `json:"id"`
-	TaskDate    string     `json:"task_date"`
-	Kind        string     `json:"kind"`
-	Title       string     `json:"title"`
-	Detail      string     `json:"detail"`
-	Status      string     `json:"status"`
-	Priority    int        `json:"priority"`
-	Count       int        `json:"count"`
-	SubjectID   int64      `json:"subject_id"`
-	JobID       int64      `json:"job_id"`
-	SourceID    int64      `json:"source_id"`
-	Action      string     `json:"action"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
-	CompletedAt *time.Time `json:"completed_at,omitempty"`
+	ID               int64      `json:"id"`
+	TaskDate         string     `json:"task_date"`
+	Kind             string     `json:"kind"`
+	Title            string     `json:"title"`
+	Detail           string     `json:"detail"`
+	Status           string     `json:"status"`
+	Priority         int        `json:"priority"`
+	Count            int        `json:"count"`
+	SubjectID        int64      `json:"subject_id"`
+	JobID            int64      `json:"job_id"`
+	SourceID         int64      `json:"source_id"`
+	Action           string     `json:"action"`
+	CompletionReason string     `json:"completion_reason"`
+	SnoozedUntil     *time.Time `json:"snoozed_until,omitempty"`
+	EscalatedAt      *time.Time `json:"escalated_at,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
+	CompletedAt      *time.Time `json:"completed_at,omitempty"`
 }
 
 type AgentTaskInput struct {
@@ -50,6 +56,18 @@ type AgentTaskInput struct {
 	JobID     int64
 	SourceID  int64
 	Action    string
+}
+
+type AgentTaskUpdate struct {
+	Status           string     `json:"status"`
+	CompletionReason string     `json:"completion_reason"`
+	SnoozedUntil     *time.Time `json:"snoozed_until"`
+}
+
+type AgentTaskEscalationResult struct {
+	Stale     int `json:"stale"`
+	Escalated int `json:"escalated"`
+	Snoozed   int `json:"snoozed"`
 }
 
 func (r *Repository) SyncAgentTasks(ctx context.Context, now time.Time) ([]AgentTask, error) {
@@ -99,19 +117,119 @@ func (r *Repository) ListAgentTasks(ctx context.Context, taskDate string) ([]Age
 	return tasks, nil
 }
 
+func (r *Repository) GetAgentTask(ctx context.Context, id int64) (AgentTask, error) {
+	row := r.db.QueryRowContext(ctx, selectAgentTaskSQL()+` WHERE id = ?`, id)
+	task, err := scanAgentTask(row)
+	if err != nil {
+		return AgentTask{}, fmt.Errorf("get agent task %d: %w", id, err)
+	}
+	return task, nil
+}
+
 func (r *Repository) UpdateAgentTaskStatus(ctx context.Context, id int64, status string) error {
-	status = normalizeAgentTaskStatus(status)
+	return r.UpdateAgentTask(ctx, id, AgentTaskUpdate{Status: status})
+}
+
+func (r *Repository) UpdateAgentTask(ctx context.Context, id int64, input AgentTaskUpdate) error {
+	status := normalizeAgentTaskStatus(input.Status)
+	reason := strings.TrimSpace(input.CompletionReason)
 	var completedAt any
+	var snoozedUntil any
 	if status == AgentTaskStatusDone {
 		completedAt = time.Now().UTC()
 	}
+	if status == AgentTaskStatusSnoozed {
+		snoozedUntil = input.SnoozedUntil
+	}
 	result, err := r.db.ExecContext(ctx, `
 		UPDATE agent_tasks
-		SET status = ?, completed_at = ?, updated_at = CURRENT_TIMESTAMP
+		SET status = ?, completion_reason = ?, snoozed_until = ?, completed_at = ?,
+			updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?
-	`, status, completedAt, id)
+	`, status, reason, snoozedUntil, completedAt, id)
 	if err != nil {
-		return fmt.Errorf("update agent task status: %w", err)
+		return fmt.Errorf("update agent task: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("read rows affected: %w", err)
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (r *Repository) EscalateAgentTasks(ctx context.Context, now time.Time, settings Settings) (AgentTaskEscalationResult, error) {
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	settings = normalizeSettings(settings)
+	rows, err := r.db.QueryContext(ctx, selectAgentTaskSQL()+`
+		WHERE task_date = ? AND status != ?
+		ORDER BY priority DESC, id ASC
+	`, agentTaskDate(now), AgentTaskStatusDone)
+	if err != nil {
+		return AgentTaskEscalationResult{}, fmt.Errorf("list tasks to escalate: %w", err)
+	}
+	defer rows.Close()
+
+	result := AgentTaskEscalationResult{}
+	tasks := []AgentTask{}
+	for rows.Next() {
+		task, err := scanAgentTask(rows)
+		if err != nil {
+			return AgentTaskEscalationResult{}, err
+		}
+		tasks = append(tasks, task)
+	}
+	if err := rows.Err(); err != nil {
+		return AgentTaskEscalationResult{}, fmt.Errorf("iterate tasks to escalate: %w", err)
+	}
+	for _, task := range tasks {
+		nextStatus := task.Status
+		escalatedAt := task.EscalatedAt
+		if task.Status == AgentTaskStatusSnoozed {
+			if task.SnoozedUntil != nil && task.SnoozedUntil.After(now) {
+				result.Snoozed++
+				continue
+			}
+			nextStatus = AgentTaskStatusOpen
+		}
+		ageHours := int(now.Sub(task.CreatedAt).Hours())
+		if ageHours >= settings.TaskSLAHours*2 {
+			nextStatus = AgentTaskStatusEscalated
+			if escalatedAt == nil {
+				value := now.UTC()
+				escalatedAt = &value
+			}
+		} else if ageHours >= settings.TaskSLAHours {
+			nextStatus = AgentTaskStatusStale
+		}
+		if nextStatus == task.Status && escalatedAt == task.EscalatedAt {
+			continue
+		}
+		if err := r.setAgentTaskEscalation(ctx, task.ID, nextStatus, escalatedAt); err != nil {
+			return AgentTaskEscalationResult{}, err
+		}
+		if nextStatus == AgentTaskStatusEscalated {
+			result.Escalated++
+		} else if nextStatus == AgentTaskStatusStale {
+			result.Stale++
+		}
+	}
+	return result, nil
+}
+
+func (r *Repository) setAgentTaskEscalation(ctx context.Context, id int64, status string, escalatedAt *time.Time) error {
+	status = normalizeAgentTaskStatus(status)
+	result, err := r.db.ExecContext(ctx, `
+		UPDATE agent_tasks
+		SET status = ?, escalated_at = ?, snoozed_until = NULL, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?
+	`, status, escalatedAt, id)
+	if err != nil {
+		return fmt.Errorf("set agent task escalation: %w", err)
 	}
 	affected, err := result.RowsAffected()
 	if err != nil {
@@ -252,7 +370,8 @@ func (r *Repository) closeStaleOpenAgentTasks(ctx context.Context, taskDate stri
 func selectAgentTaskSQL() string {
 	return `
 		SELECT id, task_date, kind, title, detail, status, priority, count,
-			subject_id, job_id, source_id, action, created_at, updated_at, completed_at
+			subject_id, job_id, source_id, action, completion_reason, snoozed_until,
+			escalated_at, created_at, updated_at, completed_at
 		FROM agent_tasks`
 }
 
@@ -271,6 +390,9 @@ func scanAgentTask(scanner jobScanner) (AgentTask, error) {
 		&task.JobID,
 		&task.SourceID,
 		&task.Action,
+		&task.CompletionReason,
+		&task.SnoozedUntil,
+		&task.EscalatedAt,
 		&task.CreatedAt,
 		&task.UpdatedAt,
 		&task.CompletedAt,
@@ -294,6 +416,12 @@ func agentTaskKey(kind string, subjectID int64) string {
 
 func normalizeAgentTaskStatus(status string) string {
 	switch strings.TrimSpace(status) {
+	case AgentTaskStatusStale:
+		return AgentTaskStatusStale
+	case AgentTaskStatusEscalated:
+		return AgentTaskStatusEscalated
+	case AgentTaskStatusSnoozed:
+		return AgentTaskStatusSnoozed
 	case AgentTaskStatusDone:
 		return AgentTaskStatusDone
 	default:

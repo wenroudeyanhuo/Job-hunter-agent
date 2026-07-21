@@ -8,16 +8,26 @@ import (
 )
 
 var DefaultScheduleSpecs = []string{"0 9 * * *", "0 12 * * *", "0 18 * * *"}
+var DefaultAutomationSpecs = []string{"* * * * *"}
 
 func StartScheduler(ctx context.Context, runner Runnable, specs []string) (func(), error) {
+	return StartScheduledFunc(ctx, specs, func(ctx context.Context) {
+		if runner == nil {
+			return
+		}
+		_, _ = runner.Run(ctx, "scheduled")
+	})
+}
+
+func StartScheduledFunc(ctx context.Context, specs []string, fn func(context.Context)) (func(), error) {
 	c := cron.New()
 	for _, spec := range specs {
 		spec := spec
 		if _, err := c.AddFunc(spec, func() {
-			if runner == nil {
+			if fn == nil {
 				return
 			}
-			_, _ = runner.Run(ctx, "scheduled")
+			fn(ctx)
 		}); err != nil {
 			return nil, fmt.Errorf("add cron spec %q: %w", spec, err)
 		}

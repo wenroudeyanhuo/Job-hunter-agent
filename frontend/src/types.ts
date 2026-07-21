@@ -101,6 +101,10 @@ export interface Settings {
   crawl_schedule: string[];
   feishu_webhook_url: string;
   feishu_configured: boolean;
+  auto_duty_report_enabled: boolean;
+  duty_report_time: string;
+  task_sla_hours: number;
+  last_duty_report_sent_at?: string;
   updated_at: string;
 }
 
@@ -133,6 +137,7 @@ export interface AgentState {
   focus: string;
   maturity_score: number;
   workload: AgentWorkload;
+  automation: AgentAutomationState;
   capabilities: AgentCapability[];
   gaps: AgentCapabilityGap[];
   operating_cycle: AgentOperatingMoment[];
@@ -175,6 +180,23 @@ export interface AgentOperatingMoment {
   state: string;
 }
 
+export interface AgentAutomationState {
+  duty_report_enabled: boolean;
+  duty_report_time: string;
+  last_report_sent_at?: string;
+  next_duty_report_at: string;
+  task_sla_hours: number;
+  stale_task_count: number;
+  stale_tasks: AgentStaleTask[];
+}
+
+export interface AgentStaleTask {
+  id: number;
+  title: string;
+  detail: string;
+  age_hours: number;
+}
+
 export interface AgentCommandResult {
   input: string;
   intent: string;
@@ -210,6 +232,8 @@ export interface AgentDutySummary {
   new_jobs: number;
   open_tasks: number;
   done_tasks: number;
+  stale_tasks: number;
+  escalated_tasks: number;
 }
 
 export interface AgentTask {
@@ -218,13 +242,16 @@ export interface AgentTask {
   kind: string;
   title: string;
   detail: string;
-  status: "open" | "done" | string;
+  status: "open" | "stale" | "escalated" | "snoozed" | "done" | string;
   priority: number;
   count: number;
   subject_id: number;
   job_id: number;
   source_id: number;
   action: string;
+  completion_reason: string;
+  snoozed_until?: string;
+  escalated_at?: string;
   created_at: string;
   updated_at: string;
   completed_at?: string;
