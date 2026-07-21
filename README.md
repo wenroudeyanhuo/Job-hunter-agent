@@ -17,9 +17,12 @@ Early MVP. The current version provides a Go backend foundation, SQLite persiste
 - Deduplication by application URL and normalized company/title/city.
 - Scheduled crawl runner for 09:00, 12:00, and 18:00.
 - React dashboard for reviewing jobs, filtering by status/direction, updating status, and running a crawl.
+- Candidate profile page for cities, directions, skills, education, preferred companies, blocked keywords, and notes.
+- Job detail panel with profile-aware fit signals, risks, suggested action, notes, and decision history.
 - Daily agent task queue generated from recommended jobs, manual decisions, source issues, and crawl history.
 - Digital employee sidebar with an agent profile, avatar, maturity score, capability map, operating cycle, and mainstream capability gaps.
 - Command Center for rule-based natural-language workflow commands such as changing target cities/directions, refreshing tasks, running a crawl, and sending Feishu reports.
+- Global digital employee chat with a persistent 3D avatar, local rule fallback, saved chat history, and optional OpenAI-compatible model mode.
 - Automatic duty report controls with configurable report time, scheduler tick, task SLA, stale-task detection, escalation, snooze, completion reasons, and last-sent tracking.
 - Feishu webhook summaries after crawl runs when a webhook is configured in Settings or `FEISHU_WEBHOOK_URL`.
 
@@ -29,9 +32,12 @@ Early MVP. The current version provides a Go backend foundation, SQLite persiste
 - Scores jobs for Shenzhen-focused frontend, backend, Java, Go, algorithm, and AI application development roles.
 - Filters obvious outsourcing, training, low-quality, and unclear-conversion internship content.
 - Provides a local dashboard for reviewing jobs and updating status.
+- Builds a local candidate profile and uses it to explain why a role fits or carries risk.
+- Records job decisions such as interested, applied, ignored, and notes updates as a timeline.
 - Generates a daily task queue for recommended jobs, human decisions, unhealthy sources, and crawl setup.
 - Shows what the assistant can already do, where it is weaker than mainstream digital employees, and which capability should be improved next.
 - Accepts simple workflow commands from the digital employee sidebar. Current parsing is deterministic and transparent, not LLM-based.
+- Keeps a global chat assistant available across pages. Without a model key it answers with local recruiting context; with model settings it calls an OpenAI-compatible chat-completions endpoint and falls back locally if the model fails.
 - Tracks stale or escalated daily tasks, supports snoozing or closing work items with reasons, and can send an automatic duty report when enabled and the configured report time is reached.
 - Supports manual crawl runs and scheduled runs at 09:00, 12:00, and 18:00.
 - Can send Feishu incoming webhook notifications.
@@ -61,6 +67,10 @@ Early MVP. The current version provides a Go backend foundation, SQLite persiste
     +-- src                     # React dashboard
 ```
 
+## Third-Party Assets
+
+- `frontend/public/assets/noto-cat-face.svg` is from Google Noto Emoji and is used for the digital employee cat avatar. See `frontend/public/assets/NotoEmoji-LICENSE.txt` for the upstream license.
+
 ## Development
 
 ### Environment
@@ -73,11 +83,16 @@ APP_DB_PATH=data/job-hunter-agent.db
 FEISHU_WEBHOOK_URL=
 DISABLE_SCHEDULER=0
 SOURCE_URLS=
+LLM_API_KEY=
+LLM_BASE_URL=https://api.openai.com/v1
+LLM_MODEL=
 ```
 
 `SOURCE_URLS` can contain comma-separated or newline-separated public recruitment URLs. Manual and scheduled crawl runs import these URLs, score them, deduplicate them, and store them in the local database.
 
 `FEISHU_WEBHOOK_URL` is optional. Open-source users can also open the dashboard, go to Settings, paste their own Feishu incoming bot webhook URL, save it, and send a test notification. A saved dashboard webhook takes priority over the environment variable and does not require restarting the backend.
+
+`LLM_API_KEY`, `LLM_BASE_URL`, and `LLM_MODEL` are optional. If they are not configured, the global digital employee chat uses local rule-based replies. If they are configured, the backend calls an OpenAI-compatible `/chat/completions` endpoint and falls back to local replies on failure. `OPENAI_API_KEY`, `OPENAI_BASE_URL`, and `OPENAI_MODEL` are also accepted.
 
 ### Backend
 
@@ -129,9 +144,12 @@ After the backend and frontend are running:
 7. Refresh Daily Tasks on the Dashboard to turn the current pipeline into an actionable work queue.
 8. Use the digital employee sidebar to inspect maturity, capabilities, current gaps, and the daily operating cycle.
 9. Configure Automatic duty report, Duty report time, and Task SLA hours in Settings if you want stale-task tracking and scheduled reporting.
-10. Try Command Center commands such as `只看深圳 Go 后端，刷新任务`, `run crawl`, or `发送飞书日报`.
-11. Use Snooze, Complete, or Ignore in Daily Tasks to keep the assistant's work queue accurate.
-12. Use Send to Feishu from the duty report when you want the assistant to push the current task queue and summary to your bot.
+10. Go to Profile and write your candidate signals: target cities, directions, skills, preferred companies, blocked keywords, and notes.
+11. Try Command Center commands such as `只看深圳 Go 后端，刷新任务`, `run crawl`, or `发送飞书日报`.
+12. Open Details from an opportunity to review fit signals, risks, suggested action, notes, and decision history.
+13. Use the global digital employee chat in the lower-right corner to ask what to do next or why a role fits.
+14. Use Snooze, Complete, or Ignore in Daily Tasks to keep the assistant's work queue accurate.
+15. Use Send to Feishu from the duty report when you want the assistant to push the current task queue and summary to your bot.
 
 ## Local Data
 
@@ -150,8 +168,8 @@ Local databases, logs, build outputs, private planning docs, and environment fil
 - Add source configuration in the dashboard.
 - Improve parsing for company, role, city, deadline, and application URL.
 - Add richer follow-up reminders and escalation channels for daily agent tasks.
-- Upgrade the Command Center from rule-based parsing to optional LLM-backed planning.
-- Add job detail view with notes and application metadata.
+- Upgrade model chat from plain conversation to structured tool-calling planning.
+- Turn interested/applied jobs into follow-up tasks with dates and application metadata.
 - Add optional Feishu Base or spreadsheet sync.
 - Explore resume matching and assisted application workflows after the collection pipeline is reliable.
 

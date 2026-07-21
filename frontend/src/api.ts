@@ -1,14 +1,19 @@
 import type {
   AgentBriefing,
+  AgentChatMessage,
+  AgentChatResponse,
+  AgentChatStatus,
   AgentCommandResult,
   AgentDutyReport,
   AgentEvent,
   AgentState,
   AgentTask,
+  CandidateProfile,
   Company,
   CleanupLandingPagesResponse,
   ImportURLResponse,
   Job,
+  JobDetail,
   JobRun,
   JobRunSource,
   JobStatus,
@@ -58,6 +63,22 @@ export async function runAgentCommand(text: string): Promise<AgentCommandResult>
   });
 }
 
+export async function getAgentChatStatus(): Promise<AgentChatStatus> {
+  return request<AgentChatStatus>("/api/agent/chat/status");
+}
+
+export async function listAgentChatMessages(): Promise<AgentChatMessage[]> {
+  const messages = await request<AgentChatMessage[] | null>("/api/agent/chat/messages");
+  return Array.isArray(messages) ? messages : [];
+}
+
+export async function runAgentChat(message: string, activeView: string): Promise<AgentChatResponse> {
+  return request<AgentChatResponse>("/api/agent/chat", {
+    method: "POST",
+    body: JSON.stringify({ message, active_view: activeView }),
+  });
+}
+
 export async function getAgentDutyReport(): Promise<AgentDutyReport> {
   return request<AgentDutyReport>("/api/agent/report");
 }
@@ -97,6 +118,28 @@ export async function updateJobStatus(id: number, status: JobStatus): Promise<vo
   await request<void>(`/api/jobs/${id}/status`, {
     method: "PATCH",
     body: JSON.stringify({ status }),
+  });
+}
+
+export async function updateJobNotes(id: number, notes: string): Promise<void> {
+  await request<void>(`/api/jobs/${id}/notes`, {
+    method: "PATCH",
+    body: JSON.stringify({ notes }),
+  });
+}
+
+export async function getJobDetail(id: number): Promise<JobDetail> {
+  return request<JobDetail>(`/api/jobs/${id}/detail`);
+}
+
+export async function getCandidateProfile(): Promise<CandidateProfile> {
+  return request<CandidateProfile>("/api/profile");
+}
+
+export async function updateCandidateProfile(profile: Omit<CandidateProfile, "id" | "updated_at">): Promise<CandidateProfile> {
+  return request<CandidateProfile>("/api/profile", {
+    method: "PATCH",
+    body: JSON.stringify(profile),
   });
 }
 

@@ -131,3 +131,42 @@ CREATE TABLE IF NOT EXISTS agent_tasks (
 );
 
 CREATE INDEX IF NOT EXISTS idx_agent_tasks_date_status ON agent_tasks(task_date, status, priority);
+
+CREATE TABLE IF NOT EXISTS candidate_profiles (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    target_cities TEXT NOT NULL DEFAULT '[]',
+    target_directions TEXT NOT NULL DEFAULT '[]',
+    skills TEXT NOT NULL DEFAULT '[]',
+    education TEXT NOT NULL DEFAULT '',
+    graduation_year TEXT NOT NULL DEFAULT '',
+    internship_preference TEXT NOT NULL DEFAULT '',
+    preferred_companies TEXT NOT NULL DEFAULT '[]',
+    blocked_keywords TEXT NOT NULL DEFAULT '[]',
+    notes TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS job_decisions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id INTEGER NOT NULL,
+    action TEXT NOT NULL,
+    reason TEXT NOT NULL DEFAULT '',
+    from_status TEXT NOT NULL DEFAULT '',
+    to_status TEXT NOT NULL DEFAULT '',
+    notes TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(job_id) REFERENCES jobs(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_job_decisions_job_id ON job_decisions(job_id, created_at);
+
+CREATE TABLE IF NOT EXISTS agent_chat_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'local',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_chat_messages_created_at ON agent_chat_messages(created_at);
