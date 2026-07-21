@@ -55,6 +55,73 @@ func (h *Handlers) GetAgentState(c *gin.Context) {
 	c.JSON(http.StatusOK, state)
 }
 
+func (h *Handlers) RunAgentCommand(c *gin.Context) {
+	var req struct {
+		Text string `json:"text"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid command payload"})
+		return
+	}
+	settings, err := h.Repo.GetSettings(c.Request.Context())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	plan := jobs.PlanAgentCommand(req.Text, settings)
+	if len(plan.Result.Actions) == 0 {
+		c.JSON(http.StatusOK, plan.Result)
+		return
+	}
+	if !sameStringSlice(plan.TargetCities, settings.TargetCities) || !sameStringSlice(plan.TargetDirections, settings.TargetDirections) {
+		settings.TargetCities = plan.TargetCities
+		settings.TargetDirections = plan.TargetDirections
+		if _, err := h.Repo.SaveSettings(c.Request.Context(), settings); err != nil {
+			respondError(c, http.StatusInternalServerError, err)
+			return
+		}
+	}
+	if plan.RunCrawl {
+		if _, err := h.Runner.Run(c.Request.Context(), "command"); err != nil {
+			respondError(c, http.StatusConflict, err)
+			return
+		}
+	}
+	if plan.RefreshTasks || plan.RunCrawl {
+		if _, err := h.Repo.SyncAgentTasks(c.Request.Context(), time.Now().UTC()); err != nil {
+			respondError(c, http.StatusInternalServerError, err)
+			return
+		}
+	}
+	if plan.SendFeishuReport {
+		webhookURL, err := h.effectiveFeishuWebhookURL(c.Request.Context())
+		if err != nil {
+			respondError(c, http.StatusInternalServerError, err)
+			return
+		}
+		if webhookURL == "" {
+			plan.Result.Needs = append(plan.Result.Needs, "Configure Feishu webhook before sending duty reports.")
+		} else {
+			report, err := h.buildDutyReport(c.Request.Context())
+			if err != nil {
+				respondError(c, http.StatusInternalServerError, err)
+				return
+			}
+			if err := notify.SendFeishuWebhook(c.Request.Context(), webhookURL, buildFeishuReportText(report)); err != nil {
+				respondError(c, http.StatusBadGateway, err)
+				return
+			}
+		}
+	}
+	h.recordAgentEvent(c, jobs.AgentEventInput{
+		Type:    "agent_command_executed",
+		Title:   "Executed command",
+		Summary: plan.Result.Summary,
+		Level:   "success",
+	})
+	c.JSON(http.StatusOK, plan.Result)
+}
+
 func (h *Handlers) GetAgentDutyReport(c *gin.Context) {
 	report, err := h.buildDutyReport(c.Request.Context())
 	if err != nil {
@@ -708,4 +775,16 @@ func (h *Handlers) refreshAgentTasksAfterCrawl(c *gin.Context) {
 	if _, err := h.Repo.SyncAgentTasks(c.Request.Context(), time.Now().UTC()); err != nil {
 		_ = c.Error(err)
 	}
+}
+
+func sameStringSlice(left []string, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i] != right[i] {
+			return false
+		}
+	}
+	return true
 }

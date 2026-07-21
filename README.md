@@ -19,6 +19,7 @@ Early MVP. The current version provides a Go backend foundation, SQLite persiste
 - React dashboard for reviewing jobs, filtering by status/direction, updating status, and running a crawl.
 - Daily agent task queue generated from recommended jobs, manual decisions, source issues, and crawl history.
 - Digital employee sidebar with an agent profile, avatar, maturity score, capability map, operating cycle, and mainstream capability gaps.
+- Command Center for rule-based natural-language workflow commands such as changing target cities/directions, refreshing tasks, running a crawl, and sending Feishu reports.
 - Feishu webhook summaries after crawl runs when a webhook is configured in Settings or `FEISHU_WEBHOOK_URL`.
 
 ## What It Does
@@ -29,6 +30,7 @@ Early MVP. The current version provides a Go backend foundation, SQLite persiste
 - Provides a local dashboard for reviewing jobs and updating status.
 - Generates a daily task queue for recommended jobs, human decisions, unhealthy sources, and crawl setup.
 - Shows what the assistant can already do, where it is weaker than mainstream digital employees, and which capability should be improved next.
+- Accepts simple workflow commands from the digital employee sidebar. Current parsing is deterministic and transparent, not LLM-based.
 - Supports manual crawl runs and scheduled runs at 09:00, 12:00, and 18:00.
 - Can send Feishu incoming webhook notifications.
 
@@ -124,7 +126,8 @@ After the backend and frontend are running:
 6. Review Opportunities, mark promising jobs as Interested or Applied, and ignore low-quality matches.
 7. Refresh Daily Tasks on the Dashboard to turn the current pipeline into an actionable work queue.
 8. Use the digital employee sidebar to inspect maturity, capabilities, current gaps, and the daily operating cycle.
-9. Use Send to Feishu from the duty report when you want the assistant to push the current task queue and summary to your bot.
+9. Try Command Center commands such as `只看深圳 Go 后端，刷新任务`, `run crawl`, or `发送飞书日报`.
+10. Use Send to Feishu from the duty report when you want the assistant to push the current task queue and summary to your bot.
 
 ## Local Data
 
@@ -143,7 +146,7 @@ Local databases, logs, build outputs, private planning docs, and environment fil
 - Add source configuration in the dashboard.
 - Improve parsing for company, role, city, deadline, and application URL.
 - Refine daily agent tasks with richer completion reasons and follow-up reminders.
-- Add a conversational command center for natural-language instructions.
+- Upgrade the Command Center from rule-based parsing to optional LLM-backed planning.
 - Add automatic daily duty reports and stale-task escalation.
 - Add job detail view with notes and application metadata.
 - Add optional Feishu Base or spreadsheet sync.

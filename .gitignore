@@ -29,6 +29,7 @@ dist/
 build/
 .vite/
 coverage/
+/package-lock.json
 
 # Local database and runtime data
 *.db

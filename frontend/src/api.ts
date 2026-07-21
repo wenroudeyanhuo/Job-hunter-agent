@@ -1,5 +1,6 @@
 import type {
   AgentBriefing,
+  AgentCommandResult,
   AgentDutyReport,
   AgentEvent,
   AgentState,
@@ -48,6 +49,13 @@ export async function getAgentBriefing(): Promise<AgentBriefing> {
 
 export async function getAgentState(): Promise<AgentState> {
   return request<AgentState>("/api/agent/state");
+}
+
+export async function runAgentCommand(text: string): Promise<AgentCommandResult> {
+  return request<AgentCommandResult>("/api/agent/commands", {
+    method: "POST",
+    body: JSON.stringify({ text }),
+  });
 }
 
 export async function getAgentDutyReport(): Promise<AgentDutyReport> {
