@@ -290,6 +290,47 @@ export interface AgentDutyReport {
   latest_run?: JobRun;
 }
 
+export interface AgentReview {
+  generated_at: string;
+  health: AgentReviewHealth;
+  focus: AgentReviewFocus;
+  findings: AgentReviewFinding[];
+  decisions: AgentReviewDecision[];
+  next_steps: AgentReviewStep[];
+}
+
+export interface AgentReviewHealth {
+  score: number;
+  label: string;
+  reason: string;
+}
+
+export interface AgentReviewFocus {
+  title: string;
+  detail: string;
+  action: string;
+}
+
+export interface AgentReviewFinding {
+  kind: string;
+  title: string;
+  detail: string;
+  level: string;
+  metric: number;
+}
+
+export interface AgentReviewDecision {
+  question: string;
+  context: string;
+  action: string;
+}
+
+export interface AgentReviewStep {
+  label: string;
+  reason: string;
+  action: string;
+}
+
 export interface AgentDutySummary {
   jobs_to_review: number;
   strong_matches: number;

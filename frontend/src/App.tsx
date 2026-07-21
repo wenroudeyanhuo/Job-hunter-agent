@@ -5,6 +5,7 @@ import {
   getAgentChatStatus,
   getAgentBriefing,
   getAgentDutyReport,
+  getAgentReview,
   getAgentState,
   getCandidateProfile,
   getJobDetail,
@@ -36,7 +37,7 @@ import {
   updateSourceEnabled,
 } from "./api";
 import { DigitalEmployee3D } from "./DigitalEmployee3D";
-import type { AgentBriefing, AgentChatMessage, AgentChatStatus, AgentCommandResult, AgentDutyReport, AgentEvent, AgentState, AgentTask, CandidateProfile, Company, Job, JobDetail, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source } from "./types";
+import type { AgentBriefing, AgentChatMessage, AgentChatStatus, AgentCommandResult, AgentDutyReport, AgentEvent, AgentReview, AgentState, AgentTask, CandidateProfile, Company, Job, JobDetail, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source } from "./types";
 
 const statusLabels: Record<JobStatus | "all", string> = {
   all: "All",
@@ -160,6 +161,7 @@ export default function App() {
   const [briefing, setBriefing] = useState<AgentBriefing | null>(null);
   const [agentState, setAgentState] = useState<AgentState | null>(null);
   const [dutyReport, setDutyReport] = useState<AgentDutyReport | null>(null);
+  const [agentReview, setAgentReview] = useState<AgentReview | null>(null);
   const [agentEvents, setAgentEvents] = useState<AgentEvent[]>([]);
   const [agentTasks, setAgentTasks] = useState<AgentTask[]>([]);
   const [chatStatus, setChatStatus] = useState<AgentChatStatus | null>(null);
@@ -228,6 +230,11 @@ export default function App() {
     setDutyReport(data);
   }
 
+  async function refreshAgentReview() {
+    const data = await getAgentReview();
+    setAgentReview(data);
+  }
+
   async function refreshAgentEvents() {
     const data = await listAgentEvents();
     setAgentEvents(data);
@@ -245,7 +252,7 @@ export default function App() {
   }
 
   useEffect(() => {
-    Promise.all([refresh(), refreshSources(), refreshCompanies(), refreshRuns(), refreshSettings(), refreshProfile(), refreshBriefing(), refreshAgentState(), refreshDutyReport(), refreshAgentEvents(), refreshTasks(), refreshChat()])
+    Promise.all([refresh(), refreshSources(), refreshCompanies(), refreshRuns(), refreshSettings(), refreshProfile(), refreshBriefing(), refreshAgentState(), refreshDutyReport(), refreshAgentReview(), refreshAgentEvents(), refreshTasks(), refreshChat()])
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
@@ -368,6 +375,9 @@ export default function App() {
       case "cleanup_landing_pages":
         await handleCleanupLandingPages();
         return;
+      case "refresh_tasks":
+        await handleRefreshAgentTasks();
+        return;
       case "review_strong_matches":
         setActiveView("opportunities");
         setStatus("all");
@@ -399,6 +409,7 @@ export default function App() {
       await refreshRuns();
       await refreshBriefing();
       await refreshDutyReport();
+      await refreshAgentReview();
       await refreshAgentEvents();
       await refreshTasks();
       await refreshAgentState();
@@ -432,6 +443,7 @@ export default function App() {
       await refresh();
       await refreshBriefing();
       await refreshDutyReport();
+      await refreshAgentReview();
       await refreshAgentEvents();
       await refreshTasks();
       await refreshAgentState();
@@ -456,6 +468,7 @@ export default function App() {
       await refresh();
       await refreshBriefing();
       await refreshDutyReport();
+      await refreshAgentReview();
       await refreshAgentEvents();
       await refreshTasks();
       await refreshAgentState();
@@ -484,6 +497,7 @@ export default function App() {
       await refreshCompanies();
       await refreshBriefing();
       await refreshDutyReport();
+      await refreshAgentReview();
       await refreshAgentEvents();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not add source");
@@ -497,6 +511,7 @@ export default function App() {
     setSources((current) => current.map((item) => (item.id === source.id ? { ...item, enabled: !source.enabled } : item)));
     await refreshBriefing();
     await refreshDutyReport();
+    await refreshAgentReview();
     await refreshTasks();
     await refreshAgentState();
   }
@@ -507,6 +522,7 @@ export default function App() {
     await refreshSources();
     await refreshBriefing();
     await refreshDutyReport();
+    await refreshAgentReview();
     await refreshAgentEvents();
     await refreshTasks();
     await refreshAgentState();
@@ -527,6 +543,7 @@ export default function App() {
       await refreshCompanies();
       await refreshBriefing();
       await refreshDutyReport();
+      await refreshAgentReview();
       await refreshAgentEvents();
       await refreshTasks();
       await refreshAgentState();
@@ -553,6 +570,7 @@ export default function App() {
       await refreshRuns();
       await refreshBriefing();
       await refreshDutyReport();
+      await refreshAgentReview();
       await refreshAgentEvents();
       await refreshTasks();
       await refreshAgentState();
@@ -584,6 +602,7 @@ export default function App() {
       setSettingsDraft(settingsToDraft(nextSettings));
       setNotice("Settings saved. Future crawl and scoring steps can use these preferences.");
       await refreshDutyReport();
+      await refreshAgentReview();
       await refreshTasks();
       await refreshAgentState();
     } catch (err) {
@@ -649,6 +668,7 @@ export default function App() {
       setNotice("Feishu duty report sent.");
       await refreshAgentEvents();
       await refreshDutyReport();
+      await refreshAgentReview();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not send Feishu duty report");
     } finally {
@@ -665,6 +685,7 @@ export default function App() {
       setNotice("Automatic duty report sent.");
       await refreshSettings();
       await refreshDutyReport();
+      await refreshAgentReview();
       await refreshAgentEvents();
       await refreshAgentState();
     } catch (err) {
@@ -683,6 +704,7 @@ export default function App() {
       setAgentTasks(tasks);
       setNotice("Daily tasks refreshed from the current recruiting pipeline.");
       await refreshDutyReport();
+      await refreshAgentReview();
       await refreshAgentEvents();
       await refreshAgentState();
     } catch (err) {
@@ -714,6 +736,7 @@ export default function App() {
   async function refreshAfterTaskMutation() {
     await refreshTasks();
     await refreshDutyReport();
+    await refreshAgentReview();
     await refreshAgentEvents();
     await refreshAgentState();
   }
@@ -740,6 +763,7 @@ export default function App() {
       await refreshRuns();
       await refreshBriefing();
       await refreshDutyReport();
+      await refreshAgentReview();
       await refreshAgentEvents();
       await refreshTasks();
       await refreshAgentState();
@@ -812,6 +836,7 @@ export default function App() {
     }
     await refreshBriefing();
     await refreshDutyReport();
+    await refreshAgentReview();
     await refreshAgentEvents();
     await refreshTasks();
     await refreshAgentState();
@@ -851,6 +876,8 @@ export default function App() {
             </section>
 
             <ProductReadinessPanel items={readinessItems} busy={running || seedingSources || recommendedRunning} />
+
+            {agentReview && <AgentReviewPanel review={agentReview} onAction={handleAgentAction} busy={running || recommendedRunning} />}
 
             <AgentTasksPanel
               tasks={agentTasks}
@@ -1323,7 +1350,7 @@ function ProfilePanel({
         </label>
         <label>
           Education
-          <input value={draft.education} onChange={(event) => onDraftChange((current) => ({ ...current, education: event.target.value }))} placeholder="本科 / 硕士 / 其他" />
+          <input value={draft.education} onChange={(event) => onDraftChange((current) => ({ ...current, education: event.target.value }))} placeholder="Bachelor / Master / Other" />
         </label>
         <label>
           Graduation year
@@ -1339,7 +1366,7 @@ function ProfilePanel({
         </label>
         <label className="profile-wide">
           Notes
-          <textarea value={draft.notes} onChange={(event) => onDraftChange((current) => ({ ...current, notes: event.target.value }))} placeholder="写下你更偏好的岗位、团队、不能接受的点" />
+          <textarea value={draft.notes} onChange={(event) => onDraftChange((current) => ({ ...current, notes: event.target.value }))} placeholder="Preferred roles, teams, and deal breakers." />
         </label>
         <button type="submit" disabled={saving}>
           {saving ? "Saving..." : "Save Profile"}
@@ -1569,6 +1596,72 @@ function AgentDutyReportPanel({
   );
 }
 
+function AgentReviewPanel({
+  review,
+  onAction,
+  busy,
+}: {
+  review: AgentReview;
+  onAction: (action: string) => void | Promise<void>;
+  busy: boolean;
+}) {
+  const topFindings = review.findings.slice(0, 4);
+  const decisions = review.decisions.slice(0, 2);
+  return (
+    <section className={`agent-review review-${review.health.label.toLowerCase().replace(/\s+/g, "-")}`}>
+      <div className="review-lead">
+        <div className="review-score">
+          <strong>{review.health.score}</strong>
+          <span>{review.health.label}</span>
+        </div>
+        <div>
+          <h2>{review.focus.title}</h2>
+          <p>{review.focus.detail}</p>
+        </div>
+        <button type="button" onClick={() => onAction(review.focus.action)} disabled={busy}>
+          Take Action
+        </button>
+      </div>
+      <div className="review-body">
+        <div className="review-column">
+          <h3>Findings</h3>
+          {topFindings.map((finding) => (
+            <div className={`review-finding finding-${finding.level}`} key={`${finding.kind}-${finding.title}`}>
+              <div>
+                <strong>{finding.title}</strong>
+                <span>{finding.detail}</span>
+              </div>
+              <b>{finding.metric}</b>
+            </div>
+          ))}
+        </div>
+        <div className="review-column">
+          <h3>Needs Decision</h3>
+          {decisions.map((decision) => (
+            <div className="review-decision" key={decision.question}>
+              <strong>{decision.question}</strong>
+              <span>{decision.context}</span>
+              <button type="button" onClick={() => onAction(decision.action)} disabled={busy}>
+                Decide
+              </button>
+            </div>
+          ))}
+          {decisions.length === 0 && <div className="empty-source">No decision is blocking me right now.</div>}
+        </div>
+        <div className="review-column">
+          <h3>Next Steps</h3>
+          {review.next_steps.map((step) => (
+            <button className="review-step" type="button" key={`${step.action}-${step.label}`} onClick={() => onAction(step.action)} disabled={busy}>
+              <strong>{step.label}</strong>
+              <span>{step.reason}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function AgentActivityLog({ events }: { events: AgentEvent[] }) {
   return (
     <section className="activity-panel">
@@ -1718,7 +1811,7 @@ function AgentEmployeeSidebar({
           <textarea
             value={commandText}
             onChange={(event) => onCommandTextChange(event.target.value)}
-            placeholder="只看深圳 Go 后端，刷新任务"
+            placeholder="Only Shenzhen Go backend, refresh tasks"
           />
         </label>
         <button type="submit" disabled={runningCommand}>
@@ -1891,8 +1984,8 @@ function GlobalEmployeeChat({
             ))}
             {messages.length === 0 && (
               <div className="chat-empty">
-                <strong>我在这里。</strong>
-                <span>你可以问我今天该投什么、哪个岗位更适合你，或者让我刷新任务。</span>
+                <strong>I am here.</strong>
+                <span>Ask me what to apply for today, why a role fits, or tell me to refresh tasks.</span>
               </div>
             )}
           </div>
@@ -1900,7 +1993,7 @@ function GlobalEmployeeChat({
             <input
               value={text}
               onChange={(event) => onTextChange(event.target.value)}
-              placeholder="问他：今天最值得投哪些岗位？"
+              placeholder="Ask: which roles are worth applying today?"
               aria-label="Message the digital employee"
             />
             <button type="submit" disabled={sending || text.trim() === ""}>

@@ -6,6 +6,7 @@ import type {
   AgentCommandResult,
   AgentDutyReport,
   AgentEvent,
+  AgentReview,
   AgentState,
   AgentTask,
   CandidateProfile,
@@ -81,6 +82,10 @@ export async function runAgentChat(message: string, activeView: string): Promise
 
 export async function getAgentDutyReport(): Promise<AgentDutyReport> {
   return request<AgentDutyReport>("/api/agent/report");
+}
+
+export async function getAgentReview(): Promise<AgentReview> {
+  return request<AgentReview>("/api/agent/review");
 }
 
 export async function listAgentEvents(): Promise<AgentEvent[]> {

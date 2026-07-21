@@ -328,6 +328,30 @@ func (h *Handlers) GetAgentDutyReport(c *gin.Context) {
 	c.JSON(http.StatusOK, report)
 }
 
+func (h *Handlers) GetAgentReview(c *gin.Context) {
+	jobList, err := h.Repo.ListJobs(c.Request.Context(), jobs.ListFilter{})
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	sources, err := h.Repo.ListSources(c.Request.Context(), false)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	runs, err := h.Repo.ListRuns(c.Request.Context())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	tasks, err := h.Repo.ListAgentTasks(c.Request.Context(), time.Now().UTC().Format("2006-01-02"))
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, jobs.BuildAgentReview(jobList, sources, runs, tasks))
+}
+
 func (h *Handlers) buildAgentState(ctx context.Context) (jobs.AgentState, error) {
 	jobList, err := h.Repo.ListJobs(ctx, jobs.ListFilter{})
 	if err != nil {

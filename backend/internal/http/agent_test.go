@@ -98,6 +98,48 @@ func TestAgentDutyReportAPI(t *testing.T) {
 	}
 }
 
+func TestAgentReviewAPI(t *testing.T) {
+	repo, handler := testRouter(t, nil)
+	if _, err := repo.CreateJob(t.Context(), domain.Job{
+		Company:    "DJI",
+		Title:      "AI Application Engineer",
+		City:       "Shenzhen",
+		MatchScore: 91,
+		Status:     domain.StatusNew,
+	}); err != nil {
+		t.Fatalf("seed job: %v", err)
+	}
+	if _, err := repo.CreateSource(t.Context(), jobs.SourceInput{
+		Name:       "DJI Careers",
+		URL:        "https://we.dji.com/",
+		Enabled:    true,
+		ParserType: "generic",
+	}); err != nil {
+		t.Fatalf("seed source: %v", err)
+	}
+	if _, err := repo.SyncAgentTasks(t.Context(), time.Now().UTC()); err != nil {
+		t.Fatalf("sync tasks: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/agent/review", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var response jobs.AgentReview
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode review: %v", err)
+	}
+	if response.Focus.Action != "run_crawl" && response.Focus.Action != "review_strong_matches" {
+		t.Fatalf("expected actionable focus, got %#v", response.Focus)
+	}
+	if len(response.Findings) == 0 || len(response.NextSteps) == 0 {
+		t.Fatalf("expected review findings and next steps, got %#v", response)
+	}
+}
+
 func TestAgentTasksAPIRefreshesAndCompletesTasks(t *testing.T) {
 	repo, handler := testRouter(t, nil)
 	if _, err := repo.CreateJob(t.Context(), domain.Job{
