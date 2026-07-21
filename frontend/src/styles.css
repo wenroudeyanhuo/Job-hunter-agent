@@ -442,8 +442,8 @@ h2 {
 .employee-fab {
   display: grid;
   place-items: center;
-  width: 118px;
-  min-height: 142px;
+  width: 136px;
+  min-height: 156px;
   border: 1px solid #cfd8e6;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.94);
@@ -453,15 +453,15 @@ h2 {
 }
 
 .employee-fab span {
-  margin-top: -10px;
+  margin-top: -8px;
   color: #1769e0;
   font-size: 12px;
   font-weight: 800;
 }
 
 .employee-3d-stage {
-  width: 104px;
-  height: 126px;
+  width: 124px;
+  height: 140px;
 }
 
 .employee-3d-stage canvas {
@@ -1965,13 +1965,13 @@ td {
   }
 
   .employee-fab {
-    width: 92px;
-    min-height: 112px;
+    width: 104px;
+    min-height: 124px;
   }
 
   .employee-3d-stage {
-    width: 82px;
-    height: 96px;
+    width: 94px;
+    height: 108px;
   }
 
   .employee-chat-card {
