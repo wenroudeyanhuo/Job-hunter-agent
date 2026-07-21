@@ -1,5 +1,8 @@
 import type {
   AgentBriefing,
+  AgentChatMessage,
+  AgentChatResponse,
+  AgentChatStatus,
   AgentCommandResult,
   AgentDutyReport,
   AgentEvent,
@@ -57,6 +60,22 @@ export async function runAgentCommand(text: string): Promise<AgentCommandResult>
   return request<AgentCommandResult>("/api/agent/commands", {
     method: "POST",
     body: JSON.stringify({ text }),
+  });
+}
+
+export async function getAgentChatStatus(): Promise<AgentChatStatus> {
+  return request<AgentChatStatus>("/api/agent/chat/status");
+}
+
+export async function listAgentChatMessages(): Promise<AgentChatMessage[]> {
+  const messages = await request<AgentChatMessage[] | null>("/api/agent/chat/messages");
+  return Array.isArray(messages) ? messages : [];
+}
+
+export async function runAgentChat(message: string, activeView: string): Promise<AgentChatResponse> {
+  return request<AgentChatResponse>("/api/agent/chat", {
+    method: "POST",
+    body: JSON.stringify({ message, active_view: activeView }),
   });
 }
 

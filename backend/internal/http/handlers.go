@@ -1,8 +1,12 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -24,6 +28,7 @@ type Handlers struct {
 	Repo             *jobs.Repository
 	Runner           CrawlRunner
 	FeishuWebhookURL string
+	LLM              jobs.LLMConfig
 }
 
 func (h *Handlers) GetAgentBriefing(c *gin.Context) {
@@ -119,6 +124,156 @@ func (h *Handlers) RunAgentCommand(c *gin.Context) {
 		Level:   "success",
 	})
 	c.JSON(http.StatusOK, plan.Result)
+}
+
+func (h *Handlers) GetAgentChatStatus(c *gin.Context) {
+	c.JSON(http.StatusOK, jobs.BuildAgentChatStatus(h.LLM))
+}
+
+func (h *Handlers) ListAgentChatMessages(c *gin.Context) {
+	messages, err := h.Repo.ListAgentChatMessages(c.Request.Context(), 30)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, messages)
+}
+
+func (h *Handlers) RunAgentChat(c *gin.Context) {
+	var req struct {
+		Message    string `json:"message"`
+		ActiveView string `json:"active_view"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.Message) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "message is required"})
+		return
+	}
+	if _, err := h.Repo.RecordAgentChatMessage(c.Request.Context(), jobs.AgentChatMessageInput{
+		Role:    jobs.AgentChatRoleUser,
+		Content: req.Message,
+		Source:  "user",
+	}); err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	context, err := h.buildAgentChatContext(c.Request.Context(), req.ActiveView)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	reply := jobs.BuildLocalAgentChatReply(req.Message, context)
+	if jobs.BuildAgentChatStatus(h.LLM).Configured {
+		if modelReply, err := h.runModelChat(c.Request.Context(), req.Message, context); err == nil && strings.TrimSpace(modelReply) != "" {
+			reply.Content = modelReply
+			reply.Source = "model"
+		} else if err != nil {
+			reply.Content += "\n\n模型调用暂时失败，我先用本地规则继续工作：" + err.Error()
+			reply.Source = "local_fallback"
+		}
+	}
+	message, err := h.Repo.RecordAgentChatMessage(c.Request.Context(), jobs.AgentChatMessageInput{
+		Role:    jobs.AgentChatRoleAssistant,
+		Content: reply.Content,
+		Source:  reply.Source,
+	})
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"message": message,
+		"reply":   reply,
+	})
+}
+
+func (h *Handlers) buildAgentChatContext(ctx context.Context, activeView string) (jobs.AgentChatContext, error) {
+	jobList, err := h.Repo.ListJobs(ctx, jobs.ListFilter{})
+	if err != nil {
+		return jobs.AgentChatContext{}, err
+	}
+	sources, err := h.Repo.ListSources(ctx, false)
+	if err != nil {
+		return jobs.AgentChatContext{}, err
+	}
+	tasks, err := h.Repo.ListAgentTasks(ctx, time.Now().UTC().Format("2006-01-02"))
+	if err != nil {
+		return jobs.AgentChatContext{}, err
+	}
+	context := jobs.AgentChatContext{
+		ActiveView:   activeView,
+		ModelEnabled: jobs.BuildAgentChatStatus(h.LLM).Configured,
+	}
+	for _, job := range jobList {
+		if job.MatchScore >= 70 {
+			context.StrongMatches++
+		}
+		if job.Status == domain.StatusManualCheck {
+			context.ManualDecisions++
+		}
+	}
+	for _, task := range tasks {
+		if task.Status != jobs.AgentTaskStatusDone {
+			context.OpenTasks++
+		}
+	}
+	for _, source := range sources {
+		if source.HealthStatus == jobs.SourceHealthWarning || source.HealthStatus == jobs.SourceHealthBroken {
+			context.SourceIssues++
+		}
+	}
+	return context, nil
+}
+
+func (h *Handlers) runModelChat(ctx context.Context, userMessage string, chatContext jobs.AgentChatContext) (string, error) {
+	config := jobs.NormalizeLLMConfig(h.LLM)
+	if config.APIKey == "" || config.Model == "" {
+		return "", fmt.Errorf("model is not configured")
+	}
+	payload := map[string]any{
+		"model": config.Model,
+		"messages": []map[string]string{
+			{
+				"role": "system",
+				"content": fmt.Sprintf("You are Job Hunter Agent, a Chinese-speaking digital employee for autumn recruitment. Be concise, practical, and use the current local context. Current view: %s. Open tasks: %d. Strong matches: %d. Manual decisions: %d. Source issues: %d.",
+					chatContext.ActiveView, chatContext.OpenTasks, chatContext.StrongMatches, chatContext.ManualDecisions, chatContext.SourceIssues),
+			},
+			{"role": "user", "content": userMessage},
+		},
+		"temperature": 0.4,
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("encode model request: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, config.BaseURL+"/chat/completions", bytes.NewReader(data))
+	if err != nil {
+		return "", fmt.Errorf("create model request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+config.APIKey)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("call model: %w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("model returned %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var decoded struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		return "", fmt.Errorf("decode model response: %w", err)
+	}
+	if len(decoded.Choices) == 0 {
+		return "", fmt.Errorf("model returned no choices")
+	}
+	return strings.TrimSpace(decoded.Choices[0].Message.Content), nil
 }
 
 func (h *Handlers) RunAutomationDutyReport(c *gin.Context) {

@@ -245,6 +245,32 @@ export interface AgentCommandResult {
   needs: string[];
 }
 
+export interface AgentChatStatus {
+  mode: string;
+  model: string;
+  configured: boolean;
+  fallback_mode: string;
+}
+
+export interface AgentChatMessage {
+  id: number;
+  role: "user" | "assistant" | string;
+  content: string;
+  source: string;
+  created_at: string;
+}
+
+export interface AgentChatReply {
+  content: string;
+  source: string;
+  actions: AgentCommandAction[];
+}
+
+export interface AgentChatResponse {
+  message: AgentChatMessage;
+  reply: AgentChatReply;
+}
+
 export interface AgentCommandAction {
   type: string;
   target: string;

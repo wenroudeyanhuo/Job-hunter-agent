@@ -160,3 +160,13 @@ CREATE TABLE IF NOT EXISTS job_decisions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_job_decisions_job_id ON job_decisions(job_id, created_at);
+
+CREATE TABLE IF NOT EXISTS agent_chat_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'local',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_chat_messages_created_at ON agent_chat_messages(created_at);

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   cleanupLandingPages,
   createSource,
+  getAgentChatStatus,
   getAgentBriefing,
   getAgentDutyReport,
   getAgentState,
@@ -10,6 +11,7 @@ import {
   getSettings,
   importURL,
   listAgentEvents,
+  listAgentChatMessages,
   listAgentTasks,
   listCompanies,
   listJobs,
@@ -18,6 +20,7 @@ import {
   listSources,
   refreshAgentTasks,
   runAutomationDutyReport,
+  runAgentChat,
   runCrawl,
   runAgentCommand,
   runRecommendedCrawl,
@@ -32,7 +35,8 @@ import {
   updateSettings,
   updateSourceEnabled,
 } from "./api";
-import type { AgentBriefing, AgentCommandResult, AgentDutyReport, AgentEvent, AgentState, AgentTask, CandidateProfile, Company, Job, JobDetail, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source } from "./types";
+import { DigitalEmployee3D } from "./DigitalEmployee3D";
+import type { AgentBriefing, AgentChatMessage, AgentChatStatus, AgentCommandResult, AgentDutyReport, AgentEvent, AgentState, AgentTask, CandidateProfile, Company, Job, JobDetail, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source } from "./types";
 
 const statusLabels: Record<JobStatus | "all", string> = {
   all: "All",
@@ -158,6 +162,11 @@ export default function App() {
   const [dutyReport, setDutyReport] = useState<AgentDutyReport | null>(null);
   const [agentEvents, setAgentEvents] = useState<AgentEvent[]>([]);
   const [agentTasks, setAgentTasks] = useState<AgentTask[]>([]);
+  const [chatStatus, setChatStatus] = useState<AgentChatStatus | null>(null);
+  const [chatMessages, setChatMessages] = useState<AgentChatMessage[]>([]);
+  const [chatText, setChatText] = useState("");
+  const [chatOpen, setChatOpen] = useState(true);
+  const [chatSending, setChatSending] = useState(false);
   const [selectedJobDetail, setSelectedJobDetail] = useState<JobDetail | null>(null);
   const [loadingJobDetail, setLoadingJobDetail] = useState(false);
   const [refreshingTasks, setRefreshingTasks] = useState(false);
@@ -224,13 +233,19 @@ export default function App() {
     setAgentEvents(data);
   }
 
+  async function refreshChat() {
+    const [status, messages] = await Promise.all([getAgentChatStatus(), listAgentChatMessages()]);
+    setChatStatus(status);
+    setChatMessages(messages);
+  }
+
   async function refreshTasks() {
     const data = await listAgentTasks();
     setAgentTasks(data);
   }
 
   useEffect(() => {
-    Promise.all([refresh(), refreshSources(), refreshCompanies(), refreshRuns(), refreshSettings(), refreshProfile(), refreshBriefing(), refreshAgentState(), refreshDutyReport(), refreshAgentEvents(), refreshTasks()])
+    Promise.all([refresh(), refreshSources(), refreshCompanies(), refreshRuns(), refreshSettings(), refreshProfile(), refreshBriefing(), refreshAgentState(), refreshDutyReport(), refreshAgentEvents(), refreshTasks(), refreshChat()])
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
@@ -735,6 +750,34 @@ export default function App() {
     }
   }
 
+  async function handleSendChat(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const value = chatText.trim();
+    if (!value) {
+      return;
+    }
+    const optimistic: AgentChatMessage = {
+      id: Date.now(),
+      role: "user",
+      content: value,
+      source: "user",
+      created_at: new Date().toISOString(),
+    };
+    setChatMessages((current) => [...current, optimistic]);
+    setChatText("");
+    setChatSending(true);
+    setError("");
+    try {
+      await runAgentChat(value, activeView);
+      await refreshChat();
+      await refreshAgentEvents();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not talk to the agent");
+    } finally {
+      setChatSending(false);
+    }
+  }
+
   async function selectRun(runId: number) {
     setSelectedRunId(runId);
     setRunSources(await listRunSources(runId));
@@ -1223,6 +1266,19 @@ export default function App() {
         </div>
       </section>
       )}
+
+      <GlobalEmployeeChat
+        state={agentState}
+        status={chatStatus}
+        messages={chatMessages}
+        text={chatText}
+        open={chatOpen}
+        sending={chatSending}
+        activeView={activeView}
+        onToggle={() => setChatOpen((current) => !current)}
+        onTextChange={setChatText}
+        onSubmit={handleSendChat}
+      />
     </main>
   );
 }
@@ -1779,6 +1835,79 @@ function AgentEmployeeSidebar({
           ))}
         </div>
       </section>
+    </aside>
+  );
+}
+
+function GlobalEmployeeChat({
+  state,
+  status,
+  messages,
+  text,
+  open,
+  sending,
+  activeView,
+  onToggle,
+  onTextChange,
+  onSubmit,
+}: {
+  state: AgentState | null;
+  status: AgentChatStatus | null;
+  messages: AgentChatMessage[];
+  text: string;
+  open: boolean;
+  sending: boolean;
+  activeView: string;
+  onToggle: () => void;
+  onTextChange: (value: string) => void;
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void | Promise<void>;
+}) {
+  const modeLabel = status?.configured ? `Model: ${status.model}` : "Local rules";
+  return (
+    <aside className={open ? "global-employee open" : "global-employee"} aria-label="Digital employee chat">
+      <button type="button" className="employee-fab" onClick={onToggle} aria-label="Toggle digital employee chat">
+        <DigitalEmployee3D active={open} thinking={sending} />
+        <span>{sending ? "Thinking" : "Ask me"}</span>
+      </button>
+      {open && (
+        <section className="employee-chat-card">
+          <div className="employee-chat-header">
+            <div>
+              <strong>{state?.profile.name || "Job Hunter Agent"}</strong>
+              <span>{modeLabel} / {activeView}</span>
+            </div>
+            <button type="button" onClick={onToggle} aria-label="Close chat">
+              Close
+            </button>
+          </div>
+          <div className="employee-chat-messages">
+            {messages.map((message) => (
+              <div className={`chat-message chat-${message.role}`} key={message.id}>
+                <span>{message.role === "assistant" ? state?.profile.name || "Agent" : "You"}</span>
+                <p>{message.content}</p>
+                <small>{message.source} / {formatDateTime(message.created_at)}</small>
+              </div>
+            ))}
+            {messages.length === 0 && (
+              <div className="chat-empty">
+                <strong>我在这里。</strong>
+                <span>你可以问我今天该投什么、哪个岗位更适合你，或者让我刷新任务。</span>
+              </div>
+            )}
+          </div>
+          <form className="employee-chat-input" onSubmit={onSubmit}>
+            <input
+              value={text}
+              onChange={(event) => onTextChange(event.target.value)}
+              placeholder="问他：今天最值得投哪些岗位？"
+              aria-label="Message the digital employee"
+            />
+            <button type="submit" disabled={sending || text.trim() === ""}>
+              {sending ? "Sending..." : "Send"}
+            </button>
+          </form>
+        </section>
+      )}
     </aside>
   );
 }
