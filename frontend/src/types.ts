@@ -101,6 +101,10 @@ export interface Settings {
   crawl_schedule: string[];
   feishu_webhook_url: string;
   feishu_configured: boolean;
+  auto_duty_report_enabled: boolean;
+  duty_report_time: string;
+  task_sla_hours: number;
+  last_duty_report_sent_at?: string;
   updated_at: string;
 }
 
@@ -133,6 +137,7 @@ export interface AgentState {
   focus: string;
   maturity_score: number;
   workload: AgentWorkload;
+  automation: AgentAutomationState;
   capabilities: AgentCapability[];
   gaps: AgentCapabilityGap[];
   operating_cycle: AgentOperatingMoment[];
@@ -173,6 +178,23 @@ export interface AgentOperatingMoment {
   time: string;
   title: string;
   state: string;
+}
+
+export interface AgentAutomationState {
+  duty_report_enabled: boolean;
+  duty_report_time: string;
+  last_report_sent_at?: string;
+  next_duty_report_at: string;
+  task_sla_hours: number;
+  stale_task_count: number;
+  stale_tasks: AgentStaleTask[];
+}
+
+export interface AgentStaleTask {
+  id: number;
+  title: string;
+  detail: string;
+  age_hours: number;
 }
 
 export interface AgentCommandResult {

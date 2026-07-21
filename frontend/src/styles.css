@@ -366,6 +366,52 @@ h2 {
   color: #334155;
 }
 
+.automation-panel {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.automation-panel > div {
+  border: 1px solid #e3e8f2;
+  border-radius: 6px;
+  background: #f8fafc;
+  padding: 9px 10px;
+}
+
+.automation-panel strong,
+.automation-panel span,
+.stale-task strong,
+.stale-task span {
+  display: block;
+}
+
+.automation-panel strong,
+.stale-task strong {
+  color: #18212f;
+  font-size: 13px;
+}
+
+.automation-panel span,
+.stale-task span {
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.stale-task-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 9px;
+}
+
+.stale-task {
+  border-left: 3px solid #b7791f;
+  background: #fff8e6;
+  padding: 8px 10px;
+}
+
 .employee-section {
   border-top: 1px solid #edf1f7;
   padding-top: 14px;

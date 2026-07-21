@@ -16,7 +16,10 @@ func TestSettingsAPIPersistsUpdates(t *testing.T) {
 		"target_directions":["backend","go","ai_application"],
 		"excluded_keywords":["outsourcing","training"],
 		"crawl_schedule":["09:00","18:00"],
-		"feishu_webhook_url":"https://open.feishu.cn/open-apis/bot/v2/hook/test"
+		"feishu_webhook_url":"https://open.feishu.cn/open-apis/bot/v2/hook/test",
+		"auto_duty_report_enabled":true,
+		"duty_report_time":"18:30",
+		"task_sla_hours":6
 	}`)
 	req := httptest.NewRequest(http.MethodPatch, "/api/settings", body)
 	req.Header.Set("Content-Type", "application/json")
@@ -40,6 +43,9 @@ func TestSettingsAPIPersistsUpdates(t *testing.T) {
 		CrawlSchedule    []string `json:"crawl_schedule"`
 		FeishuWebhookURL string   `json:"feishu_webhook_url"`
 		FeishuConfigured bool     `json:"feishu_configured"`
+		AutoDutyReport   bool     `json:"auto_duty_report_enabled"`
+		DutyReportTime   string   `json:"duty_report_time"`
+		TaskSLAHours     int      `json:"task_sla_hours"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &settings); err != nil {
 		t.Fatalf("decode settings: %v", err)
@@ -55,5 +61,8 @@ func TestSettingsAPIPersistsUpdates(t *testing.T) {
 	}
 	if settings.FeishuWebhookURL == "" || !settings.FeishuConfigured {
 		t.Fatalf("expected Feishu settings to be returned, got %#v", settings)
+	}
+	if !settings.AutoDutyReport || settings.DutyReportTime != "18:30" || settings.TaskSLAHours != 6 {
+		t.Fatalf("expected automation settings, got %#v", settings)
 	}
 }

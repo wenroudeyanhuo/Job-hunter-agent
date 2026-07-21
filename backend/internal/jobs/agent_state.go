@@ -13,6 +13,7 @@ type AgentState struct {
 	Focus          string                 `json:"focus"`
 	MaturityScore  int                    `json:"maturity_score"`
 	Workload       AgentWorkload          `json:"workload"`
+	Automation     AgentAutomationState   `json:"automation"`
 	Capabilities   []AgentCapability      `json:"capabilities"`
 	Gaps           []AgentCapabilityGap   `json:"gaps"`
 	OperatingCycle []AgentOperatingMoment `json:"operating_cycle"`
@@ -68,6 +69,7 @@ func BuildAgentState(jobList []domain.Job, sources []Source, runs []domain.JobRu
 		Mode:           "monitoring",
 		Focus:          "Keep the recruitment pipeline moving.",
 		OperatingCycle: buildOperatingCycle(settings.CrawlSchedule),
+		Automation:     BuildAgentAutomationState(settings, tasks, time.Now().UTC()),
 	}
 
 	for _, task := range tasks {

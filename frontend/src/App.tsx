@@ -15,6 +15,7 @@ import {
   listRuns,
   listSources,
   refreshAgentTasks,
+  runAutomationDutyReport,
   runCrawl,
   runAgentCommand,
   runRecommendedCrawl,
@@ -81,6 +82,9 @@ const defaultSettings: Settings = {
   crawl_schedule: ["09:00", "12:00", "18:00"],
   feishu_webhook_url: "",
   feishu_configured: false,
+  auto_duty_report_enabled: false,
+  duty_report_time: "18:00",
+  task_sla_hours: 24,
   updated_at: "",
 };
 
@@ -504,6 +508,9 @@ export default function App() {
         excluded_keywords: parseSettingsList(settingsDraft.excluded_keywords),
         crawl_schedule: parseSettingsList(settingsDraft.crawl_schedule),
         feishu_webhook_url: settingsDraft.feishu_webhook_url.trim(),
+        auto_duty_report_enabled: settingsDraft.auto_duty_report_enabled,
+        duty_report_time: settingsDraft.duty_report_time.trim(),
+        task_sla_hours: Number(settingsDraft.task_sla_hours) || defaultSettings.task_sla_hours,
       });
       const nextSettings = normalizeSettings(saved);
       setSettings(nextSettings);
@@ -545,6 +552,24 @@ export default function App() {
       await refreshDutyReport();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not send Feishu duty report");
+    } finally {
+      setSendingFeishuReport(false);
+    }
+  }
+
+  async function handleRunAutomationDutyReport() {
+    setSendingFeishuReport(true);
+    setError("");
+    setNotice("");
+    try {
+      await runAutomationDutyReport();
+      setNotice("Automatic duty report sent.");
+      await refreshSettings();
+      await refreshDutyReport();
+      await refreshAgentEvents();
+      await refreshAgentState();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not run automatic duty report");
     } finally {
       setSendingFeishuReport(false);
     }
@@ -701,6 +726,7 @@ export default function App() {
               refreshingTasks={refreshingTasks}
               sendingFeishu={sendingFeishuReport}
               feishuReady={settings.feishu_configured}
+              onRunAutomationDutyReport={handleRunAutomationDutyReport}
               commandText={commandText}
               commandResult={commandResult}
               runningCommand={runningCommand}
@@ -959,6 +985,31 @@ export default function App() {
               value={settingsDraft.feishu_webhook_url}
               onChange={(event) => setSettingsDraft((current) => ({ ...current, feishu_webhook_url: event.target.value }))}
               placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..."
+            />
+          </label>
+          <label className="settings-toggle">
+            <input
+              type="checkbox"
+              checked={settingsDraft.auto_duty_report_enabled}
+              onChange={(event) => setSettingsDraft((current) => ({ ...current, auto_duty_report_enabled: event.target.checked }))}
+            />
+            Automatic duty report
+          </label>
+          <label>
+            Duty report time
+            <input
+              value={settingsDraft.duty_report_time}
+              onChange={(event) => setSettingsDraft((current) => ({ ...current, duty_report_time: event.target.value }))}
+              placeholder="18:00"
+            />
+          </label>
+          <label>
+            Task SLA hours
+            <input
+              type="number"
+              min="1"
+              value={settingsDraft.task_sla_hours}
+              onChange={(event) => setSettingsDraft((current) => ({ ...current, task_sla_hours: event.target.value }))}
             />
           </label>
           <button type="submit" disabled={savingSettings}>
@@ -1234,6 +1285,7 @@ function AgentEmployeeSidebar({
   state,
   onRefreshTasks,
   onSendFeishu,
+  onRunAutomationDutyReport,
   refreshingTasks,
   sendingFeishu,
   feishuReady,
@@ -1246,6 +1298,7 @@ function AgentEmployeeSidebar({
   state: AgentState;
   onRefreshTasks: () => void | Promise<void>;
   onSendFeishu: () => void | Promise<void>;
+  onRunAutomationDutyReport: () => void | Promise<void>;
   refreshingTasks: boolean;
   sendingFeishu: boolean;
   feishuReady: boolean;
@@ -1325,7 +1378,34 @@ function AgentEmployeeSidebar({
         <button type="button" onClick={onSendFeishu} disabled={sendingFeishu || !feishuReady}>
           {sendingFeishu ? "Sending..." : "Send Duty Report"}
         </button>
+        <button type="button" onClick={onRunAutomationDutyReport} disabled={sendingFeishu || !feishuReady || !state.automation.duty_report_enabled}>
+          Run Auto Report
+        </button>
       </div>
+
+      <section className="employee-section">
+        <h3>Automation</h3>
+        <div className="automation-panel">
+          <div>
+            <strong>{state.automation.duty_report_enabled ? "Duty report armed" : "Duty report paused"}</strong>
+            <span>Next {formatDateTime(state.automation.next_duty_report_at)} / SLA {state.automation.task_sla_hours}h</span>
+          </div>
+          <div>
+            <strong>{state.automation.stale_task_count} stale tasks</strong>
+            <span>{state.automation.last_report_sent_at ? `Last sent ${formatDateTime(state.automation.last_report_sent_at)}` : "No automatic report sent yet"}</span>
+          </div>
+        </div>
+        {state.automation.stale_tasks.length > 0 && (
+          <div className="stale-task-list">
+            {state.automation.stale_tasks.slice(0, 3).map((task) => (
+              <div className="stale-task" key={task.id}>
+                <strong>{task.title}</strong>
+                <span>{task.age_hours}h open / {task.detail}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       <section className="employee-section">
         <h3>Capabilities</h3>
@@ -1417,6 +1497,9 @@ function settingsToDraft(settings: Settings) {
     excluded_keywords: safeSettingsList(settings.excluded_keywords, defaultSettings.excluded_keywords).join("\n"),
     crawl_schedule: safeSettingsList(settings.crawl_schedule, defaultSettings.crawl_schedule).join("\n"),
     feishu_webhook_url: settings.feishu_webhook_url || "",
+    auto_duty_report_enabled: Boolean(settings.auto_duty_report_enabled),
+    duty_report_time: settings.duty_report_time || defaultSettings.duty_report_time,
+    task_sla_hours: String(settings.task_sla_hours || defaultSettings.task_sla_hours),
   };
 }
 
@@ -1428,6 +1511,10 @@ function normalizeSettings(settings: Partial<Settings>): Settings {
     crawl_schedule: safeSettingsList(settings.crawl_schedule, defaultSettings.crawl_schedule),
     feishu_webhook_url: settings.feishu_webhook_url || "",
     feishu_configured: Boolean(settings.feishu_configured),
+    auto_duty_report_enabled: Boolean(settings.auto_duty_report_enabled),
+    duty_report_time: settings.duty_report_time || defaultSettings.duty_report_time,
+    task_sla_hours: settings.task_sla_hours || defaultSettings.task_sla_hours,
+    last_duty_report_sent_at: settings.last_duty_report_sent_at,
     updated_at: settings.updated_at || "",
   };
 }
@@ -1453,6 +1540,17 @@ function parseSettingsList(value: string) {
       seen.add(key);
       return true;
     });
+}
+
+function formatDateTime(value: string) {
+  if (!value) {
+    return "not scheduled";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleString();
 }
 
 function Metric({ label, value }: { label: string; value: string | number }) {

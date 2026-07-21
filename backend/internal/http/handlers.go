@@ -122,6 +122,49 @@ func (h *Handlers) RunAgentCommand(c *gin.Context) {
 	c.JSON(http.StatusOK, plan.Result)
 }
 
+func (h *Handlers) RunAutomationDutyReport(c *gin.Context) {
+	settings, err := h.Repo.GetSettings(c.Request.Context())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	if !settings.AutoDutyReportEnabled {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "auto duty report is not enabled"})
+		return
+	}
+	webhookURL, err := h.effectiveFeishuWebhookURL(c.Request.Context())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	if webhookURL == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Feishu webhook URL is not configured"})
+		return
+	}
+	report, err := h.buildDutyReport(c.Request.Context())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	if err := notify.SendFeishuWebhook(c.Request.Context(), webhookURL, buildFeishuReportText(report)); err != nil {
+		respondError(c, http.StatusBadGateway, err)
+		return
+	}
+	now := time.Now().UTC()
+	settings.LastDutyReportSentAt = &now
+	if _, err := h.Repo.SaveSettings(c.Request.Context(), settings); err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	h.recordAgentEvent(c, jobs.AgentEventInput{
+		Type:    "auto_duty_report_sent",
+		Title:   "Sent automatic duty report",
+		Summary: "I sent the scheduled duty report and updated the last sent time.",
+		Level:   "success",
+	})
+	c.JSON(http.StatusOK, gin.H{"status": "sent", "sent_at": now})
+}
+
 func (h *Handlers) GetAgentDutyReport(c *gin.Context) {
 	report, err := h.buildDutyReport(c.Request.Context())
 	if err != nil {
@@ -467,13 +510,17 @@ func (h *Handlers) UpdateSettings(c *gin.Context) {
 func (h *Handlers) settingsResponse(settings jobs.Settings) gin.H {
 	webhookURL := strings.TrimSpace(settings.FeishuWebhookURL)
 	return gin.H{
-		"target_cities":      settings.TargetCities,
-		"target_directions":  settings.TargetDirections,
-		"excluded_keywords":  settings.ExcludedKeywords,
-		"crawl_schedule":     settings.CrawlSchedule,
-		"feishu_webhook_url": webhookURL,
-		"feishu_configured":  webhookURL != "" || strings.TrimSpace(h.FeishuWebhookURL) != "",
-		"updated_at":         settings.UpdatedAt,
+		"target_cities":            settings.TargetCities,
+		"target_directions":        settings.TargetDirections,
+		"excluded_keywords":        settings.ExcludedKeywords,
+		"crawl_schedule":           settings.CrawlSchedule,
+		"feishu_webhook_url":       webhookURL,
+		"feishu_configured":        webhookURL != "" || strings.TrimSpace(h.FeishuWebhookURL) != "",
+		"auto_duty_report_enabled": settings.AutoDutyReportEnabled,
+		"duty_report_time":         settings.DutyReportTime,
+		"task_sla_hours":           settings.TaskSLAHours,
+		"last_duty_report_sent_at": settings.LastDutyReportSentAt,
+		"updated_at":               settings.UpdatedAt,
 	}
 }
 

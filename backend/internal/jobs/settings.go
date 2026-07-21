@@ -11,12 +11,16 @@ import (
 const appSettingsKey = "app_settings"
 
 type Settings struct {
-	TargetCities     []string  `json:"target_cities"`
-	TargetDirections []string  `json:"target_directions"`
-	ExcludedKeywords []string  `json:"excluded_keywords"`
-	CrawlSchedule    []string  `json:"crawl_schedule"`
-	FeishuWebhookURL string    `json:"feishu_webhook_url"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	TargetCities          []string   `json:"target_cities"`
+	TargetDirections      []string   `json:"target_directions"`
+	ExcludedKeywords      []string   `json:"excluded_keywords"`
+	CrawlSchedule         []string   `json:"crawl_schedule"`
+	FeishuWebhookURL      string     `json:"feishu_webhook_url"`
+	AutoDutyReportEnabled bool       `json:"auto_duty_report_enabled"`
+	DutyReportTime        string     `json:"duty_report_time"`
+	TaskSLAHours          int        `json:"task_sla_hours"`
+	LastDutyReportSentAt  *time.Time `json:"last_duty_report_sent_at,omitempty"`
+	UpdatedAt             time.Time  `json:"updated_at"`
 }
 
 func DefaultSettings() Settings {
@@ -25,6 +29,8 @@ func DefaultSettings() Settings {
 		TargetDirections: []string{"frontend", "backend", "java", "go", "algorithm", "ai_application"},
 		ExcludedKeywords: []string{"outsourcing", "training", "bootcamp"},
 		CrawlSchedule:    []string{"09:00", "12:00", "18:00"},
+		DutyReportTime:   "18:00",
+		TaskSLAHours:     24,
 		UpdatedAt:        time.Now().UTC(),
 	}
 }
@@ -88,6 +94,13 @@ func normalizeSettings(settings Settings) Settings {
 		settings.CrawlSchedule = defaults.CrawlSchedule
 	}
 	settings.FeishuWebhookURL = strings.TrimSpace(settings.FeishuWebhookURL)
+	settings.DutyReportTime = strings.TrimSpace(settings.DutyReportTime)
+	if settings.DutyReportTime == "" {
+		settings.DutyReportTime = defaults.DutyReportTime
+	}
+	if settings.TaskSLAHours <= 0 {
+		settings.TaskSLAHours = defaults.TaskSLAHours
+	}
 	return settings
 }
 
