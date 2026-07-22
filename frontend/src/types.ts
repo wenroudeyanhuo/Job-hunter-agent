@@ -365,6 +365,17 @@ export interface AgentCommandAction {
   detail: string;
 }
 
+export interface AgentActionRequest {
+  id: number;
+  source: string;
+  action_type: string;
+  target: string;
+  detail: string;
+  status: "pending" | "approved" | "dismissed" | string;
+  created_at: string;
+  resolved_at?: string;
+}
+
 export interface AgentDutyReport {
   generated_at: string;
   tone: string;

@@ -24,6 +24,7 @@ Early MVP. The current version provides a Go backend foundation, SQLite persiste
 - Digital employee sidebar with an agent profile, avatar, maturity score, capability map, operating cycle, and mainstream capability gaps.
 - Command Center for rule-based natural-language workflow commands such as changing target cities/directions, refreshing tasks, running a crawl, and sending Feishu reports.
 - Global digital employee chat with a persistent 3D avatar, local rule fallback, saved chat history, optional OpenAI-compatible model mode, and safe whitelisted action suggestions.
+- Suggested action approval queue so model or local-rule recommendations are persisted, reviewed, approved, or dismissed before execution.
 - Source discovery that proposes broader official, community, and job-platform search entrances from the user's target cities and directions.
 - Source-candidate validation that fetches candidate pages, checks recruitment signals and discovered job links, then adjusts confidence before the source is accepted.
 - Source operations summary for unhealthy sources, pending candidates, high-confidence promotions, and recommended maintenance actions.
@@ -43,7 +44,7 @@ Early MVP. The current version provides a Go backend foundation, SQLite persiste
 - Generates a daily task queue for recommended jobs, human decisions, unhealthy sources, and crawl setup.
 - Shows what the assistant can already do, where it is weaker than mainstream digital employees, and which capability should be improved next.
 - Accepts simple workflow commands from the digital employee sidebar. Current parsing is deterministic and transparent, not LLM-based.
-- Keeps a global chat assistant available across pages. Without a model key it answers with local recruiting context; with model settings it calls an OpenAI-compatible chat-completions endpoint, parses safe JSON action suggestions, filters unsafe actions, and falls back locally if the model fails.
+- Keeps a global chat assistant available across pages. Without a model key it answers with local recruiting context; with model settings it calls an OpenAI-compatible chat-completions endpoint, parses safe JSON action suggestions, filters unsafe actions, persists safe suggestions for review, and falls back locally if the model fails.
 - Discovers, validates, and summarizes source candidates so the crawl pool does not stay fixed forever.
 - Tracks stale or escalated daily tasks, supports snoozing or closing work items with reasons, and can send an automatic duty report when enabled and the configured report time is reached.
 - Supports manual crawl runs and scheduled runs at 09:00, 12:00, and 18:00.
@@ -180,9 +181,10 @@ After the backend and frontend are running:
 14. Use the Applications Kanban to move plans through Prepare, Ready, Applied, and Paused; edit resume version, draft notes, and follow-up dates.
 15. Open Details from an opportunity to review fit signals, application plan, risks, suggested action, notes, and decision history.
 16. Use the global digital employee chat in the lower-right corner to ask what to do next or why a role fits.
-17. Review the Companies source operations summary for broken sources, pending candidates, and high-confidence promotions.
-18. Use Snooze, Complete, or Ignore in Daily Tasks to keep the assistant's work queue accurate.
-19. Use Send to Feishu from the duty report when you want the assistant to push the current task queue and summary to your bot.
+17. Review Suggested Actions on the Dashboard and approve or ignore what the agent proposes.
+18. Review the Companies source operations summary for broken sources, pending candidates, and high-confidence promotions.
+19. Use Snooze, Complete, or Ignore in Daily Tasks to keep the assistant's work queue accurate.
+20. Use Send to Feishu from the duty report when you want the assistant to push the current task queue and summary to your bot.
 
 ## Local Data
 

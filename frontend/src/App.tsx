@@ -15,6 +15,7 @@ import {
   getSettings,
   getSourceOperations,
   importURL,
+  listAgentActionRequests,
   listAgentEvents,
   listAgentChatMessages,
   listApplicationPlans,
@@ -38,6 +39,7 @@ import {
   seedRecommendedSources,
   syncApplicationPlans,
   updateAgentTaskStatus,
+  updateAgentActionRequest,
   updateApplicationPlan,
   updateCandidateProfile,
   updateJobNotes,
@@ -49,7 +51,7 @@ import {
   rejectSourceCandidate,
 } from "./api";
 import { DigitalEmployee3D } from "./DigitalEmployee3D";
-import type { AgentAutomationDiagnostics, AgentBriefing, AgentChatMessage, AgentChatStatus, AgentCommandResult, AgentDutyReport, AgentEvent, AgentReview, AgentReviewHistory, AgentState, AgentTask, ApplicationPlan, CandidateProfile, Company, Job, JobDetail, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source, SourceCandidate, SourceOperationsSummary } from "./types";
+import type { AgentActionRequest, AgentAutomationDiagnostics, AgentBriefing, AgentChatMessage, AgentChatStatus, AgentCommandResult, AgentDutyReport, AgentEvent, AgentReview, AgentReviewHistory, AgentState, AgentTask, ApplicationPlan, CandidateProfile, Company, Job, JobDetail, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source, SourceCandidate, SourceOperationsSummary } from "./types";
 
 const statusLabels: Record<JobStatus | "all", string> = {
   all: "All",
@@ -184,6 +186,7 @@ export default function App() {
   const [agentReview, setAgentReview] = useState<AgentReview | null>(null);
   const [agentReviewHistory, setAgentReviewHistory] = useState<AgentReviewHistory | null>(null);
   const [agentEvents, setAgentEvents] = useState<AgentEvent[]>([]);
+  const [agentActionRequests, setAgentActionRequests] = useState<AgentActionRequest[]>([]);
   const [agentTasks, setAgentTasks] = useState<AgentTask[]>([]);
   const [applicationPlans, setApplicationPlans] = useState<ApplicationPlan[]>([]);
   const [automationStatus, setAutomationStatus] = useState<AgentAutomationDiagnostics | null>(null);
@@ -281,6 +284,11 @@ export default function App() {
     setAgentEvents(data);
   }
 
+  async function refreshAgentActionRequests() {
+    const data = await listAgentActionRequests("pending");
+    setAgentActionRequests(data);
+  }
+
   async function refreshChat() {
     const [status, messages] = await Promise.all([getAgentChatStatus(), listAgentChatMessages()]);
     setChatStatus(status);
@@ -303,7 +311,7 @@ export default function App() {
   }
 
   useEffect(() => {
-    Promise.all([refresh(), refreshSources(), refreshSourceCandidates(), refreshSourceOperations(), refreshCompanies(), refreshRuns(), refreshSettings(), refreshProfile(), refreshBriefing(), refreshAgentState(), refreshDutyReport(), refreshAgentReview(), refreshAgentReviewHistory(), refreshAgentEvents(), refreshTasks(), refreshApplicationPlans(), refreshAutomationStatus(), refreshChat()])
+    Promise.all([refresh(), refreshSources(), refreshSourceCandidates(), refreshSourceOperations(), refreshCompanies(), refreshRuns(), refreshSettings(), refreshProfile(), refreshBriefing(), refreshAgentState(), refreshDutyReport(), refreshAgentReview(), refreshAgentReviewHistory(), refreshAgentEvents(), refreshAgentActionRequests(), refreshTasks(), refreshApplicationPlans(), refreshAutomationStatus(), refreshChat()])
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
@@ -1013,6 +1021,7 @@ export default function App() {
       const response = await runAgentChat(value, activeView);
       setChatActions(response.reply.actions || []);
       await refreshChat();
+      await refreshAgentActionRequests();
       await refreshAgentEvents();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not talk to the agent");
@@ -1061,6 +1070,33 @@ export default function App() {
       setError(err instanceof Error ? err.message : "Could not save review snapshot");
     } finally {
       setSavingReviewSnapshot(false);
+    }
+  }
+
+  async function handleApproveActionRequest(request: AgentActionRequest) {
+    setError("");
+    setNotice("");
+    try {
+      await handleAgentAction(request.action_type);
+      await updateAgentActionRequest(request.id, "approved");
+      await refreshAgentActionRequests();
+      await refreshAgentEvents();
+      setNotice(`Agent action approved: ${formatActionLabel(request.action_type)}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not approve agent action");
+    }
+  }
+
+  async function handleDismissActionRequest(request: AgentActionRequest) {
+    setError("");
+    setNotice("");
+    try {
+      await updateAgentActionRequest(request.id, "dismissed");
+      await refreshAgentActionRequests();
+      await refreshAgentEvents();
+      setNotice(`Agent action dismissed: ${formatActionLabel(request.action_type)}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not dismiss agent action");
     }
   }
 
@@ -1114,6 +1150,13 @@ export default function App() {
             </section>
 
             <ProductReadinessPanel items={readinessItems} busy={running || seedingSources || recommendedRunning} />
+
+            <AgentActionRequestsPanel
+              requests={agentActionRequests}
+              onApprove={handleApproveActionRequest}
+              onDismiss={handleDismissActionRequest}
+              busy={running || recommendedRunning}
+            />
 
             {agentReview && (
               <AgentReviewPanel
@@ -2692,6 +2735,49 @@ function ProductReadinessPanel({
             </button>
           </div>
         ))}
+      </div>
+    </section>
+  );
+}
+
+function AgentActionRequestsPanel({
+  requests,
+  onApprove,
+  onDismiss,
+  busy,
+}: {
+  requests: AgentActionRequest[];
+  onApprove: (request: AgentActionRequest) => void | Promise<void>;
+  onDismiss: (request: AgentActionRequest) => void | Promise<void>;
+  busy: boolean;
+}) {
+  return (
+    <section className="action-requests-panel">
+      <div className="panel-header">
+        <div>
+          <h2>Suggested Actions</h2>
+          <span>{requests.length} pending decisions</span>
+        </div>
+      </div>
+      <div className="action-request-list">
+        {requests.slice(0, 6).map((request) => (
+          <div className="action-request-row" key={request.id}>
+            <div>
+              <strong>{formatActionLabel(request.action_type)}</strong>
+              <span>{request.detail || request.target || "Agent suggested a safe workflow action."}</span>
+              <small>{request.source} / {formatDateTime(request.created_at)}</small>
+            </div>
+            <div className="action-request-actions">
+              <button type="button" onClick={() => onApprove(request)} disabled={busy}>
+                Approve
+              </button>
+              <button type="button" onClick={() => onDismiss(request)} disabled={busy}>
+                Ignore
+              </button>
+            </div>
+          </div>
+        ))}
+        {requests.length === 0 && <div className="empty-source">No suggested actions waiting for approval.</div>}
       </div>
     </section>
   );

@@ -1,6 +1,7 @@
 import type {
   AgentBriefing,
   AgentAutomationDiagnostics,
+  AgentActionRequest,
   AgentChatMessage,
   AgentChatResponse,
   AgentChatStatus,
@@ -68,6 +69,19 @@ export async function runAgentCommand(text: string): Promise<AgentCommandResult>
   return request<AgentCommandResult>("/api/agent/commands", {
     method: "POST",
     body: JSON.stringify({ text }),
+  });
+}
+
+export async function listAgentActionRequests(status = "pending"): Promise<AgentActionRequest[]> {
+  const query = status ? `?status=${encodeURIComponent(status)}` : "";
+  const requests = await request<AgentActionRequest[] | null>(`/api/agent/actions${query}`);
+  return Array.isArray(requests) ? requests : [];
+}
+
+export async function updateAgentActionRequest(id: number, status: "pending" | "approved" | "dismissed"): Promise<AgentActionRequest> {
+  return request<AgentActionRequest>(`/api/agent/actions/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
   });
 }
 

@@ -132,6 +132,19 @@ CREATE TABLE IF NOT EXISTS agent_tasks (
 
 CREATE INDEX IF NOT EXISTS idx_agent_tasks_date_status ON agent_tasks(task_date, status, priority);
 
+CREATE TABLE IF NOT EXISTS agent_action_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source TEXT NOT NULL DEFAULT '',
+    action_type TEXT NOT NULL,
+    target TEXT NOT NULL DEFAULT '',
+    detail TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    resolved_at TIMESTAMP NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_action_requests_status ON agent_action_requests(status, created_at);
+
 CREATE TABLE IF NOT EXISTS application_plans (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     job_id INTEGER NOT NULL UNIQUE,

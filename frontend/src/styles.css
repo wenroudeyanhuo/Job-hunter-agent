@@ -1176,6 +1176,68 @@ h2 {
   margin-bottom: 16px;
 }
 
+.action-requests-panel {
+  overflow: hidden;
+  border: 1px solid #d8e2ef;
+  border-radius: 8px;
+  background: #fff;
+  margin-bottom: 16px;
+}
+
+.action-request-list {
+  display: grid;
+}
+
+.action-request-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  border-top: 1px solid #edf1f7;
+  box-shadow: inset 3px 0 0 #18a36d;
+  padding: 13px 16px;
+}
+
+.action-request-row strong,
+.action-request-row span,
+.action-request-row small {
+  display: block;
+}
+
+.action-request-row strong {
+  color: #18212f;
+  font-size: 14px;
+}
+
+.action-request-row span,
+.action-request-row small {
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.action-request-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.action-request-actions button {
+  border: 1px solid #1769e0;
+  border-radius: 6px;
+  background: #1769e0;
+  color: #fff;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.action-request-actions button + button {
+  border-color: #cfd8e6;
+  background: #fff;
+  color: #334155;
+}
+
 .readiness-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -2764,6 +2826,7 @@ td {
   .company-toolbar,
   .source-row,
   .activity-row,
+  .action-request-row,
   .tasks-toolbar,
   .task-row,
   .settings-grid,
@@ -2777,6 +2840,10 @@ td {
 
   .task-row {
     grid-template-columns: 1fr;
+  }
+
+  .action-request-actions {
+    justify-content: flex-start;
   }
 
   .settings-grid {

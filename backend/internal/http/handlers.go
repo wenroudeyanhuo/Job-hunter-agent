@@ -136,6 +136,41 @@ func (h *Handlers) GetAgentChatStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, jobs.BuildAgentChatStatus(h.LLM))
 }
 
+func (h *Handlers) ListAgentActionRequests(c *gin.Context) {
+	requests, err := h.Repo.ListAgentActionRequests(c.Request.Context(), c.Query("status"))
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, requests)
+}
+
+func (h *Handlers) UpdateAgentActionRequest(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	var req struct {
+		Status string `json:"status"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "status is required"})
+		return
+	}
+	request, err := h.Repo.UpdateAgentActionRequestStatus(c.Request.Context(), id, req.Status)
+	if err != nil {
+		respondRepoError(c, err)
+		return
+	}
+	h.recordAgentEvent(c, jobs.AgentEventInput{
+		Type:    "agent_action_" + request.Status,
+		Title:   "Agent action " + request.Status,
+		Summary: request.ActionType + ": " + request.Detail,
+		Level:   "info",
+	})
+	c.JSON(http.StatusOK, request)
+}
+
 func (h *Handlers) GetAutomationStatus(c *gin.Context) {
 	settings, err := h.Repo.GetSettings(c.Request.Context())
 	if err != nil {
@@ -199,6 +234,12 @@ func (h *Handlers) RunAgentChat(c *gin.Context) {
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
+	}
+	if len(reply.Actions) > 0 {
+		if err := h.Repo.RecordAgentActionRequests(c.Request.Context(), reply.Source, reply.Actions); err != nil {
+			respondError(c, http.StatusInternalServerError, err)
+			return
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"message": message,
