@@ -40,7 +40,9 @@ func TestAutomationRunnerSendsDueDutyReportOnce(t *testing.T) {
 	settings := jobs.DefaultSettings()
 	settings.FeishuWebhookURL = server.URL
 	settings.AutoDutyReportEnabled = true
+	settings.AutoSourceDiscoveryEnabled = false
 	settings.DutyReportTime = "18:00"
+	settings.TimeZone = "UTC"
 	if _, err := repo.SaveSettings(context.Background(), settings); err != nil {
 		t.Fatalf("save settings: %v", err)
 	}

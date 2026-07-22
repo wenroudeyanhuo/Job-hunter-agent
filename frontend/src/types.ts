@@ -55,7 +55,21 @@ export interface JobDetail {
   job: Job;
   fit: JobFitSummary;
   decisions: JobDecision[];
+  application_plan?: ApplicationPlan;
   suggested_action: AgentReportAction;
+}
+
+export interface ApplicationPlan {
+  id: number;
+  job_id: number;
+  status: "prepare" | "ready" | "applied" | "paused" | string;
+  priority: number;
+  next_action: string;
+  checklist: string[];
+  blocker_notes: string;
+  target_apply_date: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface RunSummary {
@@ -165,6 +179,7 @@ export interface Settings {
   crawl_schedule: string[];
   feishu_webhook_url: string;
   feishu_configured: boolean;
+  time_zone: string;
   auto_duty_report_enabled: boolean;
   auto_source_discovery_enabled: boolean;
   source_discovery_interval_hours: number;

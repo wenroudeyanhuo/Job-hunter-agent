@@ -19,6 +19,7 @@ Early MVP. The current version provides a Go backend foundation, SQLite persiste
 - React dashboard for reviewing jobs, filtering by status/direction, updating status, and running a crawl.
 - Candidate profile page for cities, directions, skills, education, preferred companies, blocked keywords, and notes.
 - Job detail panel with profile-aware fit signals, risks, suggested action, notes, and decision history.
+- Application workspace for turning interested strong matches into human-approved application preparation plans.
 - Daily agent task queue generated from recommended jobs, manual decisions, source issues, and crawl history.
 - Digital employee sidebar with an agent profile, avatar, maturity score, capability map, operating cycle, and mainstream capability gaps.
 - Command Center for rule-based natural-language workflow commands such as changing target cities/directions, refreshing tasks, running a crawl, and sending Feishu reports.
@@ -37,6 +38,7 @@ Early MVP. The current version provides a Go backend foundation, SQLite persiste
 - Provides a local dashboard for reviewing jobs and updating status.
 - Builds a local candidate profile and uses it to explain why a role fits or carries risk.
 - Records job decisions such as interested, applied, ignored, and notes updates as a timeline.
+- Prepares application plans for interested strong matches, including priority, target date, checklist, and next action.
 - Generates a daily task queue for recommended jobs, human decisions, unhealthy sources, and crawl setup.
 - Shows what the assistant can already do, where it is weaker than mainstream digital employees, and which capability should be improved next.
 - Accepts simple workflow commands from the digital employee sidebar. Current parsing is deterministic and transparent, not LLM-based.
@@ -97,6 +99,8 @@ LLM_MODEL=
 `FEISHU_WEBHOOK_URL` is optional. Open-source users can also open the dashboard, go to Settings, paste their own Feishu incoming bot webhook URL, save it, and send a test notification. A saved dashboard webhook takes priority over the environment variable and does not require restarting the backend.
 
 `LLM_API_KEY`, `LLM_BASE_URL`, and `LLM_MODEL` are optional. If they are not configured, the global digital employee chat uses local rule-based replies. If they are configured, the backend calls an OpenAI-compatible `/chat/completions` endpoint and falls back to local replies on failure. `OPENAI_API_KEY`, `OPENAI_BASE_URL`, and `OPENAI_MODEL` are also accepted.
+
+Automatic Feishu duty reports require the backend process to stay running with the scheduler enabled, a Feishu webhook in Settings or `FEISHU_WEBHOOK_URL`, Automatic duty report enabled in Settings, and the configured duty report time reached in the configured time zone. The default time zone is `Asia/Shanghai`.
 
 ### Backend
 
@@ -163,10 +167,11 @@ After the backend and frontend are running:
 10. Configure Automatic duty report, Duty report time, and Task SLA hours in Settings if you want stale-task tracking and scheduled reporting.
 11. Go to Profile and write your candidate signals: target cities, directions, skills, preferred companies, blocked keywords, and notes.
 12. Try Command Center commands such as `只看深圳 Go 后端，刷新任务`, `run crawl`, or `发送飞书日报`.
-13. Open Details from an opportunity to review fit signals, risks, suggested action, notes, and decision history.
-14. Use the global digital employee chat in the lower-right corner to ask what to do next or why a role fits.
-15. Use Snooze, Complete, or Ignore in Daily Tasks to keep the assistant's work queue accurate.
-16. Use Send to Feishu from the duty report when you want the assistant to push the current task queue and summary to your bot.
+13. Mark promising jobs as Interested, then open Applications and sync application plans.
+14. Open Details from an opportunity to review fit signals, application plan, risks, suggested action, notes, and decision history.
+15. Use the global digital employee chat in the lower-right corner to ask what to do next or why a role fits.
+16. Use Snooze, Complete, or Ignore in Daily Tasks to keep the assistant's work queue accurate.
+17. Use Send to Feishu from the duty report when you want the assistant to push the current task queue and summary to your bot.
 ## Local Data
 
 By default, the backend stores SQLite data under:

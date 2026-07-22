@@ -15,6 +15,7 @@ import {
   importURL,
   listAgentEvents,
   listAgentChatMessages,
+  listApplicationPlans,
   listAgentTasks,
   listCompanies,
   listJobs,
@@ -33,7 +34,9 @@ import {
   sendFeishuReport,
   sendFeishuTest,
   seedRecommendedSources,
+  syncApplicationPlans,
   updateAgentTaskStatus,
+  updateApplicationPlan,
   updateCandidateProfile,
   updateJobNotes,
   updateJobStatus,
@@ -44,7 +47,7 @@ import {
   rejectSourceCandidate,
 } from "./api";
 import { DigitalEmployee3D } from "./DigitalEmployee3D";
-import type { AgentBriefing, AgentChatMessage, AgentChatStatus, AgentCommandResult, AgentDutyReport, AgentEvent, AgentReview, AgentReviewHistory, AgentState, AgentTask, CandidateProfile, Company, Job, JobDetail, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source, SourceCandidate } from "./types";
+import type { AgentBriefing, AgentChatMessage, AgentChatStatus, AgentCommandResult, AgentDutyReport, AgentEvent, AgentReview, AgentReviewHistory, AgentState, AgentTask, ApplicationPlan, CandidateProfile, Company, Job, JobDetail, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source, SourceCandidate } from "./types";
 
 const statusLabels: Record<JobStatus | "all", string> = {
   all: "All",
@@ -63,11 +66,12 @@ const sourceHealthLabels: Record<string, string> = {
   unknown: "Unknown",
 };
 
-type AppView = "dashboard" | "opportunities" | "profile" | "companies" | "runs" | "settings";
+type AppView = "dashboard" | "opportunities" | "applications" | "profile" | "companies" | "runs" | "settings";
 
 const appViews: Array<{ id: AppView; label: string }> = [
   { id: "dashboard", label: "Dashboard" },
   { id: "opportunities", label: "Opportunities" },
+  { id: "applications", label: "Applications" },
   { id: "profile", label: "Profile" },
   { id: "companies", label: "Companies" },
   { id: "runs", label: "Runs" },
@@ -112,6 +116,7 @@ const defaultSettings: Settings = {
   crawl_schedule: ["09:00", "12:00", "18:00"],
   feishu_webhook_url: "",
   feishu_configured: false,
+  time_zone: "Asia/Shanghai",
   auto_duty_report_enabled: false,
   auto_source_discovery_enabled: true,
   source_discovery_interval_hours: 24,
@@ -177,6 +182,7 @@ export default function App() {
   const [agentReviewHistory, setAgentReviewHistory] = useState<AgentReviewHistory | null>(null);
   const [agentEvents, setAgentEvents] = useState<AgentEvent[]>([]);
   const [agentTasks, setAgentTasks] = useState<AgentTask[]>([]);
+  const [applicationPlans, setApplicationPlans] = useState<ApplicationPlan[]>([]);
   const [chatStatus, setChatStatus] = useState<AgentChatStatus | null>(null);
   const [chatMessages, setChatMessages] = useState<AgentChatMessage[]>([]);
   const [chatText, setChatText] = useState("");
@@ -185,6 +191,7 @@ export default function App() {
   const [selectedJobDetail, setSelectedJobDetail] = useState<JobDetail | null>(null);
   const [loadingJobDetail, setLoadingJobDetail] = useState(false);
   const [refreshingTasks, setRefreshingTasks] = useState(false);
+  const [syncingApplications, setSyncingApplications] = useState(false);
   const [commandText, setCommandText] = useState("");
   const [commandResult, setCommandResult] = useState<AgentCommandResult | null>(null);
   const [runningCommand, setRunningCommand] = useState(false);
@@ -275,8 +282,13 @@ export default function App() {
     setAgentTasks(data);
   }
 
+  async function refreshApplicationPlans() {
+    const data = await listApplicationPlans();
+    setApplicationPlans(data);
+  }
+
   useEffect(() => {
-    Promise.all([refresh(), refreshSources(), refreshSourceCandidates(), refreshCompanies(), refreshRuns(), refreshSettings(), refreshProfile(), refreshBriefing(), refreshAgentState(), refreshDutyReport(), refreshAgentReview(), refreshAgentReviewHistory(), refreshAgentEvents(), refreshTasks(), refreshChat()])
+    Promise.all([refresh(), refreshSources(), refreshSourceCandidates(), refreshCompanies(), refreshRuns(), refreshSettings(), refreshProfile(), refreshBriefing(), refreshAgentState(), refreshDutyReport(), refreshAgentReview(), refreshAgentReviewHistory(), refreshAgentEvents(), refreshTasks(), refreshApplicationPlans(), refreshChat()])
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
@@ -559,6 +571,7 @@ export default function App() {
       await refreshAgentReviewHistory();
     await refreshAgentEvents();
     await refreshTasks();
+    await refreshApplicationPlans();
     await refreshAgentState();
   }
 
@@ -696,6 +709,7 @@ export default function App() {
         excluded_keywords: parseSettingsList(settingsDraft.excluded_keywords),
         crawl_schedule: parseSettingsList(settingsDraft.crawl_schedule),
         feishu_webhook_url: settingsDraft.feishu_webhook_url.trim(),
+        time_zone: settingsDraft.time_zone.trim() || defaultSettings.time_zone,
         auto_duty_report_enabled: settingsDraft.auto_duty_report_enabled,
         auto_source_discovery_enabled: settingsDraft.auto_source_discovery_enabled,
         source_discovery_interval_hours: Number(settingsDraft.source_discovery_interval_hours) || defaultSettings.source_discovery_interval_hours,
@@ -811,6 +825,7 @@ export default function App() {
       const tasks = await refreshAgentTasks();
       setAgentTasks(tasks);
       setNotice("Daily tasks refreshed from the current recruiting pipeline.");
+      await refreshApplicationPlans();
       await refreshDutyReport();
       await refreshAgentReview();
       await refreshAgentReviewHistory();
@@ -820,6 +835,43 @@ export default function App() {
       setError(err instanceof Error ? err.message : "Could not refresh daily tasks");
     } finally {
       setRefreshingTasks(false);
+    }
+  }
+
+  async function handleSyncApplicationPlans() {
+    setSyncingApplications(true);
+    setError("");
+    setNotice("");
+    try {
+      const plans = await syncApplicationPlans();
+      setApplicationPlans(plans);
+      await refreshTasks();
+      await refreshDutyReport();
+      await refreshAgentReview();
+      await refreshAgentReviewHistory();
+      await refreshAgentEvents();
+      await refreshAgentState();
+      setNotice(`Application workspace synced with ${plans.length} plans.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not sync application plans");
+    } finally {
+      setSyncingApplications(false);
+    }
+  }
+
+  async function handleApplicationPlanStatus(plan: ApplicationPlan, status: ApplicationPlan["status"]) {
+    setError("");
+    setNotice("");
+    try {
+      await updateApplicationPlan(plan.id, { ...plan, status });
+      await refreshApplicationPlans();
+      await refreshTasks();
+      await refreshDutyReport();
+      await refreshAgentEvents();
+      await refreshAgentState();
+      setNotice(`Application plan updated to ${status}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update application plan");
     }
   }
 
@@ -1201,6 +1253,17 @@ export default function App() {
         </>
       )}
 
+      {activeView === "applications" && (
+        <ApplicationWorkspace
+          plans={applicationPlans}
+          jobs={jobs}
+          syncing={syncingApplications}
+          onSync={handleSyncApplicationPlans}
+          onStatus={handleApplicationPlanStatus}
+          onOpenJob={handleOpenJobDetail}
+        />
+      )}
+
       {activeView === "profile" && (
         <ProfilePanel
           profile={profile}
@@ -1345,6 +1408,14 @@ export default function App() {
             <textarea
               value={settingsDraft.crawl_schedule}
               onChange={(event) => setSettingsDraft((current) => ({ ...current, crawl_schedule: event.target.value }))}
+            />
+          </label>
+          <label>
+            Time zone
+            <input
+              value={settingsDraft.time_zone}
+              onChange={(event) => setSettingsDraft((current) => ({ ...current, time_zone: event.target.value }))}
+              placeholder="Asia/Shanghai"
             />
           </label>
           <label className="settings-wide">
@@ -1542,6 +1613,80 @@ function ProfilePanel({
   );
 }
 
+function ApplicationWorkspace({
+  plans,
+  jobs,
+  syncing,
+  onSync,
+  onStatus,
+  onOpenJob,
+}: {
+  plans: ApplicationPlan[];
+  jobs: Job[];
+  syncing: boolean;
+  onSync: () => void | Promise<void>;
+  onStatus: (plan: ApplicationPlan, status: ApplicationPlan["status"]) => void | Promise<void>;
+  onOpenJob: (id: number) => void | Promise<void>;
+}) {
+  const jobsByID = new Map(jobs.map((job) => [job.id, job]));
+  const activePlans = plans.filter((plan) => plan.status !== "applied" && plan.status !== "paused");
+  return (
+    <section className="applications-panel">
+      <div className="panel-header">
+        <div>
+          <h2>Application Workspace</h2>
+          <span>{activePlans.length} active / {plans.length} total</span>
+        </div>
+        <button type="button" onClick={onSync} disabled={syncing}>
+          {syncing ? "Syncing..." : "Sync Plans"}
+        </button>
+      </div>
+      <div className="application-list">
+        {plans.map((plan) => {
+          const job = jobsByID.get(plan.job_id);
+          return (
+            <div className={`application-row application-${plan.status}`} key={plan.id}>
+              <div>
+                <div className="candidate-title">
+                  <strong>{job ? `${job.company} / ${job.title}` : `Job #${plan.job_id}`}</strong>
+                  <b>{plan.priority}</b>
+                </div>
+                <div className="source-meta">
+                  <span>{plan.status}</span>
+                  <span>{plan.target_apply_date || "No target date"}</span>
+                  {job?.city && <span>{job.city}</span>}
+                </div>
+                <p>{plan.next_action || "No next action yet."}</p>
+                <div className="application-checklist">
+                  {plan.checklist.slice(0, 5).map((item) => (
+                    <span key={item}>{item}</span>
+                  ))}
+                </div>
+                {plan.blocker_notes && <small>{plan.blocker_notes}</small>}
+              </div>
+              <div className="candidate-actions">
+                <button type="button" onClick={() => onOpenJob(plan.job_id)}>
+                  Details
+                </button>
+                <button type="button" onClick={() => onStatus(plan, "ready")}>
+                  Ready
+                </button>
+                <button type="button" onClick={() => onStatus(plan, "applied")}>
+                  Applied
+                </button>
+                <button type="button" onClick={() => onStatus(plan, "paused")}>
+                  Pause
+                </button>
+              </div>
+            </div>
+          );
+        })}
+        {plans.length === 0 && <div className="empty-source">No application plans yet. Mark strong jobs as Interested, then sync plans.</div>}
+      </div>
+    </section>
+  );
+}
+
 function JobDetailPanel({
   detail,
   busy,
@@ -1602,6 +1747,21 @@ function JobDetailPanel({
             <span className="risk-pill" key={item}>{item}</span>
           ))}
           {detail.fit.risks.length === 0 && <div className="empty-source">No obvious risk signals.</div>}
+        </div>
+        <div className="detail-column">
+          <h3>Application Plan</h3>
+          {detail.application_plan ? (
+            <>
+              <span className="detail-pill">{detail.application_plan.status}</span>
+              <span className="detail-pill">{detail.application_plan.target_apply_date || "No target date"}</span>
+              <small>{detail.application_plan.next_action}</small>
+              {detail.application_plan.checklist.slice(0, 4).map((item) => (
+                <span className="detail-pill" key={item}>{item}</span>
+              ))}
+            </>
+          ) : (
+            <div className="empty-source">Mark this job as Interested and refresh tasks to create a plan.</div>
+          )}
         </div>
       </div>
       <div className="job-detail-bottom">
@@ -2333,6 +2493,7 @@ function settingsToDraft(settings: Settings) {
     excluded_keywords: safeSettingsList(settings.excluded_keywords, defaultSettings.excluded_keywords).join("\n"),
     crawl_schedule: safeSettingsList(settings.crawl_schedule, defaultSettings.crawl_schedule).join("\n"),
     feishu_webhook_url: settings.feishu_webhook_url || "",
+    time_zone: settings.time_zone || defaultSettings.time_zone,
     auto_duty_report_enabled: Boolean(settings.auto_duty_report_enabled),
     auto_source_discovery_enabled: Boolean(settings.auto_source_discovery_enabled),
     source_discovery_interval_hours: String(settings.source_discovery_interval_hours || defaultSettings.source_discovery_interval_hours),
@@ -2363,6 +2524,7 @@ function normalizeSettings(settings: Partial<Settings>): Settings {
     crawl_schedule: safeSettingsList(settings.crawl_schedule, defaultSettings.crawl_schedule),
     feishu_webhook_url: settings.feishu_webhook_url || "",
     feishu_configured: Boolean(settings.feishu_configured),
+    time_zone: settings.time_zone || defaultSettings.time_zone,
     auto_duty_report_enabled: Boolean(settings.auto_duty_report_enabled),
     auto_source_discovery_enabled: settings.auto_source_discovery_enabled ?? defaultSettings.auto_source_discovery_enabled,
     source_discovery_interval_hours: settings.source_discovery_interval_hours || defaultSettings.source_discovery_interval_hours,

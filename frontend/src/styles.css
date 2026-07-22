@@ -1977,6 +1977,47 @@ td {
   font-weight: 720;
 }
 
+.applications-panel {
+  background: #fff;
+  border: 1px solid #dbe5f3;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.application-list {
+  display: grid;
+}
+
+.application-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: start;
+  border-top: 1px solid #edf1f7;
+  padding: 16px;
+}
+
+.application-row p {
+  margin: 8px 0;
+  color: #1f3554;
+  font-size: 13px;
+}
+
+.application-checklist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.application-checklist span {
+  border: 1px solid #d7e2f1;
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: #526985;
+  background: #f8fbff;
+}
+
 .source-form input {
   flex: 1 1 320px;
   min-width: 0;

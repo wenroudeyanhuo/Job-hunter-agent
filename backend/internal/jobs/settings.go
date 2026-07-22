@@ -16,6 +16,7 @@ type Settings struct {
 	ExcludedKeywords             []string   `json:"excluded_keywords"`
 	CrawlSchedule                []string   `json:"crawl_schedule"`
 	FeishuWebhookURL             string     `json:"feishu_webhook_url"`
+	TimeZone                     string     `json:"time_zone"`
 	AutoDutyReportEnabled        bool       `json:"auto_duty_report_enabled"`
 	AutoSourceDiscoveryEnabled   bool       `json:"auto_source_discovery_enabled"`
 	SourceDiscoveryIntervalHours int        `json:"source_discovery_interval_hours"`
@@ -32,6 +33,7 @@ func DefaultSettings() Settings {
 		TargetDirections:             []string{"frontend", "backend", "java", "go", "algorithm", "ai_application"},
 		ExcludedKeywords:             []string{"outsourcing", "training", "bootcamp"},
 		CrawlSchedule:                []string{"09:00", "12:00", "18:00"},
+		TimeZone:                     "Asia/Shanghai",
 		AutoSourceDiscoveryEnabled:   true,
 		DutyReportTime:               "18:00",
 		TaskSLAHours:                 24,
@@ -99,6 +101,10 @@ func normalizeSettings(settings Settings) Settings {
 		settings.CrawlSchedule = defaults.CrawlSchedule
 	}
 	settings.FeishuWebhookURL = strings.TrimSpace(settings.FeishuWebhookURL)
+	settings.TimeZone = strings.TrimSpace(settings.TimeZone)
+	if settings.TimeZone == "" {
+		settings.TimeZone = defaults.TimeZone
+	}
 	settings.DutyReportTime = strings.TrimSpace(settings.DutyReportTime)
 	if settings.DutyReportTime == "" {
 		settings.DutyReportTime = defaults.DutyReportTime

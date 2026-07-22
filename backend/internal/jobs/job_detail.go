@@ -10,6 +10,7 @@ type JobDetail struct {
 	Job             domain.Job        `json:"job"`
 	Fit             JobFitSummary     `json:"fit"`
 	Decisions       []JobDecision     `json:"decisions"`
+	ApplicationPlan *ApplicationPlan  `json:"application_plan,omitempty"`
 	SuggestedAction AgentReportAction `json:"suggested_action"`
 }
 

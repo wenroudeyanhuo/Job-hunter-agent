@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -36,7 +37,7 @@ func BuildAgentAutomationState(settings Settings, tasks []AgentTask, now time.Ti
 		SourceDiscoveryEnabled:   settings.AutoSourceDiscoveryEnabled,
 		DutyReportTime:           settings.DutyReportTime,
 		LastReportSentAt:         settings.LastDutyReportSentAt,
-		NextDutyReportAt:         nextDutyReportAt(settings.DutyReportTime, now),
+		NextDutyReportAt:         nextDutyReportAt(settings, now),
 		SourceDiscoveryInterval:  settings.SourceDiscoveryIntervalHours,
 		LastSourceDiscoveryAt:    settings.LastSourceDiscoveryAt,
 		NextSourceDiscoveryDueAt: nextSourceDiscoveryDueAt(settings, now),
@@ -73,6 +74,7 @@ func ShouldSendDutyReport(settings Settings, now time.Time) bool {
 	if !settings.AutoDutyReportEnabled {
 		return false
 	}
+	now = now.In(settingsLocation(settings))
 	hour, minute := parseClock(settings.DutyReportTime, 18, 0)
 	dueAt := time.Date(now.Year(), now.Month(), now.Day(), hour, minute, 0, 0, now.Location())
 	if now.Before(dueAt) {
@@ -99,13 +101,27 @@ func ShouldRunSourceDiscovery(settings Settings, now time.Time) bool {
 	return !settings.LastSourceDiscoveryAt.Add(time.Duration(settings.SourceDiscoveryIntervalHours) * time.Hour).After(now)
 }
 
-func nextDutyReportAt(reportTime string, now time.Time) string {
-	hour, minute := parseClock(reportTime, 18, 0)
+func nextDutyReportAt(settings Settings, now time.Time) string {
+	settings = normalizeSettings(settings)
+	now = now.In(settingsLocation(settings))
+	hour, minute := parseClock(settings.DutyReportTime, 18, 0)
 	next := time.Date(now.Year(), now.Month(), now.Day(), hour, minute, 0, 0, now.Location())
 	if !next.After(now) {
 		next = next.Add(24 * time.Hour)
 	}
 	return next.Format(time.RFC3339)
+}
+
+func settingsLocation(settings Settings) *time.Location {
+	name := strings.TrimSpace(settings.TimeZone)
+	if name == "" {
+		name = DefaultSettings().TimeZone
+	}
+	loc, err := time.LoadLocation(name)
+	if err != nil {
+		return time.UTC
+	}
+	return loc
 }
 
 func nextSourceDiscoveryDueAt(settings Settings, now time.Time) string {

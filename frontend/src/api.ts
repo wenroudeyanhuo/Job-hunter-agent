@@ -11,6 +11,7 @@ import type {
   AgentReviewSnapshot,
   AgentState,
   AgentTask,
+  ApplicationPlan,
   CandidateProfile,
   Company,
   CleanupLandingPagesResponse,
@@ -116,6 +117,24 @@ export async function listAgentTasks(): Promise<AgentTask[]> {
 export async function refreshAgentTasks(): Promise<AgentTask[]> {
   const tasks = await request<AgentTask[] | null>("/api/agent/tasks/refresh", { method: "POST" });
   return Array.isArray(tasks) ? tasks : [];
+}
+
+export async function listApplicationPlans(status = ""): Promise<ApplicationPlan[]> {
+  const query = status ? `?status=${encodeURIComponent(status)}` : "";
+  const plans = await request<ApplicationPlan[] | null>(`/api/applications${query}`);
+  return Array.isArray(plans) ? plans : [];
+}
+
+export async function syncApplicationPlans(): Promise<ApplicationPlan[]> {
+  const plans = await request<ApplicationPlan[] | null>("/api/applications/sync", { method: "POST" });
+  return Array.isArray(plans) ? plans : [];
+}
+
+export async function updateApplicationPlan(id: number, update: Partial<ApplicationPlan>): Promise<ApplicationPlan> {
+  return request<ApplicationPlan>(`/api/applications/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(update),
+  });
 }
 
 export async function updateAgentTaskStatus(
@@ -259,6 +278,7 @@ export async function updateSettings(
     | "excluded_keywords"
     | "crawl_schedule"
     | "feishu_webhook_url"
+    | "time_zone"
     | "auto_duty_report_enabled"
     | "auto_source_discovery_enabled"
     | "source_discovery_interval_hours"

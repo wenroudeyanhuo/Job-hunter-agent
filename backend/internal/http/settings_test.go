@@ -17,6 +17,7 @@ func TestSettingsAPIPersistsUpdates(t *testing.T) {
 		"excluded_keywords":["outsourcing","training"],
 		"crawl_schedule":["09:00","18:00"],
 		"feishu_webhook_url":"https://open.feishu.cn/open-apis/bot/v2/hook/test",
+		"time_zone":"Asia/Shanghai",
 		"auto_duty_report_enabled":true,
 		"auto_source_discovery_enabled":true,
 		"source_discovery_interval_hours":8,
@@ -45,6 +46,7 @@ func TestSettingsAPIPersistsUpdates(t *testing.T) {
 		CrawlSchedule    []string `json:"crawl_schedule"`
 		FeishuWebhookURL string   `json:"feishu_webhook_url"`
 		FeishuConfigured bool     `json:"feishu_configured"`
+		TimeZone         string   `json:"time_zone"`
 		AutoDutyReport   bool     `json:"auto_duty_report_enabled"`
 		AutoDiscovery    bool     `json:"auto_source_discovery_enabled"`
 		DiscoveryHours   int      `json:"source_discovery_interval_hours"`
@@ -65,6 +67,9 @@ func TestSettingsAPIPersistsUpdates(t *testing.T) {
 	}
 	if settings.FeishuWebhookURL == "" || !settings.FeishuConfigured {
 		t.Fatalf("expected Feishu settings to be returned, got %#v", settings)
+	}
+	if settings.TimeZone != "Asia/Shanghai" {
+		t.Fatalf("expected timezone setting, got %#v", settings)
 	}
 	if !settings.AutoDutyReport || settings.DutyReportTime != "18:30" || settings.TaskSLAHours != 6 {
 		t.Fatalf("expected automation settings, got %#v", settings)
