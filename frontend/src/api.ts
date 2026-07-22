@@ -1,5 +1,6 @@
 import type {
   AgentBriefing,
+  AgentAutomationDiagnostics,
   AgentChatMessage,
   AgentChatResponse,
   AgentChatStatus,
@@ -71,6 +72,10 @@ export async function runAgentCommand(text: string): Promise<AgentCommandResult>
 
 export async function getAgentChatStatus(): Promise<AgentChatStatus> {
   return request<AgentChatStatus>("/api/agent/chat/status");
+}
+
+export async function getAutomationStatus(): Promise<AgentAutomationDiagnostics> {
+  return request<AgentAutomationDiagnostics>("/api/agent/automation/status");
 }
 
 export async function listAgentChatMessages(): Promise<AgentChatMessage[]> {

@@ -100,7 +100,7 @@ LLM_MODEL=
 
 `LLM_API_KEY`, `LLM_BASE_URL`, and `LLM_MODEL` are optional. If they are not configured, the global digital employee chat uses local rule-based replies. If they are configured, the backend calls an OpenAI-compatible `/chat/completions` endpoint and falls back to local replies on failure. `OPENAI_API_KEY`, `OPENAI_BASE_URL`, and `OPENAI_MODEL` are also accepted.
 
-Automatic Feishu duty reports require the backend process to stay running with the scheduler enabled, a Feishu webhook in Settings or `FEISHU_WEBHOOK_URL`, Automatic duty report enabled in Settings, and the configured duty report time reached in the configured time zone. The default time zone is `Asia/Shanghai`.
+Automatic Feishu duty reports require the backend process to stay running with the scheduler enabled, a Feishu webhook in Settings or `FEISHU_WEBHOOK_URL`, Automatic duty report enabled in Settings, and the configured duty report time reached in the configured time zone. The default time zone is `Asia/Shanghai`. The Settings page includes an automation diagnostic card that shows webhook readiness, scheduler expectation, next report time, last sent time, and the reason a scheduled report has not fired yet.
 
 ### Backend
 
@@ -151,6 +151,14 @@ Open `http://localhost:5173`. The backend is also exposed at `http://localhost:8
 
 Vercel is a good fit for the static frontend only. This project currently uses a long-running Go backend plus local SQLite and scheduled jobs, so a single Vercel deployment is not the best default. For the full product, use Docker Compose locally or deploy the backend to a service with persistent storage, then point the frontend to that backend.
 
+### Deployment Notes
+
+- Frontend: can be deployed as static assets after `npm run build`.
+- Backend: should run on a service that supports a long-lived Go process and persistent disk or a managed database.
+- Scheduler: must remain enabled for automatic crawls, automatic source discovery, stale-task escalation, and automatic Feishu duty reports.
+- SQLite: works well for local-first usage. For hosted multi-user usage, plan a Postgres migration before exposing it publicly.
+- Vercel: suitable for the frontend, but not enough for the current full product because Vercel serverless functions do not provide a simple always-on scheduler plus persistent local SQLite disk.
+
 ### First Run Checklist
 
 After the backend and frontend are running:
@@ -166,12 +174,13 @@ After the backend and frontend are running:
 9. Use the digital employee sidebar to inspect maturity, capabilities, current gaps, and the daily operating cycle.
 10. Configure Automatic duty report, Duty report time, and Task SLA hours in Settings if you want stale-task tracking and scheduled reporting.
 11. Go to Profile and write your candidate signals: target cities, directions, skills, preferred companies, blocked keywords, and notes.
-12. Try Command Center commands such as `只看深圳 Go 后端，刷新任务`, `run crawl`, or `发送飞书日报`.
+12. Try Command Center commands such as `只看深圳 Go 后端，刷新任务`, `run crawl`, `发送飞书日报`, or `同步投递计划`.
 13. Mark promising jobs as Interested, then open Applications and sync application plans.
 14. Open Details from an opportunity to review fit signals, application plan, risks, suggested action, notes, and decision history.
 15. Use the global digital employee chat in the lower-right corner to ask what to do next or why a role fits.
 16. Use Snooze, Complete, or Ignore in Daily Tasks to keep the assistant's work queue accurate.
 17. Use Send to Feishu from the duty report when you want the assistant to push the current task queue and summary to your bot.
+
 ## Local Data
 
 By default, the backend stores SQLite data under:
@@ -182,15 +191,28 @@ backend/data/job-hunter-agent.db
 
 Local databases, logs, build outputs, private planning docs, and environment files are ignored by Git.
 
+Recommended backup workflow:
+
+1. Stop the backend process.
+2. Copy `backend/data/job-hunter-agent.db` to a dated backup path.
+3. Start the backend again.
+
+Restore workflow:
+
+1. Stop the backend process.
+2. Replace `backend/data/job-hunter-agent.db` with the backup file.
+3. Start the backend. Schema migrations run automatically and add missing columns for newer versions.
+
+For automated backups, run a scheduled copy while the backend is stopped, or use a SQLite online backup command from your deployment environment.
+
 ## Roadmap
 
 - Add manual URL import API and dashboard flow.
 - Add the first real public-source collector.
 - Improve parser adapters for more company-specific career pages and job-platform result pages.
 - Improve parsing for deadline, location granularity, and application URL.
-- Add richer follow-up reminders and escalation channels for daily agent tasks.
 - Upgrade model chat from plain conversation to structured tool-calling planning.
-- Turn interested/applied jobs into follow-up tasks with dates and application metadata.
+- Add editable resume-version templates and generated application draft notes.
 - Add optional Feishu Base or spreadsheet sync.
 - Explore resume matching and assisted application workflows after the collection pipeline is reliable.
 

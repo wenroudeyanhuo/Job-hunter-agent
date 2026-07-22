@@ -30,6 +30,9 @@ func TestAgentChatAPIFallsBackToLocalReply(t *testing.T) {
 	if response.Message.Role != jobs.AgentChatRoleAssistant || response.Reply.Content == "" {
 		t.Fatalf("unexpected chat response: %#v", response)
 	}
+	if !containsHTTPCommandAction(response.Reply.Actions, "sync_application_plans") {
+		t.Fatalf("expected application sync action, got %#v", response.Reply.Actions)
+	}
 
 	req = httptest.NewRequest(http.MethodGet, "/api/agent/chat/messages", nil)
 	rec = httptest.NewRecorder()
@@ -61,4 +64,13 @@ func TestAgentChatStatusReportsLocalMode(t *testing.T) {
 	if status.Mode != "local_rules" || status.Configured {
 		t.Fatalf("expected local mode, got %#v", status)
 	}
+}
+
+func containsHTTPCommandAction(actions []jobs.AgentCommandAction, actionType string) bool {
+	for _, action := range actions {
+		if action.Type == actionType {
+			return true
+		}
+	}
+	return false
 }

@@ -437,6 +437,35 @@ func TestAgentCommandAPIUpdatesPreferencesAndRefreshesTasks(t *testing.T) {
 	}
 }
 
+func TestAgentCommandAPISyncsApplicationPlans(t *testing.T) {
+	repo, handler := testRouter(t, nil)
+	if _, err := repo.CreateJob(t.Context(), domain.Job{
+		Company:    "Tencent",
+		Title:      "Go Backend Engineer",
+		City:       "Shenzhen",
+		MatchScore: 88,
+		Status:     domain.StatusInterested,
+	}); err != nil {
+		t.Fatalf("seed job: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/agent/commands", strings.NewReader(`{"text":"同步投递计划，准备投递感兴趣岗位"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	plans, err := repo.ListApplicationPlans(t.Context(), "")
+	if err != nil {
+		t.Fatalf("list application plans: %v", err)
+	}
+	if len(plans) != 1 {
+		t.Fatalf("expected synced application plan, got %#v", plans)
+	}
+}
+
 func TestAgentAutomationDutyReportSendsAndRecordsLastSent(t *testing.T) {
 	var received string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -486,6 +515,32 @@ func TestAgentAutomationDutyReportSendsAndRecordsLastSent(t *testing.T) {
 	}
 	if updated.LastDutyReportSentAt == nil {
 		t.Fatalf("expected last report timestamp")
+	}
+}
+
+func TestAgentAutomationStatusReportsFeishuReadiness(t *testing.T) {
+	repo, handler := testRouter(t, nil)
+	settings := jobs.DefaultSettings()
+	settings.FeishuWebhookURL = "https://open.feishu.cn/open-apis/bot/v2/hook/test"
+	settings.AutoDutyReportEnabled = true
+	settings.TimeZone = "Asia/Shanghai"
+	if _, err := repo.SaveSettings(t.Context(), settings); err != nil {
+		t.Fatalf("save settings: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/agent/automation/status", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var response jobs.AgentAutomationDiagnostics
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode automation status: %v", err)
+	}
+	if !response.ReadyForAutomaticReport || !response.WebhookConfigured || response.TimeZone != "Asia/Shanghai" {
+		t.Fatalf("expected ready automation diagnostics, got %#v", response)
 	}
 }
 

@@ -25,7 +25,10 @@ type ApplicationPlan struct {
 	NextAction      string    `json:"next_action"`
 	Checklist       []string  `json:"checklist"`
 	BlockerNotes    string    `json:"blocker_notes"`
+	ResumeVersion   string    `json:"resume_version"`
+	DraftNotes      string    `json:"draft_notes"`
 	TargetApplyDate string    `json:"target_apply_date"`
+	FollowUpDate    string    `json:"follow_up_date"`
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
 }
@@ -35,7 +38,10 @@ type ApplicationPlanUpdate struct {
 	NextAction      string   `json:"next_action"`
 	Checklist       []string `json:"checklist"`
 	BlockerNotes    string   `json:"blocker_notes"`
+	ResumeVersion   string   `json:"resume_version"`
+	DraftNotes      string   `json:"draft_notes"`
 	TargetApplyDate string   `json:"target_apply_date"`
+	FollowUpDate    string   `json:"follow_up_date"`
 }
 
 func (r *Repository) SyncApplicationPlans(ctx context.Context, now time.Time) ([]ApplicationPlan, error) {
@@ -104,10 +110,13 @@ func (r *Repository) UpdateApplicationPlan(ctx context.Context, id int64, input 
 	}
 	_, err = r.db.ExecContext(ctx, `
 		UPDATE application_plans
-		SET status = ?, next_action = ?, checklist = ?, blocker_notes = ?, target_apply_date = ?,
+		SET status = ?, next_action = ?, checklist = ?, blocker_notes = ?, resume_version = ?,
+			draft_notes = ?, target_apply_date = ?, follow_up_date = ?,
 			updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?
-	`, status, strings.TrimSpace(input.NextAction), checklist, strings.TrimSpace(input.BlockerNotes), strings.TrimSpace(input.TargetApplyDate), id)
+	`, status, strings.TrimSpace(input.NextAction), checklist, strings.TrimSpace(input.BlockerNotes),
+		strings.TrimSpace(input.ResumeVersion), strings.TrimSpace(input.DraftNotes),
+		strings.TrimSpace(input.TargetApplyDate), strings.TrimSpace(input.FollowUpDate), id)
 	if err != nil {
 		return ApplicationPlan{}, fmt.Errorf("update application plan: %w", err)
 	}
@@ -121,7 +130,10 @@ type applicationPlanInput struct {
 	Priority        int
 	NextAction      string
 	Checklist       []string
+	ResumeVersion   string
+	DraftNotes      string
 	TargetApplyDate string
+	FollowUpDate    string
 }
 
 func (r *Repository) upsertApplicationPlan(ctx context.Context, input applicationPlanInput) error {
@@ -131,14 +143,19 @@ func (r *Repository) upsertApplicationPlan(ctx context.Context, input applicatio
 	}
 	_, err = r.db.ExecContext(ctx, `
 		INSERT INTO application_plans (
-			job_id, status, priority, next_action, checklist, target_apply_date
-		) VALUES (?, ?, ?, ?, ?, ?)
+			job_id, status, priority, next_action, checklist, resume_version, draft_notes,
+			target_apply_date, follow_up_date
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(job_id) DO UPDATE SET
 			priority = excluded.priority,
 			next_action = CASE WHEN application_plans.status IN (?, ?) THEN application_plans.next_action ELSE excluded.next_action END,
 			checklist = CASE WHEN application_plans.status IN (?, ?) THEN application_plans.checklist ELSE excluded.checklist END,
+			resume_version = CASE WHEN application_plans.resume_version != '' THEN application_plans.resume_version ELSE excluded.resume_version END,
+			draft_notes = CASE WHEN application_plans.draft_notes != '' THEN application_plans.draft_notes ELSE excluded.draft_notes END,
+			follow_up_date = CASE WHEN application_plans.follow_up_date != '' THEN application_plans.follow_up_date ELSE excluded.follow_up_date END,
 			updated_at = CURRENT_TIMESTAMP
-	`, input.JobID, normalizeApplicationPlanStatus(input.Status), input.Priority, strings.TrimSpace(input.NextAction), checklist, input.TargetApplyDate,
+	`, input.JobID, normalizeApplicationPlanStatus(input.Status), input.Priority, strings.TrimSpace(input.NextAction), checklist,
+		strings.TrimSpace(input.ResumeVersion), strings.TrimSpace(input.DraftNotes), input.TargetApplyDate, input.FollowUpDate,
 		ApplicationPlanStatusReady, ApplicationPlanStatusApplied, ApplicationPlanStatusReady, ApplicationPlanStatusApplied)
 	if err != nil {
 		return fmt.Errorf("upsert application plan: %w", err)
@@ -161,7 +178,10 @@ func buildApplicationPlanInput(job domain.Job, now time.Time) applicationPlanInp
 		Priority:        100 + job.MatchScore,
 		NextAction:      "Prepare resume and application notes for " + fallbackText(job.Company, "this company"),
 		Checklist:       checklist,
+		ResumeVersion:   "default",
+		DraftNotes:      "Draft a short application note based on the job detail and profile signals.",
 		TargetApplyDate: now.Add(24 * time.Hour).Format("2006-01-02"),
+		FollowUpDate:    now.Add(7 * 24 * time.Hour).Format("2006-01-02"),
 	}
 }
 
@@ -181,7 +201,7 @@ func normalizeApplicationPlanStatus(status string) string {
 func selectApplicationPlanSQL() string {
 	return `
 		SELECT id, job_id, status, priority, next_action, checklist, blocker_notes,
-			target_apply_date, created_at, updated_at
+			resume_version, draft_notes, target_apply_date, follow_up_date, created_at, updated_at
 		FROM application_plans`
 }
 
@@ -196,7 +216,10 @@ func scanApplicationPlan(scanner jobScanner) (ApplicationPlan, error) {
 		&plan.NextAction,
 		&checklist,
 		&plan.BlockerNotes,
+		&plan.ResumeVersion,
+		&plan.DraftNotes,
 		&plan.TargetApplyDate,
+		&plan.FollowUpDate,
 		&plan.CreatedAt,
 		&plan.UpdatedAt,
 	); err != nil {

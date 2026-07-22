@@ -45,6 +45,9 @@ func TestRepositorySyncsApplicationPlansForInterestedStrongMatches(t *testing.T)
 	if plans[0].NextAction == "" || len(plans[0].Checklist) == 0 {
 		t.Fatalf("expected plan guidance, got %#v", plans[0])
 	}
+	if plans[0].ResumeVersion == "" || plans[0].DraftNotes == "" {
+		t.Fatalf("expected resume and draft guidance, got %#v", plans[0])
+	}
 
 	tasks, err := repo.SyncAgentTasks(ctx, time.Date(2026, 7, 22, 10, 0, 0, 0, time.UTC))
 	if err != nil {
@@ -52,6 +55,49 @@ func TestRepositorySyncsApplicationPlansForInterestedStrongMatches(t *testing.T)
 	}
 	if !containsTaskKind(tasks, AgentTaskKindPrepareApplication) {
 		t.Fatalf("expected prepare application task, got %#v", tasks)
+	}
+}
+
+func TestRepositoryCreatesFollowUpTasksForAppliedPlans(t *testing.T) {
+	ctx := context.Background()
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	repo := NewRepository(conn)
+	job, err := repo.CreateJob(ctx, domain.Job{
+		Company:      "Tencent",
+		Title:        "Go Backend Engineer",
+		City:         "Shenzhen",
+		DiscoveredAt: time.Date(2026, 7, 22, 9, 0, 0, 0, time.UTC),
+		MatchScore:   88,
+		Status:       domain.StatusInterested,
+	})
+	if err != nil {
+		t.Fatalf("create job: %v", err)
+	}
+	plans, err := repo.SyncApplicationPlans(ctx, time.Date(2026, 7, 22, 10, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("sync plans: %v", err)
+	}
+	if _, err := repo.UpdateApplicationPlan(ctx, plans[0].ID, ApplicationPlanUpdate{
+		Status:       ApplicationPlanStatusApplied,
+		NextAction:   "Follow up with recruiter",
+		Checklist:    plans[0].Checklist,
+		FollowUpDate: "2026-07-23",
+	}); err != nil {
+		t.Fatalf("update plan: %v", err)
+	}
+	if err := repo.UpdateStatus(ctx, job.ID, domain.StatusApplied); err != nil {
+		t.Fatalf("mark applied: %v", err)
+	}
+
+	tasks, err := repo.SyncAgentTasks(ctx, time.Date(2026, 7, 23, 10, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("sync tasks: %v", err)
+	}
+	if !containsTaskKind(tasks, AgentTaskKindFollowUpApplication) {
+		t.Fatalf("expected follow-up task, got %#v", tasks)
 	}
 }
 

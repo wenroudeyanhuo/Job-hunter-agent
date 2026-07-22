@@ -97,6 +97,12 @@ func (h *Handlers) RunAgentCommand(c *gin.Context) {
 			return
 		}
 	}
+	if plan.SyncApplicationPlans {
+		if _, err := h.Repo.SyncApplicationPlans(c.Request.Context(), time.Now().UTC()); err != nil {
+			respondError(c, http.StatusInternalServerError, err)
+			return
+		}
+	}
 	if plan.SendFeishuReport {
 		webhookURL, err := h.effectiveFeishuWebhookURL(c.Request.Context())
 		if err != nil {
@@ -128,6 +134,16 @@ func (h *Handlers) RunAgentCommand(c *gin.Context) {
 
 func (h *Handlers) GetAgentChatStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, jobs.BuildAgentChatStatus(h.LLM))
+}
+
+func (h *Handlers) GetAutomationStatus(c *gin.Context) {
+	settings, err := h.Repo.GetSettings(c.Request.Context())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	webhookConfigured := strings.TrimSpace(settings.FeishuWebhookURL) != "" || strings.TrimSpace(h.FeishuWebhookURL) != ""
+	c.JSON(http.StatusOK, jobs.BuildAgentAutomationDiagnostics(settings, webhookConfigured, true, time.Now().UTC()))
 }
 
 func (h *Handlers) ListAgentChatMessages(c *gin.Context) {

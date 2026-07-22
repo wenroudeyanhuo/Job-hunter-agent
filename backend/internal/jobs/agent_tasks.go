@@ -18,11 +18,12 @@ const (
 	AgentTaskStatusSnoozed   = "snoozed"
 	AgentTaskStatusDone      = "done"
 
-	AgentTaskKindReviewStrongMatch  = "review_strong_match"
-	AgentTaskKindDecideManualJob    = "decide_manual_job"
-	AgentTaskKindInspectSource      = "inspect_source"
-	AgentTaskKindRunCrawl           = "run_crawl"
-	AgentTaskKindPrepareApplication = "prepare_application"
+	AgentTaskKindReviewStrongMatch   = "review_strong_match"
+	AgentTaskKindDecideManualJob     = "decide_manual_job"
+	AgentTaskKindInspectSource       = "inspect_source"
+	AgentTaskKindRunCrawl            = "run_crawl"
+	AgentTaskKindPrepareApplication  = "prepare_application"
+	AgentTaskKindFollowUpApplication = "follow_up_application"
 )
 
 type AgentTask struct {
@@ -262,6 +263,10 @@ func (r *Repository) buildDesiredAgentTasks(ctx context.Context, taskDate string
 	if err != nil {
 		return nil, err
 	}
+	appliedPlans, err := r.ListApplicationPlans(ctx, ApplicationPlanStatusApplied)
+	if err != nil {
+		return nil, err
+	}
 
 	tasks := []AgentTaskInput{}
 	for _, job := range jobList {
@@ -322,6 +327,22 @@ func (r *Repository) buildDesiredAgentTasks(ctx context.Context, taskDate string
 			SubjectID: plan.ID,
 			JobID:     plan.JobID,
 			Action:    "prepare_application",
+		})
+	}
+	for _, plan := range appliedPlans {
+		if plan.JobID == 0 || strings.TrimSpace(plan.FollowUpDate) == "" || plan.FollowUpDate > taskDate {
+			continue
+		}
+		tasks = append(tasks, AgentTaskInput{
+			TaskDate:  taskDate,
+			Kind:      AgentTaskKindFollowUpApplication,
+			Title:     "Follow up application",
+			Detail:    fallbackText(plan.NextAction, "Follow up on submitted application"),
+			Priority:  plan.Priority,
+			Count:     1,
+			SubjectID: plan.ID,
+			JobID:     plan.JobID,
+			Action:    "follow_up_application",
 		})
 	}
 	if len(runs) == 0 {

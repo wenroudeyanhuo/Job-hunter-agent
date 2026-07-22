@@ -140,7 +140,10 @@ CREATE TABLE IF NOT EXISTS application_plans (
     next_action TEXT NOT NULL DEFAULT '',
     checklist TEXT NOT NULL DEFAULT '[]',
     blocker_notes TEXT NOT NULL DEFAULT '',
+    resume_version TEXT NOT NULL DEFAULT '',
+    draft_notes TEXT NOT NULL DEFAULT '',
     target_apply_date TEXT NOT NULL DEFAULT '',
+    follow_up_date TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(job_id) REFERENCES jobs(id)

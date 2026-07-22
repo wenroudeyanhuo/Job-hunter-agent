@@ -20,6 +20,22 @@ type AgentAutomationState struct {
 	StaleTasks               []AgentStaleTask `json:"stale_tasks"`
 }
 
+type AgentAutomationDiagnostics struct {
+	GeneratedAt             time.Time  `json:"generated_at"`
+	SchedulerExpected       bool       `json:"scheduler_expected"`
+	WebhookConfigured       bool       `json:"webhook_configured"`
+	DutyReportEnabled       bool       `json:"duty_report_enabled"`
+	DutyReportTime          string     `json:"duty_report_time"`
+	TimeZone                string     `json:"time_zone"`
+	NextDutyReportAt        string     `json:"next_duty_report_at"`
+	LastDutyReportSentAt    *time.Time `json:"last_duty_report_sent_at,omitempty"`
+	SourceDiscoveryEnabled  bool       `json:"source_discovery_enabled"`
+	NextSourceDiscoveryAt   string     `json:"next_source_discovery_at"`
+	LastSourceDiscoveryAt   *time.Time `json:"last_source_discovery_at,omitempty"`
+	ReadyForAutomaticReport bool       `json:"ready_for_automatic_report"`
+	Reason                  string     `json:"reason"`
+}
+
 type AgentStaleTask struct {
 	ID       int64  `json:"id"`
 	Title    string `json:"title"`
@@ -64,6 +80,37 @@ func BuildAgentAutomationState(settings Settings, tasks []AgentTask, now time.Ti
 	}
 	state.StaleTaskCount = len(state.StaleTasks)
 	return state
+}
+
+func BuildAgentAutomationDiagnostics(settings Settings, webhookConfigured bool, schedulerExpected bool, now time.Time) AgentAutomationDiagnostics {
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	settings = normalizeSettings(settings)
+	ready := schedulerExpected && webhookConfigured && settings.AutoDutyReportEnabled
+	reason := "Automatic duty report is ready."
+	if !schedulerExpected {
+		reason = "Backend scheduler is disabled or not expected to run."
+	} else if !webhookConfigured {
+		reason = "Feishu webhook is not configured."
+	} else if !settings.AutoDutyReportEnabled {
+		reason = "Automatic duty report is disabled in Settings."
+	}
+	return AgentAutomationDiagnostics{
+		GeneratedAt:             now.UTC(),
+		SchedulerExpected:       schedulerExpected,
+		WebhookConfigured:       webhookConfigured,
+		DutyReportEnabled:       settings.AutoDutyReportEnabled,
+		DutyReportTime:          settings.DutyReportTime,
+		TimeZone:                settings.TimeZone,
+		NextDutyReportAt:        nextDutyReportAt(settings, now),
+		LastDutyReportSentAt:    settings.LastDutyReportSentAt,
+		SourceDiscoveryEnabled:  settings.AutoSourceDiscoveryEnabled,
+		NextSourceDiscoveryAt:   nextSourceDiscoveryDueAt(settings, now),
+		LastSourceDiscoveryAt:   settings.LastSourceDiscoveryAt,
+		ReadyForAutomaticReport: ready,
+		Reason:                  reason,
+	}
 }
 
 func ShouldSendDutyReport(settings Settings, now time.Time) bool {

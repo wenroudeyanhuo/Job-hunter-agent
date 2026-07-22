@@ -3,6 +3,7 @@ import {
   acceptSourceCandidate,
   cleanupLandingPages,
   createSource,
+  getAutomationStatus,
   getAgentChatStatus,
   getAgentBriefing,
   getAgentDutyReport,
@@ -47,7 +48,7 @@ import {
   rejectSourceCandidate,
 } from "./api";
 import { DigitalEmployee3D } from "./DigitalEmployee3D";
-import type { AgentBriefing, AgentChatMessage, AgentChatStatus, AgentCommandResult, AgentDutyReport, AgentEvent, AgentReview, AgentReviewHistory, AgentState, AgentTask, ApplicationPlan, CandidateProfile, Company, Job, JobDetail, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source, SourceCandidate } from "./types";
+import type { AgentAutomationDiagnostics, AgentBriefing, AgentChatMessage, AgentChatStatus, AgentCommandResult, AgentDutyReport, AgentEvent, AgentReview, AgentReviewHistory, AgentState, AgentTask, ApplicationPlan, CandidateProfile, Company, Job, JobDetail, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source, SourceCandidate } from "./types";
 
 const statusLabels: Record<JobStatus | "all", string> = {
   all: "All",
@@ -183,8 +184,10 @@ export default function App() {
   const [agentEvents, setAgentEvents] = useState<AgentEvent[]>([]);
   const [agentTasks, setAgentTasks] = useState<AgentTask[]>([]);
   const [applicationPlans, setApplicationPlans] = useState<ApplicationPlan[]>([]);
+  const [automationStatus, setAutomationStatus] = useState<AgentAutomationDiagnostics | null>(null);
   const [chatStatus, setChatStatus] = useState<AgentChatStatus | null>(null);
   const [chatMessages, setChatMessages] = useState<AgentChatMessage[]>([]);
+  const [chatActions, setChatActions] = useState<AgentCommandResult["actions"]>([]);
   const [chatText, setChatText] = useState("");
   const [chatOpen, setChatOpen] = useState(true);
   const [chatSending, setChatSending] = useState(false);
@@ -287,8 +290,13 @@ export default function App() {
     setApplicationPlans(data);
   }
 
+  async function refreshAutomationStatus() {
+    const data = await getAutomationStatus();
+    setAutomationStatus(data);
+  }
+
   useEffect(() => {
-    Promise.all([refresh(), refreshSources(), refreshSourceCandidates(), refreshCompanies(), refreshRuns(), refreshSettings(), refreshProfile(), refreshBriefing(), refreshAgentState(), refreshDutyReport(), refreshAgentReview(), refreshAgentReviewHistory(), refreshAgentEvents(), refreshTasks(), refreshApplicationPlans(), refreshChat()])
+    Promise.all([refresh(), refreshSources(), refreshSourceCandidates(), refreshCompanies(), refreshRuns(), refreshSettings(), refreshProfile(), refreshBriefing(), refreshAgentState(), refreshDutyReport(), refreshAgentReview(), refreshAgentReviewHistory(), refreshAgentEvents(), refreshTasks(), refreshApplicationPlans(), refreshAutomationStatus(), refreshChat()])
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
@@ -413,6 +421,15 @@ export default function App() {
         return;
       case "refresh_tasks":
         await handleRefreshAgentTasks();
+        return;
+      case "sync_application_plans":
+      case "prepare_application":
+        setActiveView("applications");
+        await handleSyncApplicationPlans();
+        return;
+      case "follow_up_application":
+        setActiveView("applications");
+        setNotice("Opened application follow-up workspace.");
         return;
       case "discover_sources":
         setActiveView("companies");
@@ -725,6 +742,7 @@ export default function App() {
       await refreshAgentReviewHistory();
       await refreshTasks();
       await refreshAgentState();
+      await refreshAutomationStatus();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save settings");
     } finally {
@@ -772,6 +790,7 @@ export default function App() {
       await sendFeishuTest();
       setNotice("Feishu test notification sent.");
       await refreshSettings();
+      await refreshAutomationStatus();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not send Feishu test notification");
     } finally {
@@ -790,6 +809,7 @@ export default function App() {
       await refreshDutyReport();
       await refreshAgentReview();
       await refreshAgentReviewHistory();
+      await refreshAutomationStatus();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not send Feishu duty report");
     } finally {
@@ -810,6 +830,7 @@ export default function App() {
       await refreshAgentReviewHistory();
       await refreshAgentEvents();
       await refreshAgentState();
+      await refreshAutomationStatus();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not run automatic duty report");
     } finally {
@@ -898,9 +919,10 @@ export default function App() {
     await refreshTasks();
     await refreshDutyReport();
     await refreshAgentReview();
-      await refreshAgentReviewHistory();
+    await refreshAgentReviewHistory();
     await refreshAgentEvents();
     await refreshAgentState();
+    await refreshAutomationStatus();
   }
 
   async function handleRunAgentCommand(event: React.FormEvent<HTMLFormElement>) {
@@ -930,6 +952,7 @@ export default function App() {
       await refreshAgentEvents();
       await refreshTasks();
       await refreshAgentState();
+      await refreshAutomationStatus();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not run command");
     } finally {
@@ -952,10 +975,12 @@ export default function App() {
     };
     setChatMessages((current) => [...current, optimistic]);
     setChatText("");
+    setChatActions([]);
     setChatSending(true);
     setError("");
     try {
-      await runAgentChat(value, activeView);
+      const response = await runAgentChat(value, activeView);
+      setChatActions(response.reply.actions || []);
       await refreshChat();
       await refreshAgentEvents();
     } catch (err) {
@@ -1020,7 +1045,8 @@ export default function App() {
     await refreshAgentReviewHistory();
     await refreshAgentEvents();
     await refreshTasks();
-    await refreshAgentState();
+      await refreshAgentState();
+      await refreshAutomationStatus();
   }
 
   return (
@@ -1381,6 +1407,22 @@ export default function App() {
           <h2>Settings</h2>
           <span>{settings.feishu_configured ? "Feishu ready" : "Feishu not configured"}</span>
         </div>
+        {automationStatus && (
+          <div className={automationStatus.ready_for_automatic_report ? "automation-diagnostic ready" : "automation-diagnostic"}>
+            <div>
+              <strong>{automationStatus.ready_for_automatic_report ? "Automatic report ready" : "Automatic report needs setup"}</strong>
+              <span>{automationStatus.reason}</span>
+            </div>
+            <div className="automation-diagnostic-grid">
+              <span>Scheduler {automationStatus.scheduler_expected ? "expected" : "not expected"}</span>
+              <span>Webhook {automationStatus.webhook_configured ? "configured" : "missing"}</span>
+              <span>Duty report {automationStatus.duty_report_enabled ? "enabled" : "disabled"}</span>
+              <span>{automationStatus.time_zone} / {automationStatus.duty_report_time}</span>
+              <span>Next {formatDateTime(automationStatus.next_duty_report_at)}</span>
+              <span>{automationStatus.last_duty_report_sent_at ? `Last ${formatDateTime(automationStatus.last_duty_report_sent_at)}` : "No automatic report sent yet"}</span>
+            </div>
+          </div>
+        )}
         <form className="settings-grid" onSubmit={handleSaveSettings}>
           <label>
             Target cities
@@ -1542,6 +1584,8 @@ export default function App() {
         onToggle={() => setChatOpen((current) => !current)}
         onTextChange={setChatText}
         onSubmit={handleSendChat}
+        actions={chatActions}
+        onAction={handleAgentAction}
       />
     </main>
   );
@@ -1654,9 +1698,12 @@ function ApplicationWorkspace({
                 <div className="source-meta">
                   <span>{plan.status}</span>
                   <span>{plan.target_apply_date || "No target date"}</span>
+                  <span>follow {plan.follow_up_date || "not set"}</span>
+                  <span>resume {plan.resume_version || "default"}</span>
                   {job?.city && <span>{job.city}</span>}
                 </div>
                 <p>{plan.next_action || "No next action yet."}</p>
+                {plan.draft_notes && <p className="application-draft">{plan.draft_notes}</p>}
                 <div className="application-checklist">
                   {plan.checklist.slice(0, 5).map((item) => (
                     <span key={item}>{item}</span>
@@ -2385,6 +2432,8 @@ function GlobalEmployeeChat({
   onToggle,
   onTextChange,
   onSubmit,
+  actions,
+  onAction,
 }: {
   state: AgentState | null;
   status: AgentChatStatus | null;
@@ -2396,6 +2445,8 @@ function GlobalEmployeeChat({
   onToggle: () => void;
   onTextChange: (value: string) => void;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void | Promise<void>;
+  actions: AgentCommandResult["actions"];
+  onAction: (action: string) => void | Promise<void>;
 }) {
   const modeLabel = status?.configured ? `Model: ${status.model}` : "Local rules";
   return (
@@ -2428,6 +2479,15 @@ function GlobalEmployeeChat({
               <div className="chat-empty">
                 <strong>I am here.</strong>
                 <span>Ask me what to apply for today, why a role fits, or tell me to refresh tasks.</span>
+              </div>
+            )}
+            {actions.length > 0 && (
+              <div className="chat-actions">
+                {actions.map((action) => (
+                  <button type="button" key={`${action.type}-${action.target}`} onClick={() => onAction(action.type)}>
+                    {formatActionLabel(action.type)}
+                  </button>
+                ))}
               </div>
             )}
           </div>
@@ -2595,6 +2655,24 @@ function formatTaskStatus(status: string) {
     done: "Done",
   };
   return labels[status] || status;
+}
+
+function formatActionLabel(action: string) {
+  const labels: Record<string, string> = {
+    add_recommended_and_crawl: "Add sources and crawl",
+    run_crawl: "Run crawl",
+    review_manual_check: "Review manual jobs",
+    review_low_confidence: "Review low confidence",
+    cleanup_landing_pages: "Clean landing pages",
+    refresh_tasks: "Refresh tasks",
+    discover_sources: "Discover sources",
+    review_strong_matches: "Review strong matches",
+    inspect_failed_sources: "Inspect sources",
+    sync_application_plans: "Sync application plans",
+    prepare_application: "Open applications",
+    follow_up_application: "Follow up applications",
+  };
+  return labels[action] || action.replace(/_/g, " ");
 }
 
 function formatFitVerdict(verdict: string) {

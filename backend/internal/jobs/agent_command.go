@@ -1,8 +1,6 @@
 package jobs
 
-import (
-	"strings"
-)
+import "strings"
 
 type AgentCommandResult struct {
 	Input   string               `json:"input"`
@@ -19,12 +17,13 @@ type AgentCommandAction struct {
 }
 
 type AgentCommandPlan struct {
-	Result           AgentCommandResult
-	TargetCities     []string
-	TargetDirections []string
-	RefreshTasks     bool
-	RunCrawl         bool
-	SendFeishuReport bool
+	Result               AgentCommandResult
+	TargetCities         []string
+	TargetDirections     []string
+	RefreshTasks         bool
+	RunCrawl             bool
+	SendFeishuReport     bool
+	SyncApplicationPlans bool
 }
 
 func PlanAgentCommand(text string, current Settings) AgentCommandPlan {
@@ -60,6 +59,14 @@ func PlanAgentCommand(text string, current Settings) AgentCommandPlan {
 			Detail: "Rebuilt today's task queue.",
 		})
 	}
+	plan.SyncApplicationPlans = containsAny(lower, []string{"同步投递", "投递计划", "准备投递", "申请计划", "application plan", "applications"})
+	if plan.SyncApplicationPlans {
+		plan.Result.Actions = append(plan.Result.Actions, AgentCommandAction{
+			Type:   "sync_application_plans",
+			Target: "applications",
+			Detail: "Synced human-approved application preparation plans.",
+		})
+	}
 	plan.RunCrawl = containsAny(lower, []string{"采集", "抓取", "crawl", "run crawl"})
 	if plan.RunCrawl {
 		plan.Result.Actions = append(plan.Result.Actions, AgentCommandAction{
@@ -79,7 +86,7 @@ func PlanAgentCommand(text string, current Settings) AgentCommandPlan {
 	if len(plan.Result.Actions) == 0 {
 		plan.Result.Intent = "needs_clarification"
 		plan.Result.Summary = "I could not map this command to a supported action yet."
-		plan.Result.Needs = append(plan.Result.Needs, "Try commands like: only watch Shenzhen Go backend, refresh tasks, run crawl, or send Feishu report.")
+		plan.Result.Needs = append(plan.Result.Needs, "Try commands like: only watch Shenzhen Go backend, refresh tasks, sync application plans, run crawl, or send Feishu report.")
 		return plan
 	}
 	plan.Result.Summary = "Command accepted. I applied the supported workflow changes."
@@ -108,7 +115,7 @@ func commandDirections(lower string, fallback []string) []string {
 		"java":           {"java"},
 		"go":             {"go", "golang"},
 		"algorithm":      {"算法", "algorithm"},
-		"ai_application": {"ai应用", "ai 应用", "ai_application", "llm"},
+		"ai_application": {"ai应用", "ai 应用", "ai_application", "llm", "大模型"},
 	}
 	out := []string{}
 	for _, direction := range candidates {

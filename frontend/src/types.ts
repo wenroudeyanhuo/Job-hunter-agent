@@ -67,7 +67,10 @@ export interface ApplicationPlan {
   next_action: string;
   checklist: string[];
   blocker_notes: string;
+  resume_version: string;
+  draft_notes: string;
   target_apply_date: string;
+  follow_up_date: string;
   created_at: string;
   updated_at: string;
 }
@@ -274,6 +277,22 @@ export interface AgentAutomationState {
   task_sla_hours: number;
   stale_task_count: number;
   stale_tasks: AgentStaleTask[];
+}
+
+export interface AgentAutomationDiagnostics {
+  generated_at: string;
+  scheduler_expected: boolean;
+  webhook_configured: boolean;
+  duty_report_enabled: boolean;
+  duty_report_time: string;
+  time_zone: string;
+  next_duty_report_at: string;
+  last_duty_report_sent_at?: string;
+  source_discovery_enabled: boolean;
+  next_source_discovery_at: string;
+  last_source_discovery_at?: string;
+  ready_for_automatic_report: boolean;
+  reason: string;
 }
 
 export interface AgentStaleTask {
