@@ -97,6 +97,12 @@ func (h *Handlers) RunAgentCommand(c *gin.Context) {
 			return
 		}
 	}
+	if plan.SyncApplicationPlans {
+		if _, err := h.Repo.SyncApplicationPlans(c.Request.Context(), time.Now().UTC()); err != nil {
+			respondError(c, http.StatusInternalServerError, err)
+			return
+		}
+	}
 	if plan.SendFeishuReport {
 		webhookURL, err := h.effectiveFeishuWebhookURL(c.Request.Context())
 		if err != nil {
@@ -128,6 +134,51 @@ func (h *Handlers) RunAgentCommand(c *gin.Context) {
 
 func (h *Handlers) GetAgentChatStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, jobs.BuildAgentChatStatus(h.LLM))
+}
+
+func (h *Handlers) ListAgentActionRequests(c *gin.Context) {
+	requests, err := h.Repo.ListAgentActionRequests(c.Request.Context(), c.Query("status"))
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, requests)
+}
+
+func (h *Handlers) UpdateAgentActionRequest(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	var req struct {
+		Status string `json:"status"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "status is required"})
+		return
+	}
+	request, err := h.Repo.UpdateAgentActionRequestStatus(c.Request.Context(), id, req.Status)
+	if err != nil {
+		respondRepoError(c, err)
+		return
+	}
+	h.recordAgentEvent(c, jobs.AgentEventInput{
+		Type:    "agent_action_" + request.Status,
+		Title:   "Agent action " + request.Status,
+		Summary: request.ActionType + ": " + request.Detail,
+		Level:   "info",
+	})
+	c.JSON(http.StatusOK, request)
+}
+
+func (h *Handlers) GetAutomationStatus(c *gin.Context) {
+	settings, err := h.Repo.GetSettings(c.Request.Context())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	webhookConfigured := strings.TrimSpace(settings.FeishuWebhookURL) != "" || strings.TrimSpace(h.FeishuWebhookURL) != ""
+	c.JSON(http.StatusOK, jobs.BuildAgentAutomationDiagnostics(settings, webhookConfigured, true, time.Now().UTC()))
 }
 
 func (h *Handlers) ListAgentChatMessages(c *gin.Context) {
@@ -164,8 +215,12 @@ func (h *Handlers) RunAgentChat(c *gin.Context) {
 	reply := jobs.BuildLocalAgentChatReply(req.Message, context)
 	if jobs.BuildAgentChatStatus(h.LLM).Configured {
 		if modelReply, err := h.runModelChat(c.Request.Context(), req.Message, context); err == nil && strings.TrimSpace(modelReply) != "" {
-			reply.Content = modelReply
-			reply.Source = "model"
+			parsed := jobs.ParseModelActionReply(modelReply)
+			reply.Content = parsed.Content
+			reply.Source = parsed.Source
+			if len(parsed.Actions) > 0 {
+				reply.Actions = parsed.Actions
+			}
 		} else if err != nil {
 			reply.Content += "\n\n模型调用暂时失败，我先用本地规则继续工作：" + err.Error()
 			reply.Source = "local_fallback"
@@ -179,6 +234,12 @@ func (h *Handlers) RunAgentChat(c *gin.Context) {
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
+	}
+	if len(reply.Actions) > 0 {
+		if err := h.Repo.RecordAgentActionRequests(c.Request.Context(), reply.Source, reply.Actions); err != nil {
+			respondError(c, http.StatusInternalServerError, err)
+			return
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"message": message,
@@ -195,7 +256,7 @@ func (h *Handlers) buildAgentChatContext(ctx context.Context, activeView string)
 	if err != nil {
 		return jobs.AgentChatContext{}, err
 	}
-	tasks, err := h.Repo.ListAgentTasks(ctx, time.Now().UTC().Format("2006-01-02"))
+	tasks, err := h.Repo.ListAgentTasks(ctx, h.today(ctx))
 	if err != nil {
 		return jobs.AgentChatContext{}, err
 	}
@@ -234,7 +295,7 @@ func (h *Handlers) runModelChat(ctx context.Context, userMessage string, chatCon
 		"messages": []map[string]string{
 			{
 				"role": "system",
-				"content": fmt.Sprintf("You are Job Hunter Agent, a Chinese-speaking digital employee for autumn recruitment. Be concise, practical, and use the current local context. Current view: %s. Open tasks: %d. Strong matches: %d. Manual decisions: %d. Source issues: %d.",
+				"content": fmt.Sprintf("You are Job Hunter Agent, a Chinese-speaking digital employee for autumn recruitment. Be concise, practical, and use the current local context. Current view: %s. Open tasks: %d. Strong matches: %d. Manual decisions: %d. Source issues: %d. If suggesting an action, return JSON with content and actions. Allowed action types: run_crawl, refresh_tasks, sync_application_plans, send_feishu_report, discover_sources, review_strong_matches, review_manual_check. Never suggest direct resume submission or third-party login actions.",
 					chatContext.ActiveView, chatContext.OpenTasks, chatContext.StrongMatches, chatContext.ManualDecisions, chatContext.SourceIssues),
 			},
 			{"role": "user", "content": userMessage},
@@ -384,7 +445,7 @@ func (h *Handlers) buildAgentReview(ctx context.Context) (jobs.AgentReview, erro
 	if err != nil {
 		return jobs.AgentReview{}, err
 	}
-	tasks, err := h.Repo.ListAgentTasks(ctx, time.Now().UTC().Format("2006-01-02"))
+	tasks, err := h.Repo.ListAgentTasks(ctx, h.today(ctx))
 	if err != nil {
 		return jobs.AgentReview{}, err
 	}
@@ -404,7 +465,7 @@ func (h *Handlers) buildAgentState(ctx context.Context) (jobs.AgentState, error)
 	if err != nil {
 		return jobs.AgentState{}, err
 	}
-	tasks, err := h.Repo.ListAgentTasks(ctx, time.Now().UTC().Format("2006-01-02"))
+	tasks, err := h.Repo.ListAgentTasks(ctx, h.today(ctx))
 	if err != nil {
 		return jobs.AgentState{}, err
 	}
@@ -428,7 +489,7 @@ func (h *Handlers) ListAgentEvents(c *gin.Context) {
 }
 
 func (h *Handlers) ListAgentTasks(c *gin.Context) {
-	tasks, err := h.Repo.ListAgentTasks(c.Request.Context(), time.Now().UTC().Format("2006-01-02"))
+	tasks, err := h.Repo.ListAgentTasks(c.Request.Context(), h.today(c.Request.Context()))
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
@@ -451,7 +512,7 @@ func (h *Handlers) RefreshAgentTasks(c *gin.Context) {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
-	tasks, err = h.Repo.ListAgentTasks(c.Request.Context(), time.Now().UTC().Format("2006-01-02"))
+	tasks, err = h.Repo.ListAgentTasks(c.Request.Context(), h.today(c.Request.Context()))
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
@@ -495,6 +556,54 @@ func (h *Handlers) UpdateAgentTask(c *gin.Context) {
 		Level:   "info",
 	})
 	c.Status(http.StatusNoContent)
+}
+
+func (h *Handlers) ListApplicationPlans(c *gin.Context) {
+	plans, err := h.Repo.ListApplicationPlans(c.Request.Context(), c.Query("status"))
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, plans)
+}
+
+func (h *Handlers) SyncApplicationPlans(c *gin.Context) {
+	plans, err := h.Repo.SyncApplicationPlans(c.Request.Context(), time.Now().UTC())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	h.recordAgentEvent(c, jobs.AgentEventInput{
+		Type:    "application_plans_synced",
+		Title:   "Synced application plans",
+		Summary: "I prepared " + strconv.Itoa(len(plans)) + " application plans for interested strong matches.",
+		Level:   "success",
+	})
+	c.JSON(http.StatusOK, plans)
+}
+
+func (h *Handlers) UpdateApplicationPlan(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	var req jobs.ApplicationPlanUpdate
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid application plan payload"})
+		return
+	}
+	plan, err := h.Repo.UpdateApplicationPlan(c.Request.Context(), id, req)
+	if err != nil {
+		respondRepoError(c, err)
+		return
+	}
+	h.recordAgentEvent(c, jobs.AgentEventInput{
+		Type:    "application_plan_updated",
+		Title:   "Updated application plan",
+		Summary: "Application plan #" + strconv.FormatInt(plan.ID, 10) + " is now " + plan.Status + ".",
+		Level:   "info",
+	})
+	c.JSON(http.StatusOK, plan)
 }
 
 func (h *Handlers) ListJobs(c *gin.Context) {
@@ -569,7 +678,14 @@ func (h *Handlers) GetJobDetail(c *gin.Context) {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
-	c.JSON(http.StatusOK, jobs.BuildJobDetail(job, profile, decisions))
+	detail := jobs.BuildJobDetail(job, profile, decisions)
+	if plan, found, err := h.Repo.GetApplicationPlanByJobID(c.Request.Context(), id); err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	} else if found {
+		detail.ApplicationPlan = &plan
+	}
+	c.JSON(http.StatusOK, detail)
 }
 
 func (h *Handlers) ImportURL(c *gin.Context) {
@@ -808,6 +924,7 @@ func (h *Handlers) settingsResponse(settings jobs.Settings) gin.H {
 		"crawl_schedule":                  settings.CrawlSchedule,
 		"feishu_webhook_url":              webhookURL,
 		"feishu_configured":               webhookURL != "" || strings.TrimSpace(h.FeishuWebhookURL) != "",
+		"time_zone":                       settings.TimeZone,
 		"auto_duty_report_enabled":        settings.AutoDutyReportEnabled,
 		"auto_source_discovery_enabled":   settings.AutoSourceDiscoveryEnabled,
 		"source_discovery_interval_hours": settings.SourceDiscoveryIntervalHours,
@@ -817,6 +934,18 @@ func (h *Handlers) settingsResponse(settings jobs.Settings) gin.H {
 		"last_source_discovery_at":        settings.LastSourceDiscoveryAt,
 		"updated_at":                      settings.UpdatedAt,
 	}
+}
+
+func (h *Handlers) today(ctx context.Context) string {
+	settings, err := h.Repo.GetSettings(ctx)
+	if err != nil {
+		return time.Now().UTC().Format("2006-01-02")
+	}
+	loc, err := time.LoadLocation(settings.TimeZone)
+	if err != nil {
+		loc = time.UTC
+	}
+	return time.Now().In(loc).Format("2006-01-02")
 }
 
 func (h *Handlers) ListSources(c *gin.Context) {
@@ -868,6 +997,15 @@ func (h *Handlers) ListSourceCandidates(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, candidates)
+}
+
+func (h *Handlers) GetSourceOperations(c *gin.Context) {
+	summary, err := h.Repo.BuildSourceOperationsSummary(c.Request.Context())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, summary)
 }
 
 func (h *Handlers) AcceptSourceCandidate(c *gin.Context) {
@@ -1087,7 +1225,7 @@ func (h *Handlers) buildDutyReport(ctx context.Context) (jobs.AgentDutyReport, e
 		return jobs.AgentDutyReport{}, err
 	}
 	report := jobs.BuildAgentDutyReport(jobList, sources, runs)
-	tasks, err := h.Repo.ListAgentTasks(ctx, time.Now().UTC().Format("2006-01-02"))
+	tasks, err := h.Repo.ListAgentTasks(ctx, h.today(ctx))
 	if err != nil {
 		return jobs.AgentDutyReport{}, err
 	}

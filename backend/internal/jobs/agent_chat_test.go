@@ -49,3 +49,10 @@ func TestBuildLocalAgentChatReplyUsesContext(t *testing.T) {
 		t.Fatalf("expected suggested actions, got %#v", reply)
 	}
 }
+
+func TestBuildLocalAgentChatReplySuggestsApplicationPlanSync(t *testing.T) {
+	reply := BuildLocalAgentChatReply("帮我准备投递计划", AgentChatContext{})
+	if !containsCommandAction(reply.Actions, "sync_application_plans") {
+		t.Fatalf("expected sync application action, got %#v", reply.Actions)
+	}
+}

@@ -3,6 +3,7 @@ import {
   acceptSourceCandidate,
   cleanupLandingPages,
   createSource,
+  getAutomationStatus,
   getAgentChatStatus,
   getAgentBriefing,
   getAgentDutyReport,
@@ -12,9 +13,12 @@ import {
   getCandidateProfile,
   getJobDetail,
   getSettings,
+  getSourceOperations,
   importURL,
+  listAgentActionRequests,
   listAgentEvents,
   listAgentChatMessages,
+  listApplicationPlans,
   listAgentTasks,
   listCompanies,
   listJobs,
@@ -33,7 +37,10 @@ import {
   sendFeishuReport,
   sendFeishuTest,
   seedRecommendedSources,
+  syncApplicationPlans,
   updateAgentTaskStatus,
+  updateAgentActionRequest,
+  updateApplicationPlan,
   updateCandidateProfile,
   updateJobNotes,
   updateJobStatus,
@@ -44,7 +51,7 @@ import {
   rejectSourceCandidate,
 } from "./api";
 import { DigitalEmployee3D } from "./DigitalEmployee3D";
-import type { AgentBriefing, AgentChatMessage, AgentChatStatus, AgentCommandResult, AgentDutyReport, AgentEvent, AgentReview, AgentReviewHistory, AgentState, AgentTask, CandidateProfile, Company, Job, JobDetail, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source, SourceCandidate } from "./types";
+import type { AgentActionRequest, AgentAutomationDiagnostics, AgentBriefing, AgentChatMessage, AgentChatStatus, AgentCommandResult, AgentDutyReport, AgentEvent, AgentReview, AgentReviewHistory, AgentState, AgentTask, ApplicationPlan, CandidateProfile, Company, Job, JobDetail, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source, SourceCandidate, SourceOperationsSummary } from "./types";
 
 const statusLabels: Record<JobStatus | "all", string> = {
   all: "All",
@@ -63,11 +70,12 @@ const sourceHealthLabels: Record<string, string> = {
   unknown: "Unknown",
 };
 
-type AppView = "dashboard" | "opportunities" | "profile" | "companies" | "runs" | "settings";
+type AppView = "dashboard" | "opportunities" | "applications" | "profile" | "companies" | "runs" | "settings";
 
 const appViews: Array<{ id: AppView; label: string }> = [
   { id: "dashboard", label: "Dashboard" },
   { id: "opportunities", label: "Opportunities" },
+  { id: "applications", label: "Applications" },
   { id: "profile", label: "Profile" },
   { id: "companies", label: "Companies" },
   { id: "runs", label: "Runs" },
@@ -112,6 +120,7 @@ const defaultSettings: Settings = {
   crawl_schedule: ["09:00", "12:00", "18:00"],
   feishu_webhook_url: "",
   feishu_configured: false,
+  time_zone: "Asia/Shanghai",
   auto_duty_report_enabled: false,
   auto_source_discovery_enabled: true,
   source_discovery_interval_hours: 24,
@@ -147,6 +156,7 @@ export default function App() {
   const [importURLValue, setImportURLValue] = useState("");
   const [sources, setSources] = useState<Source[]>([]);
   const [sourceCandidates, setSourceCandidates] = useState<SourceCandidate[]>([]);
+  const [sourceOperations, setSourceOperations] = useState<SourceOperationsSummary | null>(null);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [runs, setRuns] = useState<JobRun[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
@@ -176,15 +186,20 @@ export default function App() {
   const [agentReview, setAgentReview] = useState<AgentReview | null>(null);
   const [agentReviewHistory, setAgentReviewHistory] = useState<AgentReviewHistory | null>(null);
   const [agentEvents, setAgentEvents] = useState<AgentEvent[]>([]);
+  const [agentActionRequests, setAgentActionRequests] = useState<AgentActionRequest[]>([]);
   const [agentTasks, setAgentTasks] = useState<AgentTask[]>([]);
+  const [applicationPlans, setApplicationPlans] = useState<ApplicationPlan[]>([]);
+  const [automationStatus, setAutomationStatus] = useState<AgentAutomationDiagnostics | null>(null);
   const [chatStatus, setChatStatus] = useState<AgentChatStatus | null>(null);
   const [chatMessages, setChatMessages] = useState<AgentChatMessage[]>([]);
+  const [chatActions, setChatActions] = useState<AgentCommandResult["actions"]>([]);
   const [chatText, setChatText] = useState("");
   const [chatOpen, setChatOpen] = useState(true);
   const [chatSending, setChatSending] = useState(false);
   const [selectedJobDetail, setSelectedJobDetail] = useState<JobDetail | null>(null);
   const [loadingJobDetail, setLoadingJobDetail] = useState(false);
   const [refreshingTasks, setRefreshingTasks] = useState(false);
+  const [syncingApplications, setSyncingApplications] = useState(false);
   const [commandText, setCommandText] = useState("");
   const [commandResult, setCommandResult] = useState<AgentCommandResult | null>(null);
   const [runningCommand, setRunningCommand] = useState(false);
@@ -204,6 +219,11 @@ export default function App() {
   async function refreshSourceCandidates() {
     const data = await listSourceCandidates();
     setSourceCandidates(data);
+  }
+
+  async function refreshSourceOperations() {
+    const data = await getSourceOperations();
+    setSourceOperations(data);
   }
 
   async function refreshCompanies() {
@@ -264,6 +284,11 @@ export default function App() {
     setAgentEvents(data);
   }
 
+  async function refreshAgentActionRequests() {
+    const data = await listAgentActionRequests("pending");
+    setAgentActionRequests(data);
+  }
+
   async function refreshChat() {
     const [status, messages] = await Promise.all([getAgentChatStatus(), listAgentChatMessages()]);
     setChatStatus(status);
@@ -275,8 +300,18 @@ export default function App() {
     setAgentTasks(data);
   }
 
+  async function refreshApplicationPlans() {
+    const data = await listApplicationPlans();
+    setApplicationPlans(data);
+  }
+
+  async function refreshAutomationStatus() {
+    const data = await getAutomationStatus();
+    setAutomationStatus(data);
+  }
+
   useEffect(() => {
-    Promise.all([refresh(), refreshSources(), refreshSourceCandidates(), refreshCompanies(), refreshRuns(), refreshSettings(), refreshProfile(), refreshBriefing(), refreshAgentState(), refreshDutyReport(), refreshAgentReview(), refreshAgentReviewHistory(), refreshAgentEvents(), refreshTasks(), refreshChat()])
+    Promise.all([refresh(), refreshSources(), refreshSourceCandidates(), refreshSourceOperations(), refreshCompanies(), refreshRuns(), refreshSettings(), refreshProfile(), refreshBriefing(), refreshAgentState(), refreshDutyReport(), refreshAgentReview(), refreshAgentReviewHistory(), refreshAgentEvents(), refreshAgentActionRequests(), refreshTasks(), refreshApplicationPlans(), refreshAutomationStatus(), refreshChat()])
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
@@ -402,6 +437,15 @@ export default function App() {
       case "refresh_tasks":
         await handleRefreshAgentTasks();
         return;
+      case "sync_application_plans":
+      case "prepare_application":
+        setActiveView("applications");
+        await handleSyncApplicationPlans();
+        return;
+      case "follow_up_application":
+        setActiveView("applications");
+        setNotice("Opened application follow-up workspace.");
+        return;
       case "discover_sources":
         setActiveView("companies");
         await handleRunSourceDiscovery();
@@ -525,6 +569,7 @@ export default function App() {
       setSourceURLValue("");
       setNotice("Source added. It will be used by the next crawl run.");
       await refreshSources();
+      await refreshSourceOperations();
       await refreshCompanies();
       await refreshBriefing();
       await refreshDutyReport();
@@ -544,7 +589,8 @@ export default function App() {
     await refreshBriefing();
     await refreshDutyReport();
     await refreshAgentReview();
-      await refreshAgentReviewHistory();
+    await refreshAgentReviewHistory();
+    await refreshSourceOperations();
     await refreshTasks();
     await refreshAgentState();
   }
@@ -556,9 +602,11 @@ export default function App() {
     await refreshBriefing();
     await refreshDutyReport();
     await refreshAgentReview();
-      await refreshAgentReviewHistory();
+    await refreshAgentReviewHistory();
+    await refreshSourceOperations();
     await refreshAgentEvents();
     await refreshTasks();
+    await refreshApplicationPlans();
     await refreshAgentState();
   }
 
@@ -574,6 +622,7 @@ export default function App() {
           : "Recommended sources were already added.",
       );
       await refreshSources();
+      await refreshSourceOperations();
       await refreshCompanies();
       await refreshBriefing();
       await refreshDutyReport();
@@ -597,6 +646,7 @@ export default function App() {
       const result = await runSourceDiscovery(settings.target_cities, settings.target_directions);
       setNotice(`Source discovery finished. Proposed ${result.created} new candidates and skipped ${result.duplicated} duplicates.`);
       await refreshSourceCandidates();
+      await refreshSourceOperations();
       await refreshAgentEvents();
       await refreshAgentReview();
       await refreshAgentReviewHistory();
@@ -615,6 +665,7 @@ export default function App() {
       setNotice(`${candidate.name} accepted into active sources.`);
       await refreshSourceCandidates();
       await refreshSources();
+      await refreshSourceOperations();
       await refreshCompanies();
       await refreshBriefing();
       await refreshDutyReport();
@@ -633,6 +684,7 @@ export default function App() {
       await rejectSourceCandidate(candidate.id);
       setNotice(`${candidate.name} rejected.`);
       await refreshSourceCandidates();
+      await refreshSourceOperations();
       await refreshAgentEvents();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not reject source candidate");
@@ -647,6 +699,7 @@ export default function App() {
       const validated = await validateSourceCandidate(candidate.id);
       setNotice(`${candidate.name} checked: ${validated.validation_status}.`);
       await refreshSourceCandidates();
+      await refreshSourceOperations();
       await refreshAgentEvents();
       await refreshAgentState();
     } catch (err) {
@@ -696,6 +749,7 @@ export default function App() {
         excluded_keywords: parseSettingsList(settingsDraft.excluded_keywords),
         crawl_schedule: parseSettingsList(settingsDraft.crawl_schedule),
         feishu_webhook_url: settingsDraft.feishu_webhook_url.trim(),
+        time_zone: settingsDraft.time_zone.trim() || defaultSettings.time_zone,
         auto_duty_report_enabled: settingsDraft.auto_duty_report_enabled,
         auto_source_discovery_enabled: settingsDraft.auto_source_discovery_enabled,
         source_discovery_interval_hours: Number(settingsDraft.source_discovery_interval_hours) || defaultSettings.source_discovery_interval_hours,
@@ -711,6 +765,7 @@ export default function App() {
       await refreshAgentReviewHistory();
       await refreshTasks();
       await refreshAgentState();
+      await refreshAutomationStatus();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save settings");
     } finally {
@@ -758,6 +813,7 @@ export default function App() {
       await sendFeishuTest();
       setNotice("Feishu test notification sent.");
       await refreshSettings();
+      await refreshAutomationStatus();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not send Feishu test notification");
     } finally {
@@ -776,6 +832,7 @@ export default function App() {
       await refreshDutyReport();
       await refreshAgentReview();
       await refreshAgentReviewHistory();
+      await refreshAutomationStatus();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not send Feishu duty report");
     } finally {
@@ -796,6 +853,7 @@ export default function App() {
       await refreshAgentReviewHistory();
       await refreshAgentEvents();
       await refreshAgentState();
+      await refreshAutomationStatus();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not run automatic duty report");
     } finally {
@@ -811,6 +869,7 @@ export default function App() {
       const tasks = await refreshAgentTasks();
       setAgentTasks(tasks);
       setNotice("Daily tasks refreshed from the current recruiting pipeline.");
+      await refreshApplicationPlans();
       await refreshDutyReport();
       await refreshAgentReview();
       await refreshAgentReviewHistory();
@@ -820,6 +879,59 @@ export default function App() {
       setError(err instanceof Error ? err.message : "Could not refresh daily tasks");
     } finally {
       setRefreshingTasks(false);
+    }
+  }
+
+  async function handleSyncApplicationPlans() {
+    setSyncingApplications(true);
+    setError("");
+    setNotice("");
+    try {
+      const plans = await syncApplicationPlans();
+      setApplicationPlans(plans);
+      await refreshTasks();
+      await refreshDutyReport();
+      await refreshAgentReview();
+      await refreshAgentReviewHistory();
+      await refreshAgentEvents();
+      await refreshAgentState();
+      setNotice(`Application workspace synced with ${plans.length} plans.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not sync application plans");
+    } finally {
+      setSyncingApplications(false);
+    }
+  }
+
+  async function handleApplicationPlanStatus(plan: ApplicationPlan, status: ApplicationPlan["status"]) {
+    setError("");
+    setNotice("");
+    try {
+      await updateApplicationPlan(plan.id, { ...plan, status });
+      await refreshApplicationPlans();
+      await refreshTasks();
+      await refreshDutyReport();
+      await refreshAgentEvents();
+      await refreshAgentState();
+      setNotice(`Application plan updated to ${status}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update application plan");
+    }
+  }
+
+  async function handleApplicationPlanUpdate(plan: ApplicationPlan, update: Partial<ApplicationPlan>) {
+    setError("");
+    setNotice("");
+    try {
+      await updateApplicationPlan(plan.id, { ...plan, ...update });
+      await refreshApplicationPlans();
+      await refreshTasks();
+      await refreshDutyReport();
+      await refreshAgentEvents();
+      await refreshAgentState();
+      setNotice("Application plan metadata saved.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update application plan");
     }
   }
 
@@ -846,9 +958,10 @@ export default function App() {
     await refreshTasks();
     await refreshDutyReport();
     await refreshAgentReview();
-      await refreshAgentReviewHistory();
+    await refreshAgentReviewHistory();
     await refreshAgentEvents();
     await refreshAgentState();
+    await refreshAutomationStatus();
   }
 
   async function handleRunAgentCommand(event: React.FormEvent<HTMLFormElement>) {
@@ -878,6 +991,7 @@ export default function App() {
       await refreshAgentEvents();
       await refreshTasks();
       await refreshAgentState();
+      await refreshAutomationStatus();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not run command");
     } finally {
@@ -900,11 +1014,14 @@ export default function App() {
     };
     setChatMessages((current) => [...current, optimistic]);
     setChatText("");
+    setChatActions([]);
     setChatSending(true);
     setError("");
     try {
-      await runAgentChat(value, activeView);
+      const response = await runAgentChat(value, activeView);
+      setChatActions(response.reply.actions || []);
       await refreshChat();
+      await refreshAgentActionRequests();
       await refreshAgentEvents();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not talk to the agent");
@@ -956,6 +1073,33 @@ export default function App() {
     }
   }
 
+  async function handleApproveActionRequest(request: AgentActionRequest) {
+    setError("");
+    setNotice("");
+    try {
+      await handleAgentAction(request.action_type);
+      await updateAgentActionRequest(request.id, "approved");
+      await refreshAgentActionRequests();
+      await refreshAgentEvents();
+      setNotice(`Agent action approved: ${formatActionLabel(request.action_type)}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not approve agent action");
+    }
+  }
+
+  async function handleDismissActionRequest(request: AgentActionRequest) {
+    setError("");
+    setNotice("");
+    try {
+      await updateAgentActionRequest(request.id, "dismissed");
+      await refreshAgentActionRequests();
+      await refreshAgentEvents();
+      setNotice(`Agent action dismissed: ${formatActionLabel(request.action_type)}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not dismiss agent action");
+    }
+  }
+
   async function setJobStatus(id: number, next: JobStatus) {
     await updateJobStatus(id, next);
     setJobs((current) => current.map((job) => (job.id === id ? { ...job, status: next } : job)));
@@ -968,7 +1112,8 @@ export default function App() {
     await refreshAgentReviewHistory();
     await refreshAgentEvents();
     await refreshTasks();
-    await refreshAgentState();
+      await refreshAgentState();
+      await refreshAutomationStatus();
   }
 
   return (
@@ -1005,6 +1150,13 @@ export default function App() {
             </section>
 
             <ProductReadinessPanel items={readinessItems} busy={running || seedingSources || recommendedRunning} />
+
+            <AgentActionRequestsPanel
+              requests={agentActionRequests}
+              onApprove={handleApproveActionRequest}
+              onDismiss={handleDismissActionRequest}
+              busy={running || recommendedRunning}
+            />
 
             {agentReview && (
               <AgentReviewPanel
@@ -1201,6 +1353,18 @@ export default function App() {
         </>
       )}
 
+      {activeView === "applications" && (
+        <ApplicationWorkspace
+          plans={applicationPlans}
+          jobs={jobs}
+          syncing={syncingApplications}
+          onSync={handleSyncApplicationPlans}
+          onStatus={handleApplicationPlanStatus}
+          onUpdate={handleApplicationPlanUpdate}
+          onOpenJob={handleOpenJobDetail}
+        />
+      )}
+
       {activeView === "profile" && (
         <ProfilePanel
           profile={profile}
@@ -1217,6 +1381,7 @@ export default function App() {
           <h2>Companies</h2>
           <span>{enabledCompanies} enabled / {companies.length} total</span>
         </div>
+        {sourceOperations && <SourceOperationsPanel summary={sourceOperations} onAction={handleAgentAction} busy={discoveringSources || recommendedRunning} />}
         <div className="company-toolbar">
           <input
             value={companyQuery}
@@ -1318,6 +1483,22 @@ export default function App() {
           <h2>Settings</h2>
           <span>{settings.feishu_configured ? "Feishu ready" : "Feishu not configured"}</span>
         </div>
+        {automationStatus && (
+          <div className={automationStatus.ready_for_automatic_report ? "automation-diagnostic ready" : "automation-diagnostic"}>
+            <div>
+              <strong>{automationStatus.ready_for_automatic_report ? "Automatic report ready" : "Automatic report needs setup"}</strong>
+              <span>{automationStatus.reason}</span>
+            </div>
+            <div className="automation-diagnostic-grid">
+              <span>Scheduler {automationStatus.scheduler_expected ? "expected" : "not expected"}</span>
+              <span>Webhook {automationStatus.webhook_configured ? "configured" : "missing"}</span>
+              <span>Duty report {automationStatus.duty_report_enabled ? "enabled" : "disabled"}</span>
+              <span>{automationStatus.time_zone} / {automationStatus.duty_report_time}</span>
+              <span>Next {formatDateTime(automationStatus.next_duty_report_at)}</span>
+              <span>{automationStatus.last_duty_report_sent_at ? `Last ${formatDateTime(automationStatus.last_duty_report_sent_at)}` : "No automatic report sent yet"}</span>
+            </div>
+          </div>
+        )}
         <form className="settings-grid" onSubmit={handleSaveSettings}>
           <label>
             Target cities
@@ -1345,6 +1526,14 @@ export default function App() {
             <textarea
               value={settingsDraft.crawl_schedule}
               onChange={(event) => setSettingsDraft((current) => ({ ...current, crawl_schedule: event.target.value }))}
+            />
+          </label>
+          <label>
+            Time zone
+            <input
+              value={settingsDraft.time_zone}
+              onChange={(event) => setSettingsDraft((current) => ({ ...current, time_zone: event.target.value }))}
+              placeholder="Asia/Shanghai"
             />
           </label>
           <label className="settings-wide">
@@ -1471,6 +1660,8 @@ export default function App() {
         onToggle={() => setChatOpen((current) => !current)}
         onTextChange={setChatText}
         onSubmit={handleSendChat}
+        actions={chatActions}
+        onAction={handleAgentAction}
       />
     </main>
   );
@@ -1542,6 +1733,151 @@ function ProfilePanel({
   );
 }
 
+function ApplicationWorkspace({
+  plans,
+  jobs,
+  syncing,
+  onSync,
+  onStatus,
+  onUpdate,
+  onOpenJob,
+}: {
+  plans: ApplicationPlan[];
+  jobs: Job[];
+  syncing: boolean;
+  onSync: () => void | Promise<void>;
+  onStatus: (plan: ApplicationPlan, status: ApplicationPlan["status"]) => void | Promise<void>;
+  onUpdate: (plan: ApplicationPlan, update: Partial<ApplicationPlan>) => void | Promise<void>;
+  onOpenJob: (id: number) => void | Promise<void>;
+}) {
+  const jobsByID = new Map(jobs.map((job) => [job.id, job]));
+  const activePlans = plans.filter((plan) => plan.status !== "applied" && plan.status !== "paused");
+  const columns = [
+    { status: "prepare", label: "Prepare" },
+    { status: "ready", label: "Ready" },
+    { status: "applied", label: "Applied" },
+    { status: "paused", label: "Paused" },
+  ];
+  return (
+    <section className="applications-panel">
+      <div className="panel-header">
+        <div>
+          <h2>Application Workspace</h2>
+          <span>{activePlans.length} active / {plans.length} total</span>
+        </div>
+        <button type="button" onClick={onSync} disabled={syncing}>
+          {syncing ? "Syncing..." : "Sync Plans"}
+        </button>
+      </div>
+      <div className="application-board">
+        {columns.map((column) => {
+          const columnPlans = plans.filter((plan) => plan.status === column.status);
+          return (
+            <div className="application-column" key={column.status}>
+              <div className="application-column-header">
+                <strong>{column.label}</strong>
+                <span>{columnPlans.length}</span>
+              </div>
+              {columnPlans.map((plan) => (
+                <ApplicationPlanCard
+                  key={plan.id}
+                  plan={plan}
+                  job={jobsByID.get(plan.job_id)}
+                  onStatus={onStatus}
+                  onUpdate={onUpdate}
+                  onOpenJob={onOpenJob}
+                />
+              ))}
+            </div>
+          );
+        })}
+        {plans.length === 0 && <div className="empty-source">No application plans yet. Mark strong jobs as Interested, then sync plans.</div>}
+      </div>
+    </section>
+  );
+}
+
+function ApplicationPlanCard({
+  plan,
+  job,
+  onStatus,
+  onUpdate,
+  onOpenJob,
+}: {
+  plan: ApplicationPlan;
+  job?: Job;
+  onStatus: (plan: ApplicationPlan, status: ApplicationPlan["status"]) => void | Promise<void>;
+  onUpdate: (plan: ApplicationPlan, update: Partial<ApplicationPlan>) => void | Promise<void>;
+  onOpenJob: (id: number) => void | Promise<void>;
+}) {
+  const [resumeVersion, setResumeVersion] = useState(plan.resume_version || "default");
+  const [draftNotes, setDraftNotes] = useState(plan.draft_notes || "");
+  const [followUpDate, setFollowUpDate] = useState(plan.follow_up_date || "");
+
+  useEffect(() => {
+    setResumeVersion(plan.resume_version || "default");
+    setDraftNotes(plan.draft_notes || "");
+    setFollowUpDate(plan.follow_up_date || "");
+  }, [plan.id, plan.resume_version, plan.draft_notes, plan.follow_up_date]);
+
+  return (
+    <div className={`application-card application-${plan.status}`}>
+      <div className="candidate-title">
+        <strong>{job ? `${job.company} / ${job.title}` : `Job #${plan.job_id}`}</strong>
+        <b>{plan.priority}</b>
+      </div>
+      <div className="source-meta">
+        <span>{plan.target_apply_date || "No target date"}</span>
+        {job?.city && <span>{job.city}</span>}
+      </div>
+      <p>{plan.next_action || "No next action yet."}</p>
+      <div className="application-edit-grid">
+        <label>
+          Resume
+          <input value={resumeVersion} onChange={(event) => setResumeVersion(event.target.value)} />
+        </label>
+        <label>
+          Follow-up
+          <input value={followUpDate} onChange={(event) => setFollowUpDate(event.target.value)} placeholder="YYYY-MM-DD" />
+        </label>
+        <label className="application-edit-wide">
+          Draft notes
+          <textarea value={draftNotes} onChange={(event) => setDraftNotes(event.target.value)} />
+        </label>
+      </div>
+      <div className="application-checklist">
+        {plan.checklist.slice(0, 5).map((item) => (
+          <span key={item}>{item}</span>
+        ))}
+      </div>
+      <div className="candidate-actions">
+        <button type="button" onClick={() => onOpenJob(plan.job_id)}>
+          Details
+        </button>
+        <button type="button" onClick={() => onUpdate(plan, { resume_version: resumeVersion, draft_notes: draftNotes, follow_up_date: followUpDate })}>
+          Save
+        </button>
+        {plan.status !== "ready" && (
+          <button type="button" onClick={() => onStatus(plan, "ready")}>
+            Ready
+          </button>
+        )}
+        {plan.status !== "applied" && (
+          <button type="button" onClick={() => onStatus(plan, "applied")}>
+            Applied
+          </button>
+        )}
+        {plan.status !== "paused" && (
+          <button type="button" onClick={() => onStatus(plan, "paused")}>
+            Pause
+          </button>
+        )}
+      </div>
+      {plan.blocker_notes && <small>{plan.blocker_notes}</small>}
+    </div>
+  );
+}
+
 function JobDetailPanel({
   detail,
   busy,
@@ -1602,6 +1938,21 @@ function JobDetailPanel({
             <span className="risk-pill" key={item}>{item}</span>
           ))}
           {detail.fit.risks.length === 0 && <div className="empty-source">No obvious risk signals.</div>}
+        </div>
+        <div className="detail-column">
+          <h3>Application Plan</h3>
+          {detail.application_plan ? (
+            <>
+              <span className="detail-pill">{detail.application_plan.status}</span>
+              <span className="detail-pill">{detail.application_plan.target_apply_date || "No target date"}</span>
+              <small>{detail.application_plan.next_action}</small>
+              {detail.application_plan.checklist.slice(0, 4).map((item) => (
+                <span className="detail-pill" key={item}>{item}</span>
+              ))}
+            </>
+          ) : (
+            <div className="empty-source">Mark this job as Interested and refresh tasks to create a plan.</div>
+          )}
         </div>
       </div>
       <div className="job-detail-bottom">
@@ -1930,6 +2281,56 @@ function SourceCandidatesPanel({
   );
 }
 
+function SourceOperationsPanel({
+  summary,
+  onAction,
+  busy,
+}: {
+  summary: SourceOperationsSummary;
+  onAction: (action: string) => void | Promise<void>;
+  busy: boolean;
+}) {
+  return (
+    <section className="source-ops-panel">
+      <div className="source-ops-metrics">
+        <Metric label="Sources" value={`${summary.enabled_sources}/${summary.total_sources}`} />
+        <Metric label="Healthy" value={summary.healthy_sources} />
+        <Metric label="Unhealthy" value={summary.warning_sources + summary.broken_sources} />
+        <Metric label="Candidates" value={summary.pending_candidates} />
+      </div>
+      <div className="source-ops-body">
+        <div>
+          <h3>Needs Attention</h3>
+          {summary.needs_attention.slice(0, 4).map((source) => (
+            <div className="source-ops-row" key={source.id}>
+              <strong>{source.name}</strong>
+              <span>{source.status} / {source.reason || "No reason recorded"}</span>
+            </div>
+          ))}
+          {summary.needs_attention.length === 0 && <span className="source-ops-empty">No unhealthy source right now.</span>}
+        </div>
+        <div>
+          <h3>Promote Candidates</h3>
+          {summary.recommended_promotes.slice(0, 4).map((candidate) => (
+            <div className="source-ops-row" key={candidate.id}>
+              <strong>{candidate.name}</strong>
+              <span>{candidate.validation_status} / confidence {candidate.confidence}</span>
+            </div>
+          ))}
+          {summary.recommended_promotes.length === 0 && <span className="source-ops-empty">No high-confidence candidate waiting.</span>}
+        </div>
+        <div className="source-ops-actions">
+          {summary.actions.map((action) => (
+            <button type="button" key={`${action.type}-${action.target}`} onClick={() => onAction(action.type)} disabled={busy}>
+              {formatActionLabel(action.type)}
+            </button>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function TrendMetric({ label, value, inverse = false }: { label: string; value: number; inverse?: boolean }) {
   const status = value === 0 ? "flat" : inverse ? (value < 0 ? "good" : "bad") : value > 0 ? "good" : "bad";
   return (
@@ -2225,6 +2626,8 @@ function GlobalEmployeeChat({
   onToggle,
   onTextChange,
   onSubmit,
+  actions,
+  onAction,
 }: {
   state: AgentState | null;
   status: AgentChatStatus | null;
@@ -2236,6 +2639,8 @@ function GlobalEmployeeChat({
   onToggle: () => void;
   onTextChange: (value: string) => void;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void | Promise<void>;
+  actions: AgentCommandResult["actions"];
+  onAction: (action: string) => void | Promise<void>;
 }) {
   const modeLabel = status?.configured ? `Model: ${status.model}` : "Local rules";
   return (
@@ -2268,6 +2673,15 @@ function GlobalEmployeeChat({
               <div className="chat-empty">
                 <strong>I am here.</strong>
                 <span>Ask me what to apply for today, why a role fits, or tell me to refresh tasks.</span>
+              </div>
+            )}
+            {actions.length > 0 && (
+              <div className="chat-actions">
+                {actions.map((action) => (
+                  <button type="button" key={`${action.type}-${action.target}`} onClick={() => onAction(action.type)}>
+                    {formatActionLabel(action.type)}
+                  </button>
+                ))}
               </div>
             )}
           </div>
@@ -2326,6 +2740,49 @@ function ProductReadinessPanel({
   );
 }
 
+function AgentActionRequestsPanel({
+  requests,
+  onApprove,
+  onDismiss,
+  busy,
+}: {
+  requests: AgentActionRequest[];
+  onApprove: (request: AgentActionRequest) => void | Promise<void>;
+  onDismiss: (request: AgentActionRequest) => void | Promise<void>;
+  busy: boolean;
+}) {
+  return (
+    <section className="action-requests-panel">
+      <div className="panel-header">
+        <div>
+          <h2>Suggested Actions</h2>
+          <span>{requests.length} pending decisions</span>
+        </div>
+      </div>
+      <div className="action-request-list">
+        {requests.slice(0, 6).map((request) => (
+          <div className="action-request-row" key={request.id}>
+            <div>
+              <strong>{formatActionLabel(request.action_type)}</strong>
+              <span>{request.detail || request.target || "Agent suggested a safe workflow action."}</span>
+              <small>{request.source} / {formatDateTime(request.created_at)}</small>
+            </div>
+            <div className="action-request-actions">
+              <button type="button" onClick={() => onApprove(request)} disabled={busy}>
+                Approve
+              </button>
+              <button type="button" onClick={() => onDismiss(request)} disabled={busy}>
+                Ignore
+              </button>
+            </div>
+          </div>
+        ))}
+        {requests.length === 0 && <div className="empty-source">No suggested actions waiting for approval.</div>}
+      </div>
+    </section>
+  );
+}
+
 function settingsToDraft(settings: Settings) {
   return {
     target_cities: safeSettingsList(settings.target_cities, defaultSettings.target_cities).join("\n"),
@@ -2333,6 +2790,7 @@ function settingsToDraft(settings: Settings) {
     excluded_keywords: safeSettingsList(settings.excluded_keywords, defaultSettings.excluded_keywords).join("\n"),
     crawl_schedule: safeSettingsList(settings.crawl_schedule, defaultSettings.crawl_schedule).join("\n"),
     feishu_webhook_url: settings.feishu_webhook_url || "",
+    time_zone: settings.time_zone || defaultSettings.time_zone,
     auto_duty_report_enabled: Boolean(settings.auto_duty_report_enabled),
     auto_source_discovery_enabled: Boolean(settings.auto_source_discovery_enabled),
     source_discovery_interval_hours: String(settings.source_discovery_interval_hours || defaultSettings.source_discovery_interval_hours),
@@ -2363,6 +2821,7 @@ function normalizeSettings(settings: Partial<Settings>): Settings {
     crawl_schedule: safeSettingsList(settings.crawl_schedule, defaultSettings.crawl_schedule),
     feishu_webhook_url: settings.feishu_webhook_url || "",
     feishu_configured: Boolean(settings.feishu_configured),
+    time_zone: settings.time_zone || defaultSettings.time_zone,
     auto_duty_report_enabled: Boolean(settings.auto_duty_report_enabled),
     auto_source_discovery_enabled: settings.auto_source_discovery_enabled ?? defaultSettings.auto_source_discovery_enabled,
     source_discovery_interval_hours: settings.source_discovery_interval_hours || defaultSettings.source_discovery_interval_hours,
@@ -2433,6 +2892,24 @@ function formatTaskStatus(status: string) {
     done: "Done",
   };
   return labels[status] || status;
+}
+
+function formatActionLabel(action: string) {
+  const labels: Record<string, string> = {
+    add_recommended_and_crawl: "Add sources and crawl",
+    run_crawl: "Run crawl",
+    review_manual_check: "Review manual jobs",
+    review_low_confidence: "Review low confidence",
+    cleanup_landing_pages: "Clean landing pages",
+    refresh_tasks: "Refresh tasks",
+    discover_sources: "Discover sources",
+    review_strong_matches: "Review strong matches",
+    inspect_failed_sources: "Inspect sources",
+    sync_application_plans: "Sync application plans",
+    prepare_application: "Open applications",
+    follow_up_application: "Follow up applications",
+  };
+  return labels[action] || action.replace(/_/g, " ");
 }
 
 function formatFitVerdict(verdict: string) {

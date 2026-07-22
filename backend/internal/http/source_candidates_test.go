@@ -85,3 +85,31 @@ func TestRejectSourceCandidateAPI(t *testing.T) {
 		t.Fatalf("expected rejected candidate, got %#v", rejected)
 	}
 }
+
+func TestSourceOperationsAPI(t *testing.T) {
+	repo, handler := testRouter(t, nil)
+	source, err := repo.CreateSource(t.Context(), jobs.SourceInput{Name: "Broken Source", URL: "https://broken.example.com/jobs", Enabled: true})
+	if err != nil {
+		t.Fatalf("create source: %v", err)
+	}
+	if err := repo.UpdateSourceHealthByURL(t.Context(), source.URL, jobs.SourceHealthInput{Status: jobs.SourceHealthBroken, Reason: "HTTP 500", Success: false}); err != nil {
+		t.Fatalf("mark source broken: %v", err)
+	}
+	if _, err := repo.DiscoverSourceCandidates(t.Context(), jobs.SourceDiscoveryInput{TargetCities: []string{"Shenzhen"}, TargetDirections: []string{"go"}}); err != nil {
+		t.Fatalf("discover candidates: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/sources/operations", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 operations, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var summary jobs.SourceOperationsSummary
+	if err := json.Unmarshal(rec.Body.Bytes(), &summary); err != nil {
+		t.Fatalf("decode summary: %v", err)
+	}
+	if summary.BrokenSources != 1 || summary.PendingCandidates == 0 || len(summary.Actions) == 0 {
+		t.Fatalf("unexpected source operations summary: %#v", summary)
+	}
+}

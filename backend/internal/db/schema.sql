@@ -132,6 +132,38 @@ CREATE TABLE IF NOT EXISTS agent_tasks (
 
 CREATE INDEX IF NOT EXISTS idx_agent_tasks_date_status ON agent_tasks(task_date, status, priority);
 
+CREATE TABLE IF NOT EXISTS agent_action_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source TEXT NOT NULL DEFAULT '',
+    action_type TEXT NOT NULL,
+    target TEXT NOT NULL DEFAULT '',
+    detail TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    resolved_at TIMESTAMP NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_action_requests_status ON agent_action_requests(status, created_at);
+
+CREATE TABLE IF NOT EXISTS application_plans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id INTEGER NOT NULL UNIQUE,
+    status TEXT NOT NULL DEFAULT 'prepare',
+    priority INTEGER NOT NULL DEFAULT 0,
+    next_action TEXT NOT NULL DEFAULT '',
+    checklist TEXT NOT NULL DEFAULT '[]',
+    blocker_notes TEXT NOT NULL DEFAULT '',
+    resume_version TEXT NOT NULL DEFAULT '',
+    draft_notes TEXT NOT NULL DEFAULT '',
+    target_apply_date TEXT NOT NULL DEFAULT '',
+    follow_up_date TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(job_id) REFERENCES jobs(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_application_plans_status_priority ON application_plans(status, priority);
+
 CREATE TABLE IF NOT EXISTS candidate_profiles (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     target_cities TEXT NOT NULL DEFAULT '[]',

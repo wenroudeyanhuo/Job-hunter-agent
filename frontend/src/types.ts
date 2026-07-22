@@ -55,7 +55,24 @@ export interface JobDetail {
   job: Job;
   fit: JobFitSummary;
   decisions: JobDecision[];
+  application_plan?: ApplicationPlan;
   suggested_action: AgentReportAction;
+}
+
+export interface ApplicationPlan {
+  id: number;
+  job_id: number;
+  status: "prepare" | "ready" | "applied" | "paused" | string;
+  priority: number;
+  next_action: string;
+  checklist: string[];
+  blocker_notes: string;
+  resume_version: string;
+  draft_notes: string;
+  target_apply_date: string;
+  follow_up_date: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface RunSummary {
@@ -137,6 +154,29 @@ export interface SourceCandidate {
   updated_at: string;
 }
 
+export interface SourceAttention {
+  id: number;
+  name: string;
+  url: string;
+  status: string;
+  reason: string;
+}
+
+export interface SourceOperationsSummary {
+  total_sources: number;
+  enabled_sources: number;
+  healthy_sources: number;
+  warning_sources: number;
+  broken_sources: number;
+  unknown_sources: number;
+  pending_candidates: number;
+  verified_candidates: number;
+  rejected_candidates: number;
+  needs_attention: SourceAttention[];
+  recommended_promotes: SourceCandidate[];
+  actions: AgentCommandAction[];
+}
+
 export interface SourceDiscoveryResult {
   total: number;
   created: number;
@@ -165,6 +205,7 @@ export interface Settings {
   crawl_schedule: string[];
   feishu_webhook_url: string;
   feishu_configured: boolean;
+  time_zone: string;
   auto_duty_report_enabled: boolean;
   auto_source_discovery_enabled: boolean;
   source_discovery_interval_hours: number;
@@ -261,6 +302,22 @@ export interface AgentAutomationState {
   stale_tasks: AgentStaleTask[];
 }
 
+export interface AgentAutomationDiagnostics {
+  generated_at: string;
+  scheduler_expected: boolean;
+  webhook_configured: boolean;
+  duty_report_enabled: boolean;
+  duty_report_time: string;
+  time_zone: string;
+  next_duty_report_at: string;
+  last_duty_report_sent_at?: string;
+  source_discovery_enabled: boolean;
+  next_source_discovery_at: string;
+  last_source_discovery_at?: string;
+  ready_for_automatic_report: boolean;
+  reason: string;
+}
+
 export interface AgentStaleTask {
   id: number;
   title: string;
@@ -306,6 +363,17 @@ export interface AgentCommandAction {
   type: string;
   target: string;
   detail: string;
+}
+
+export interface AgentActionRequest {
+  id: number;
+  source: string;
+  action_type: string;
+  target: string;
+  detail: string;
+  status: "pending" | "approved" | "dismissed" | string;
+  created_at: string;
+  resolved_at?: string;
 }
 
 export interface AgentDutyReport {

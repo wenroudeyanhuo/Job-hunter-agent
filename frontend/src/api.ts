@@ -1,5 +1,7 @@
 import type {
   AgentBriefing,
+  AgentAutomationDiagnostics,
+  AgentActionRequest,
   AgentChatMessage,
   AgentChatResponse,
   AgentChatStatus,
@@ -11,6 +13,7 @@ import type {
   AgentReviewSnapshot,
   AgentState,
   AgentTask,
+  ApplicationPlan,
   CandidateProfile,
   Company,
   CleanupLandingPagesResponse,
@@ -26,6 +29,7 @@ import type {
   Settings,
   Source,
   SourceCandidate,
+  SourceOperationsSummary,
   SourceDiscoveryResult,
 } from "./types";
 
@@ -68,8 +72,25 @@ export async function runAgentCommand(text: string): Promise<AgentCommandResult>
   });
 }
 
+export async function listAgentActionRequests(status = "pending"): Promise<AgentActionRequest[]> {
+  const query = status ? `?status=${encodeURIComponent(status)}` : "";
+  const requests = await request<AgentActionRequest[] | null>(`/api/agent/actions${query}`);
+  return Array.isArray(requests) ? requests : [];
+}
+
+export async function updateAgentActionRequest(id: number, status: "pending" | "approved" | "dismissed"): Promise<AgentActionRequest> {
+  return request<AgentActionRequest>(`/api/agent/actions/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+}
+
 export async function getAgentChatStatus(): Promise<AgentChatStatus> {
   return request<AgentChatStatus>("/api/agent/chat/status");
+}
+
+export async function getAutomationStatus(): Promise<AgentAutomationDiagnostics> {
+  return request<AgentAutomationDiagnostics>("/api/agent/automation/status");
 }
 
 export async function listAgentChatMessages(): Promise<AgentChatMessage[]> {
@@ -116,6 +137,24 @@ export async function listAgentTasks(): Promise<AgentTask[]> {
 export async function refreshAgentTasks(): Promise<AgentTask[]> {
   const tasks = await request<AgentTask[] | null>("/api/agent/tasks/refresh", { method: "POST" });
   return Array.isArray(tasks) ? tasks : [];
+}
+
+export async function listApplicationPlans(status = ""): Promise<ApplicationPlan[]> {
+  const query = status ? `?status=${encodeURIComponent(status)}` : "";
+  const plans = await request<ApplicationPlan[] | null>(`/api/applications${query}`);
+  return Array.isArray(plans) ? plans : [];
+}
+
+export async function syncApplicationPlans(): Promise<ApplicationPlan[]> {
+  const plans = await request<ApplicationPlan[] | null>("/api/applications/sync", { method: "POST" });
+  return Array.isArray(plans) ? plans : [];
+}
+
+export async function updateApplicationPlan(id: number, update: Partial<ApplicationPlan>): Promise<ApplicationPlan> {
+  return request<ApplicationPlan>(`/api/applications/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(update),
+  });
 }
 
 export async function updateAgentTaskStatus(
@@ -206,6 +245,10 @@ export async function listSourceCandidates(status = ""): Promise<SourceCandidate
   return Array.isArray(candidates) ? candidates : [];
 }
 
+export async function getSourceOperations(): Promise<SourceOperationsSummary> {
+  return request<SourceOperationsSummary>("/api/sources/operations");
+}
+
 export async function acceptSourceCandidate(id: number): Promise<{ candidate: SourceCandidate; source: Source }> {
   return request<{ candidate: SourceCandidate; source: Source }>(`/api/sources/candidates/${id}/accept`, { method: "POST" });
 }
@@ -259,6 +302,7 @@ export async function updateSettings(
     | "excluded_keywords"
     | "crawl_schedule"
     | "feishu_webhook_url"
+    | "time_zone"
     | "auto_duty_report_enabled"
     | "auto_source_discovery_enabled"
     | "source_discovery_interval_hours"

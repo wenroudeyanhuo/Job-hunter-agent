@@ -19,12 +19,15 @@ Early MVP. The current version provides a Go backend foundation, SQLite persiste
 - React dashboard for reviewing jobs, filtering by status/direction, updating status, and running a crawl.
 - Candidate profile page for cities, directions, skills, education, preferred companies, blocked keywords, and notes.
 - Job detail panel with profile-aware fit signals, risks, suggested action, notes, and decision history.
+- Application Kanban workspace for turning interested strong matches into human-approved application preparation plans, resume-version notes, draft notes, and follow-up dates.
 - Daily agent task queue generated from recommended jobs, manual decisions, source issues, and crawl history.
 - Digital employee sidebar with an agent profile, avatar, maturity score, capability map, operating cycle, and mainstream capability gaps.
 - Command Center for rule-based natural-language workflow commands such as changing target cities/directions, refreshing tasks, running a crawl, and sending Feishu reports.
-- Global digital employee chat with a persistent 3D avatar, local rule fallback, saved chat history, and optional OpenAI-compatible model mode.
+- Global digital employee chat with a persistent 3D avatar, local rule fallback, saved chat history, optional OpenAI-compatible model mode, and safe whitelisted action suggestions.
+- Suggested action approval queue so model or local-rule recommendations are persisted, reviewed, approved, or dismissed before execution.
 - Source discovery that proposes broader official, community, and job-platform search entrances from the user's target cities and directions.
 - Source-candidate validation that fetches candidate pages, checks recruitment signals and discovered job links, then adjusts confidence before the source is accepted.
+- Source operations summary for unhealthy sources, pending candidates, high-confidence promotions, and recommended maintenance actions.
 - Automatic duty report controls with configurable report time, scheduler tick, task SLA, stale-task detection, escalation, snooze, completion reasons, and last-sent tracking.
 - Automatic source discovery controls with a configurable interval so the assistant can keep expanding the source pool over time.
 - Feishu webhook summaries after crawl runs when a webhook is configured in Settings or `FEISHU_WEBHOOK_URL`.
@@ -37,11 +40,12 @@ Early MVP. The current version provides a Go backend foundation, SQLite persiste
 - Provides a local dashboard for reviewing jobs and updating status.
 - Builds a local candidate profile and uses it to explain why a role fits or carries risk.
 - Records job decisions such as interested, applied, ignored, and notes updates as a timeline.
+- Prepares application plans for interested strong matches, including priority, target date, checklist, next action, resume version, draft notes, and follow-up date.
 - Generates a daily task queue for recommended jobs, human decisions, unhealthy sources, and crawl setup.
 - Shows what the assistant can already do, where it is weaker than mainstream digital employees, and which capability should be improved next.
 - Accepts simple workflow commands from the digital employee sidebar. Current parsing is deterministic and transparent, not LLM-based.
-- Keeps a global chat assistant available across pages. Without a model key it answers with local recruiting context; with model settings it calls an OpenAI-compatible chat-completions endpoint and falls back locally if the model fails.
-- Discovers and validates new source candidates so the crawl pool does not stay fixed forever.
+- Keeps a global chat assistant available across pages. Without a model key it answers with local recruiting context; with model settings it calls an OpenAI-compatible chat-completions endpoint, parses safe JSON action suggestions, filters unsafe actions, persists safe suggestions for review, and falls back locally if the model fails.
+- Discovers, validates, and summarizes source candidates so the crawl pool does not stay fixed forever.
 - Tracks stale or escalated daily tasks, supports snoozing or closing work items with reasons, and can send an automatic duty report when enabled and the configured report time is reached.
 - Supports manual crawl runs and scheduled runs at 09:00, 12:00, and 18:00.
 - Can send Feishu incoming webhook notifications.
@@ -98,6 +102,8 @@ LLM_MODEL=
 
 `LLM_API_KEY`, `LLM_BASE_URL`, and `LLM_MODEL` are optional. If they are not configured, the global digital employee chat uses local rule-based replies. If they are configured, the backend calls an OpenAI-compatible `/chat/completions` endpoint and falls back to local replies on failure. `OPENAI_API_KEY`, `OPENAI_BASE_URL`, and `OPENAI_MODEL` are also accepted.
 
+Automatic Feishu duty reports require the backend process to stay running with the scheduler enabled, a Feishu webhook in Settings or `FEISHU_WEBHOOK_URL`, Automatic duty report enabled in Settings, and the configured duty report time reached in the configured time zone. The default time zone is `Asia/Shanghai`. The Settings page includes an automation diagnostic card that shows webhook readiness, scheduler expectation, next report time, last sent time, and the reason a scheduled report has not fired yet.
+
 ### Backend
 
 Requires Go 1.25 or newer.
@@ -147,6 +153,14 @@ Open `http://localhost:5173`. The backend is also exposed at `http://localhost:8
 
 Vercel is a good fit for the static frontend only. This project currently uses a long-running Go backend plus local SQLite and scheduled jobs, so a single Vercel deployment is not the best default. For the full product, use Docker Compose locally or deploy the backend to a service with persistent storage, then point the frontend to that backend.
 
+### Deployment Notes
+
+- Frontend: can be deployed as static assets after `npm run build`.
+- Backend: should run on a service that supports a long-lived Go process and persistent disk or a managed database.
+- Scheduler: must remain enabled for automatic crawls, automatic source discovery, stale-task escalation, and automatic Feishu duty reports.
+- SQLite: works well for local-first usage. For hosted multi-user usage, plan a Postgres migration before exposing it publicly.
+- Vercel: suitable for the frontend, but not enough for the current full product because Vercel serverless functions do not provide a simple always-on scheduler plus persistent local SQLite disk.
+
 ### First Run Checklist
 
 After the backend and frontend are running:
@@ -162,11 +176,16 @@ After the backend and frontend are running:
 9. Use the digital employee sidebar to inspect maturity, capabilities, current gaps, and the daily operating cycle.
 10. Configure Automatic duty report, Duty report time, and Task SLA hours in Settings if you want stale-task tracking and scheduled reporting.
 11. Go to Profile and write your candidate signals: target cities, directions, skills, preferred companies, blocked keywords, and notes.
-12. Try Command Center commands such as `只看深圳 Go 后端，刷新任务`, `run crawl`, or `发送飞书日报`.
-13. Open Details from an opportunity to review fit signals, risks, suggested action, notes, and decision history.
-14. Use the global digital employee chat in the lower-right corner to ask what to do next or why a role fits.
-15. Use Snooze, Complete, or Ignore in Daily Tasks to keep the assistant's work queue accurate.
-16. Use Send to Feishu from the duty report when you want the assistant to push the current task queue and summary to your bot.
+12. Try Command Center commands such as `只看深圳 Go 后端，刷新任务`, `run crawl`, `发送飞书日报`, or `同步投递计划`.
+13. Mark promising jobs as Interested, then open Applications and sync application plans.
+14. Use the Applications Kanban to move plans through Prepare, Ready, Applied, and Paused; edit resume version, draft notes, and follow-up dates.
+15. Open Details from an opportunity to review fit signals, application plan, risks, suggested action, notes, and decision history.
+16. Use the global digital employee chat in the lower-right corner to ask what to do next or why a role fits.
+17. Review Suggested Actions on the Dashboard and approve or ignore what the agent proposes.
+18. Review the Companies source operations summary for broken sources, pending candidates, and high-confidence promotions.
+19. Use Snooze, Complete, or Ignore in Daily Tasks to keep the assistant's work queue accurate.
+20. Use Send to Feishu from the duty report when you want the assistant to push the current task queue and summary to your bot.
+
 ## Local Data
 
 By default, the backend stores SQLite data under:
@@ -177,15 +196,28 @@ backend/data/job-hunter-agent.db
 
 Local databases, logs, build outputs, private planning docs, and environment files are ignored by Git.
 
+Recommended backup workflow:
+
+1. Stop the backend process.
+2. Copy `backend/data/job-hunter-agent.db` to a dated backup path.
+3. Start the backend again.
+
+Restore workflow:
+
+1. Stop the backend process.
+2. Replace `backend/data/job-hunter-agent.db` with the backup file.
+3. Start the backend. Schema migrations run automatically and add missing columns for newer versions.
+
+For automated backups, run a scheduled copy while the backend is stopped, or use a SQLite online backup command from your deployment environment.
+
 ## Roadmap
 
 - Add manual URL import API and dashboard flow.
 - Add the first real public-source collector.
 - Improve parser adapters for more company-specific career pages and job-platform result pages.
 - Improve parsing for deadline, location granularity, and application URL.
-- Add richer follow-up reminders and escalation channels for daily agent tasks.
 - Upgrade model chat from plain conversation to structured tool-calling planning.
-- Turn interested/applied jobs into follow-up tasks with dates and application metadata.
+- Add editable resume-version templates and richer generated application draft notes.
 - Add optional Feishu Base or spreadsheet sync.
 - Explore resume matching and assisted application workflows after the collection pipeline is reliable.
 

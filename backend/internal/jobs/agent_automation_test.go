@@ -44,6 +44,7 @@ func TestShouldSendDutyReportOncePerDayAfterConfiguredTime(t *testing.T) {
 	settings := DefaultSettings()
 	settings.AutoDutyReportEnabled = true
 	settings.DutyReportTime = "18:00"
+	settings.TimeZone = "UTC"
 
 	if !ShouldSendDutyReport(settings, now) {
 		t.Fatal("expected duty report to be due")
@@ -61,9 +62,28 @@ func TestShouldSendDutyReportWaitsUntilConfiguredTime(t *testing.T) {
 	settings := DefaultSettings()
 	settings.AutoDutyReportEnabled = true
 	settings.DutyReportTime = "18:00"
+	settings.TimeZone = "UTC"
 
 	if ShouldSendDutyReport(settings, now) {
 		t.Fatal("expected duty report to wait until configured time")
+	}
+}
+
+func TestShouldSendDutyReportUsesConfiguredTimezone(t *testing.T) {
+	now := time.Date(2026, 7, 22, 10, 5, 0, 0, time.UTC) // 18:05 in Asia/Shanghai.
+	settings := DefaultSettings()
+	settings.AutoDutyReportEnabled = true
+	settings.DutyReportTime = "18:00"
+	settings.TimeZone = "Asia/Shanghai"
+
+	if !ShouldSendDutyReport(settings, now) {
+		t.Fatal("expected duty report to be due at 18:00 Asia/Shanghai")
+	}
+
+	sent := time.Date(2026, 7, 22, 9, 59, 0, 0, time.UTC) // Same Shanghai day.
+	settings.LastDutyReportSentAt = &sent
+	if ShouldSendDutyReport(settings, now) {
+		t.Fatal("expected duty report not to send twice on the same configured timezone day")
 	}
 }
 

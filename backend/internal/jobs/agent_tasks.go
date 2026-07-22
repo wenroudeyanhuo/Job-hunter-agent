@@ -18,10 +18,12 @@ const (
 	AgentTaskStatusSnoozed   = "snoozed"
 	AgentTaskStatusDone      = "done"
 
-	AgentTaskKindReviewStrongMatch = "review_strong_match"
-	AgentTaskKindDecideManualJob   = "decide_manual_job"
-	AgentTaskKindInspectSource     = "inspect_source"
-	AgentTaskKindRunCrawl          = "run_crawl"
+	AgentTaskKindReviewStrongMatch   = "review_strong_match"
+	AgentTaskKindDecideManualJob     = "decide_manual_job"
+	AgentTaskKindInspectSource       = "inspect_source"
+	AgentTaskKindRunCrawl            = "run_crawl"
+	AgentTaskKindPrepareApplication  = "prepare_application"
+	AgentTaskKindFollowUpApplication = "follow_up_application"
 )
 
 type AgentTask struct {
@@ -72,6 +74,9 @@ type AgentTaskEscalationResult struct {
 
 func (r *Repository) SyncAgentTasks(ctx context.Context, now time.Time) ([]AgentTask, error) {
 	taskDate := agentTaskDate(now)
+	if _, err := r.SyncApplicationPlans(ctx, now); err != nil {
+		return nil, err
+	}
 	desired, err := r.buildDesiredAgentTasks(ctx, taskDate)
 	if err != nil {
 		return nil, err
@@ -254,6 +259,14 @@ func (r *Repository) buildDesiredAgentTasks(ctx context.Context, taskDate string
 	if err != nil {
 		return nil, err
 	}
+	plans, err := r.ListApplicationPlans(ctx, ApplicationPlanStatusPrepare)
+	if err != nil {
+		return nil, err
+	}
+	appliedPlans, err := r.ListApplicationPlans(ctx, ApplicationPlanStatusApplied)
+	if err != nil {
+		return nil, err
+	}
 
 	tasks := []AgentTaskInput{}
 	for _, job := range jobList {
@@ -298,6 +311,38 @@ func (r *Repository) buildDesiredAgentTasks(ctx context.Context, taskDate string
 			SubjectID: source.ID,
 			SourceID:  source.ID,
 			Action:    "inspect_failed_sources",
+		})
+	}
+	for _, plan := range plans {
+		if plan.JobID == 0 {
+			continue
+		}
+		tasks = append(tasks, AgentTaskInput{
+			TaskDate:  taskDate,
+			Kind:      AgentTaskKindPrepareApplication,
+			Title:     "Prepare application",
+			Detail:    fallbackText(plan.NextAction, "Prepare application material"),
+			Priority:  plan.Priority,
+			Count:     1,
+			SubjectID: plan.ID,
+			JobID:     plan.JobID,
+			Action:    "prepare_application",
+		})
+	}
+	for _, plan := range appliedPlans {
+		if plan.JobID == 0 || strings.TrimSpace(plan.FollowUpDate) == "" || plan.FollowUpDate > taskDate {
+			continue
+		}
+		tasks = append(tasks, AgentTaskInput{
+			TaskDate:  taskDate,
+			Kind:      AgentTaskKindFollowUpApplication,
+			Title:     "Follow up application",
+			Detail:    fallbackText(plan.NextAction, "Follow up on submitted application"),
+			Priority:  plan.Priority,
+			Count:     1,
+			SubjectID: plan.ID,
+			JobID:     plan.JobID,
+			Action:    "follow_up_application",
 		})
 	}
 	if len(runs) == 0 {

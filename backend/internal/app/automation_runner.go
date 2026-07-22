@@ -103,7 +103,7 @@ func (r *automationRunner) buildDutyReport(ctx context.Context) (jobs.AgentDutyR
 	if err != nil {
 		return jobs.AgentDutyReport{}, err
 	}
-	tasks, err := r.repo.ListAgentTasks(ctx, time.Now().UTC().Format("2006-01-02"))
+	tasks, err := r.repo.ListAgentTasks(ctx, r.today(ctx))
 	if err != nil {
 		return jobs.AgentDutyReport{}, err
 	}
@@ -130,9 +130,21 @@ func (r *automationRunner) buildAgentReview(ctx context.Context) (jobs.AgentRevi
 	if err != nil {
 		return jobs.AgentReview{}, err
 	}
-	tasks, err := r.repo.ListAgentTasks(ctx, time.Now().UTC().Format("2006-01-02"))
+	tasks, err := r.repo.ListAgentTasks(ctx, r.today(ctx))
 	if err != nil {
 		return jobs.AgentReview{}, err
 	}
 	return jobs.BuildAgentReview(jobList, sources, runs, tasks), nil
+}
+
+func (r *automationRunner) today(ctx context.Context) string {
+	settings, err := r.repo.GetSettings(ctx)
+	if err != nil {
+		return time.Now().UTC().Format("2006-01-02")
+	}
+	loc, err := time.LoadLocation(settings.TimeZone)
+	if err != nil {
+		loc = time.UTC
+	}
+	return time.Now().In(loc).Format("2006-01-02")
 }

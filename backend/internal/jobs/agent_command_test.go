@@ -19,6 +19,17 @@ func TestPlanAgentCommandRecognizesWorkflowActions(t *testing.T) {
 	}
 }
 
+func TestPlanAgentCommandRecognizesApplicationPlanning(t *testing.T) {
+	plan := PlanAgentCommand("帮我同步投递计划，准备投递这些感兴趣岗位", DefaultSettings())
+
+	if !plan.SyncApplicationPlans {
+		t.Fatalf("expected application plan sync, got %#v", plan)
+	}
+	if !containsCommandAction(plan.Result.Actions, "sync_application_plans") {
+		t.Fatalf("expected sync action, got %#v", plan.Result.Actions)
+	}
+}
+
 func TestPlanAgentCommandAsksForClarification(t *testing.T) {
 	plan := PlanAgentCommand("帮我看看", DefaultSettings())
 
@@ -33,6 +44,15 @@ func TestPlanAgentCommandAsksForClarification(t *testing.T) {
 func containsTestString(values []string, want string) bool {
 	for _, value := range values {
 		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+func containsCommandAction(actions []AgentCommandAction, want string) bool {
+	for _, action := range actions {
+		if action.Type == want {
 			return true
 		}
 	}
