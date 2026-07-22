@@ -802,17 +802,20 @@ func (h *Handlers) UpdateSettings(c *gin.Context) {
 func (h *Handlers) settingsResponse(settings jobs.Settings) gin.H {
 	webhookURL := strings.TrimSpace(settings.FeishuWebhookURL)
 	return gin.H{
-		"target_cities":            settings.TargetCities,
-		"target_directions":        settings.TargetDirections,
-		"excluded_keywords":        settings.ExcludedKeywords,
-		"crawl_schedule":           settings.CrawlSchedule,
-		"feishu_webhook_url":       webhookURL,
-		"feishu_configured":        webhookURL != "" || strings.TrimSpace(h.FeishuWebhookURL) != "",
-		"auto_duty_report_enabled": settings.AutoDutyReportEnabled,
-		"duty_report_time":         settings.DutyReportTime,
-		"task_sla_hours":           settings.TaskSLAHours,
-		"last_duty_report_sent_at": settings.LastDutyReportSentAt,
-		"updated_at":               settings.UpdatedAt,
+		"target_cities":                   settings.TargetCities,
+		"target_directions":               settings.TargetDirections,
+		"excluded_keywords":               settings.ExcludedKeywords,
+		"crawl_schedule":                  settings.CrawlSchedule,
+		"feishu_webhook_url":              webhookURL,
+		"feishu_configured":               webhookURL != "" || strings.TrimSpace(h.FeishuWebhookURL) != "",
+		"auto_duty_report_enabled":        settings.AutoDutyReportEnabled,
+		"auto_source_discovery_enabled":   settings.AutoSourceDiscoveryEnabled,
+		"source_discovery_interval_hours": settings.SourceDiscoveryIntervalHours,
+		"duty_report_time":                settings.DutyReportTime,
+		"task_sla_hours":                  settings.TaskSLAHours,
+		"last_duty_report_sent_at":        settings.LastDutyReportSentAt,
+		"last_source_discovery_at":        settings.LastSourceDiscoveryAt,
+		"updated_at":                      settings.UpdatedAt,
 	}
 }
 
@@ -884,6 +887,29 @@ func (h *Handlers) AcceptSourceCandidate(c *gin.Context) {
 		Level:   "success",
 	})
 	c.JSON(http.StatusCreated, gin.H{"candidate": candidate, "source": source})
+}
+
+func (h *Handlers) ValidateSourceCandidate(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	candidate, err := h.Repo.ValidateSourceCandidate(c.Request.Context(), id, nil)
+	if err != nil {
+		respondRepoError(c, err)
+		return
+	}
+	level := "info"
+	if candidate.ValidationStatus == jobs.SourceCandidateValidationGood {
+		level = "success"
+	}
+	h.recordAgentEvent(c, jobs.AgentEventInput{
+		Type:    "source_candidate_validated",
+		Title:   "Validated source candidate",
+		Summary: candidate.Name + ": " + candidate.ValidationReason,
+		Level:   level,
+	})
+	c.JSON(http.StatusOK, candidate)
 }
 
 func (h *Handlers) RejectSourceCandidate(c *gin.Context) {

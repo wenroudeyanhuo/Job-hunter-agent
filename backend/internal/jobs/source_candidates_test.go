@@ -2,6 +2,8 @@ package jobs
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/db"
@@ -82,5 +84,51 @@ func TestRepositoryRejectsSourceCandidate(t *testing.T) {
 	}
 	if rejected.Status != SourceCandidateStatusRejected {
 		t.Fatalf("expected rejected candidate, got %#v", rejected)
+	}
+}
+
+func TestRepositoryValidatesSourceCandidateWithRecruitmentSignals(t *testing.T) {
+	ctx := context.Background()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<html><head><title>Campus recruitment</title></head><body>
+<a href="/jobs/go-backend-shenzhen">Go Backend Engineer Shenzhen Campus</a>
+<a href="/positions/ai-application">AI application intern job description</a>
+<p>Apply online for campus recruitment roles.</p>
+</body></html>`))
+	}))
+	defer server.Close()
+
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	repo := NewRepository(conn)
+	if _, err := repo.createSourceCandidateIfMissing(ctx, sourceCandidateInput{
+		Name:       "Example careers",
+		URL:        server.URL,
+		Category:   "official",
+		ParserType: "generic",
+		Reason:     "Test candidate",
+		Confidence: 50,
+	}); err != nil {
+		t.Fatalf("create candidate: %v", err)
+	}
+	candidates, err := repo.ListSourceCandidates(ctx, SourceCandidateFilter{})
+	if err != nil {
+		t.Fatalf("list candidates: %v", err)
+	}
+
+	validated, err := repo.ValidateSourceCandidate(ctx, candidates[0].ID, server.Client())
+	if err != nil {
+		t.Fatalf("validate candidate: %v", err)
+	}
+	if validated.ValidationStatus != SourceCandidateValidationGood {
+		t.Fatalf("expected verified candidate, got %#v", validated)
+	}
+	if validated.Confidence <= 50 {
+		t.Fatalf("expected confidence to increase, got %d", validated.Confidence)
+	}
+	if validated.LastCheckedAt == nil || validated.ValidationReason == "" {
+		t.Fatalf("expected validation metadata, got %#v", validated)
 	}
 }

@@ -214,6 +214,10 @@ export async function rejectSourceCandidate(id: number): Promise<SourceCandidate
   return request<SourceCandidate>(`/api/sources/candidates/${id}/reject`, { method: "POST" });
 }
 
+export async function validateSourceCandidate(id: number): Promise<SourceCandidate> {
+  return request<SourceCandidate>(`/api/sources/candidates/${id}/validate`, { method: "POST" });
+}
+
 export async function createSource(url: string, name = ""): Promise<Source> {
   return request<Source>("/api/sources", {
     method: "POST",
@@ -256,6 +260,8 @@ export async function updateSettings(
     | "crawl_schedule"
     | "feishu_webhook_url"
     | "auto_duty_report_enabled"
+    | "auto_source_discovery_enabled"
+    | "source_discovery_interval_hours"
     | "duty_report_time"
     | "task_sla_hours"
   >,

@@ -66,3 +66,26 @@ func TestShouldSendDutyReportWaitsUntilConfiguredTime(t *testing.T) {
 		t.Fatal("expected duty report to wait until configured time")
 	}
 }
+
+func TestShouldRunSourceDiscoveryAfterConfiguredInterval(t *testing.T) {
+	now := time.Date(2026, 7, 21, 9, 5, 0, 0, time.UTC)
+	settings := DefaultSettings()
+	settings.AutoSourceDiscoveryEnabled = true
+	settings.SourceDiscoveryIntervalHours = 6
+
+	if !ShouldRunSourceDiscovery(settings, now) {
+		t.Fatal("expected source discovery to run when it has never run")
+	}
+
+	last := now.Add(-5 * time.Hour)
+	settings.LastSourceDiscoveryAt = &last
+	if ShouldRunSourceDiscovery(settings, now) {
+		t.Fatal("expected source discovery to wait for interval")
+	}
+
+	last = now.Add(-6 * time.Hour)
+	settings.LastSourceDiscoveryAt = &last
+	if !ShouldRunSourceDiscovery(settings, now) {
+		t.Fatal("expected source discovery to run after interval")
+	}
+}

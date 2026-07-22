@@ -4,17 +4,31 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/importer"
 )
 
 const (
 	SourceCandidateStatusPending  = "pending"
 	SourceCandidateStatusAccepted = "accepted"
 	SourceCandidateStatusRejected = "rejected"
+
+	SourceCandidateValidationUnchecked    = "unchecked"
+	SourceCandidateValidationURLCandidate = "reachable_candidate"
+	SourceCandidateValidationGood         = "verified_good"
+	SourceCandidateValidationWeak         = "weak_signal"
+	SourceCandidateValidationUnreachable  = "unreachable"
+	SourceCandidateValidationInvalid      = "invalid"
 )
+
+const maxSourceCandidateValidationBytes = 512 << 10
+const sourceCandidateUserAgent = "JobHunterAgent/0.1 (+https://github.com/wenroudeyanhuo/Job-hunter-agent)"
 
 type SourceCandidate struct {
 	ID               int64      `json:"id"`
@@ -98,7 +112,7 @@ func BuildSourceDiscoveryCandidates(input SourceDiscoveryInput) []sourceCandidat
 	}
 	for _, city := range cities {
 		for _, direction := range directions {
-			query := city + " " + directionLabel(direction) + " 校招 实习 招聘"
+			query := city + " " + directionLabel(direction) + " \u6821\u62db \u5b9e\u4e60 \u62db\u8058"
 			out = append(out,
 				sourceCandidateInput{
 					Name:       "Nowcoder search - " + city + " " + directionLabel(direction),
@@ -194,6 +208,25 @@ func (r *Repository) UpdateSourceCandidateStatus(ctx context.Context, id int64, 
 	return r.setSourceCandidateStatus(ctx, id, status, 0)
 }
 
+func (r *Repository) ValidateSourceCandidate(ctx context.Context, id int64, client *http.Client) (SourceCandidate, error) {
+	candidate, err := r.GetSourceCandidate(ctx, id)
+	if err != nil {
+		return SourceCandidate{}, err
+	}
+	status, reason, confidenceDelta := validateSourceCandidatePage(ctx, candidate.URL, client)
+	confidence := clampConfidence(candidate.Confidence + confidenceDelta)
+	checkedAt := time.Now().UTC()
+	_, err = r.db.ExecContext(ctx, `
+		UPDATE source_candidates
+		SET validation_status = ?, validation_reason = ?, confidence = ?, last_checked_at = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?
+	`, status, reason, confidence, checkedAt, id)
+	if err != nil {
+		return SourceCandidate{}, fmt.Errorf("validate source candidate: %w", err)
+	}
+	return r.GetSourceCandidate(ctx, id)
+}
+
 func (r *Repository) createSourceCandidateIfMissing(ctx context.Context, input sourceCandidateInput) (bool, error) {
 	input = normalizeSourceCandidateInput(input)
 	if input.URL == "" {
@@ -284,16 +317,57 @@ func normalizeSourceCandidateStatus(status string) string {
 func validateCandidateURL(rawURL string) string {
 	parsed, err := url.ParseRequestURI(rawURL)
 	if err != nil || parsed.Host == "" {
-		return "invalid"
+		return SourceCandidateValidationInvalid
 	}
-	return "reachable_candidate"
+	return SourceCandidateValidationURLCandidate
 }
 
 func validationReason(rawURL string) string {
-	if validateCandidateURL(rawURL) == "invalid" {
+	if validateCandidateURL(rawURL) == SourceCandidateValidationInvalid {
 		return "Candidate URL is invalid."
 	}
 	return "URL shape is valid. Accept it to include in the next crawl."
+}
+
+func validateSourceCandidatePage(ctx context.Context, rawURL string, client *http.Client) (string, string, int) {
+	parsed, err := url.ParseRequestURI(strings.TrimSpace(rawURL))
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return SourceCandidateValidationInvalid, "Candidate URL is invalid.", -40
+	}
+	if client == nil {
+		client = &http.Client{Timeout: 10 * time.Second}
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
+	if err != nil {
+		return SourceCandidateValidationInvalid, "Could not build validation request.", -40
+	}
+	req.Header.Set("User-Agent", sourceCandidateUserAgent)
+	resp, err := client.Do(req)
+	if err != nil {
+		return SourceCandidateValidationUnreachable, "Fetch failed: " + err.Error(), -25
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return SourceCandidateValidationUnreachable, fmt.Sprintf("Fetch returned HTTP %d.", resp.StatusCode), -20
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxSourceCandidateValidationBytes))
+	if err != nil {
+		return SourceCandidateValidationWeak, "Could not read response body.", -5
+	}
+	text := strings.ToLower(string(body))
+	signalCount := countContainsAny(text,
+		"career", "careers", "campus", "graduate", "intern", "recruit", "recruitment",
+		"job description", "requirements", "apply", "position", "frontend", "backend", "golang", "algorithm", "llm",
+		"\u62db\u8058", "\u6821\u62db", "\u79cb\u62db", "\u5b9e\u4e60", "\u5c97\u4f4d", "\u804c\u4f4d", "\u6295\u9012", "\u6df1\u5733",
+	)
+	links, _ := importer.DiscoverLinks(ctx, parsed.String(), client, 8)
+	if signalCount >= 3 || len(links) >= 2 {
+		return SourceCandidateValidationGood, fmt.Sprintf("Verified %d recruitment signals and %d candidate links.", signalCount, len(links)), 18
+	}
+	if signalCount > 0 || len(links) > 0 {
+		return SourceCandidateValidationWeak, fmt.Sprintf("Found %d recruitment signals and %d candidate links; manual review recommended.", signalCount, len(links)), 6
+	}
+	return SourceCandidateValidationWeak, "Fetched successfully, but found no clear recruitment signals.", -10
 }
 
 func expandableRecommendedSources() []SourceInput {
@@ -325,14 +399,34 @@ func dedupeSourceCandidateInputs(values []sourceCandidateInput) []sourceCandidat
 func directionLabel(direction string) string {
 	switch strings.TrimSpace(direction) {
 	case "ai_application":
-		return "AI 应用开发"
+		return "AI application"
 	case "backend":
-		return "后端"
+		return "backend"
 	case "frontend":
-		return "前端"
+		return "frontend"
 	default:
 		return strings.TrimSpace(direction)
 	}
+}
+func countContainsAny(value string, needles ...string) int {
+	count := 0
+	value = strings.ToLower(value)
+	for _, needle := range needles {
+		if strings.Contains(value, strings.ToLower(needle)) {
+			count++
+		}
+	}
+	return count
+}
+
+func clampConfidence(value int) int {
+	if value < 0 {
+		return 0
+	}
+	if value > 100 {
+		return 100
+	}
+	return value
 }
 
 func selectSourceCandidateSQL() string {

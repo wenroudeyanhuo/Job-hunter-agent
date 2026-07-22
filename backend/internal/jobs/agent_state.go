@@ -121,6 +121,13 @@ func BuildAgentState(jobList []domain.Job, sources []Source, runs []domain.JobRu
 			Evidence: itoa(state.Workload.OpenTasks) + " open tasks",
 		},
 		{
+			Key:      "source_discovery",
+			Label:    "Autonomous source discovery",
+			Status:   capabilityStatus(settings.AutoSourceDiscoveryEnabled),
+			Level:    capabilityLevel(settings.AutoSourceDiscoveryEnabled, 62),
+			Evidence: sourceDiscoveryEvidence(settings),
+		},
+		{
 			Key:      "notification",
 			Label:    "Feishu notification",
 			Status:   capabilityStatus(settings.FeishuWebhookURL != ""),
@@ -145,8 +152,8 @@ func BuildAgentState(jobList []domain.Job, sources []Source, runs []domain.JobRu
 		{
 			Key:      "autonomy",
 			Label:    "Autonomous follow-up",
-			Why:      "The agent can plan daily work, but it still waits for manual refresh and explicit review actions.",
-			NextStep: "Add reminders, stale-task escalation, and automatic daily Feishu duty reports.",
+			Why:      "The agent can run scheduled reports and source discovery, but it still needs human approval before application actions.",
+			NextStep: "Add approval-gated resume matching and application draft preparation.",
 		},
 		{
 			Key:      "application_assist",
@@ -200,6 +207,13 @@ func notificationEvidence(webhookURL string) string {
 		return "Webhook not configured"
 	}
 	return "Webhook configured in settings"
+}
+
+func sourceDiscoveryEvidence(settings Settings) string {
+	if !settings.AutoSourceDiscoveryEnabled {
+		return "Automatic discovery is disabled"
+	}
+	return "Runs every " + itoa(settings.SourceDiscoveryIntervalHours) + "h"
 }
 
 func averageCapabilityLevel(items []AgentCapability) int {

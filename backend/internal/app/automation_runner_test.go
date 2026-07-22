@@ -75,3 +75,40 @@ func TestAutomationRunnerSendsDueDutyReportOnce(t *testing.T) {
 		t.Fatalf("expected second same-day tick to skip, sent=%v calls=%d", sent, calls)
 	}
 }
+
+func TestAutomationRunnerDiscoversSourcesWhenDue(t *testing.T) {
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	repo := jobs.NewRepository(conn)
+	settings := jobs.DefaultSettings()
+	settings.AutoSourceDiscoveryEnabled = true
+	settings.SourceDiscoveryIntervalHours = 1
+	if _, err := repo.SaveSettings(context.Background(), settings); err != nil {
+		t.Fatalf("save settings: %v", err)
+	}
+
+	runner := newAutomationRunner(repo, "")
+	ran, err := runner.Tick(context.Background(), time.Date(2026, 7, 21, 9, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("tick: %v", err)
+	}
+	if !ran {
+		t.Fatal("expected automation tick to run source discovery")
+	}
+	candidates, err := repo.ListSourceCandidates(context.Background(), jobs.SourceCandidateFilter{})
+	if err != nil {
+		t.Fatalf("list source candidates: %v", err)
+	}
+	if len(candidates) == 0 {
+		t.Fatal("expected discovered source candidates")
+	}
+	updated, err := repo.GetSettings(context.Background())
+	if err != nil {
+		t.Fatalf("get settings: %v", err)
+	}
+	if updated.LastSourceDiscoveryAt == nil {
+		t.Fatalf("expected last source discovery time to be persisted")
+	}
+}

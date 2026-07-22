@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -26,15 +27,37 @@ func (r *automationRunner) Tick(ctx context.Context, now time.Time) (bool, error
 	if err != nil {
 		return false, err
 	}
+	ran := false
+	if jobs.ShouldRunSourceDiscovery(settings, now) {
+		result, err := r.repo.DiscoverSourceCandidates(ctx, jobs.SourceDiscoveryInput{
+			TargetCities:     settings.TargetCities,
+			TargetDirections: settings.TargetDirections,
+		})
+		if err != nil {
+			return false, err
+		}
+		checkedAt := now.UTC()
+		settings.LastSourceDiscoveryAt = &checkedAt
+		if _, err := r.repo.SaveSettings(ctx, settings); err != nil {
+			return false, err
+		}
+		ran = true
+		_, _ = r.repo.CreateAgentEvent(ctx, jobs.AgentEventInput{
+			Type:    "auto_source_discovery",
+			Title:   "Ran automatic source discovery",
+			Summary: "I proposed " + itoa(result.Created) + " new source candidates and skipped " + itoa(result.Duplicated) + " duplicates.",
+			Level:   "success",
+		})
+	}
 	if !jobs.ShouldSendDutyReport(settings, now) {
-		return false, nil
+		return ran, nil
 	}
 	webhookURL := strings.TrimSpace(settings.FeishuWebhookURL)
 	if webhookURL == "" {
 		webhookURL = r.fallbackWebhookURL
 	}
 	if webhookURL == "" {
-		return false, nil
+		return ran, nil
 	}
 	if _, err := r.repo.EscalateAgentTasks(ctx, now, settings); err != nil {
 		return false, err
@@ -61,6 +84,10 @@ func (r *automationRunner) Tick(ctx context.Context, now time.Time) (bool, error
 		_, _ = r.repo.CreateAgentReviewSnapshot(ctx, review, "automation_tick")
 	}
 	return true, nil
+}
+
+func itoa(value int) string {
+	return fmt.Sprintf("%d", value)
 }
 
 func (r *automationRunner) buildDutyReport(ctx context.Context) (jobs.AgentDutyReport, error) {

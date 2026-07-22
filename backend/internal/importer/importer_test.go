@@ -43,6 +43,28 @@ func TestImportURLParsesTitleAndDescription(t *testing.T) {
 	}
 }
 
+func TestImportURLParsesOpenGraphAndChineseCity(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(`<html><head>
+<meta property="og:title" content="Go 后端开发工程师 - 深圳 - 校园招聘">
+<meta name="keywords" content="岗位职责, 任职要求, 立即申请">
+</head><body></body></html>`))
+	}))
+	defer server.Close()
+
+	job, err := ImportURL(context.Background(), server.URL, server.Client())
+	if err != nil {
+		t.Fatalf("import url: %v", err)
+	}
+	if job.Title != "Go 后端开发工程师 - 深圳 - 校园招聘" {
+		t.Fatalf("unexpected title: %q", job.Title)
+	}
+	if job.City != "Shenzhen" {
+		t.Fatalf("expected Shenzhen city, got %q", job.City)
+	}
+}
+
 func TestImportURLKeepsFailedFetchAsManualCheck(t *testing.T) {
 	job, err := ImportURL(context.Background(), "https://127.0.0.1:1/jobs/backend", http.DefaultClient)
 	if err != nil {
@@ -138,19 +160,19 @@ func TestLooksLikeConcreteJobPostingRejectsKnownRecruitmentPortals(t *testing.T)
 	cases := []domain.Job{
 		{
 			Title:       "校园招聘 - DJI 大疆招聘",
-			Description: "从这里起飞，让你的想象，变成世界现象。点击了解大疆拓疆者校园招聘、大咖计划、实习生招聘等最新校招资讯。",
+			Description: "从这里起飞，了解校园招聘、拓疆者计划、实习生招聘等最新校招资讯。",
 			ApplyURL:    "https://we.dji.com/zh-CN/campus",
 			SourceURL:   "https://we.dji.com/zh-CN/campus",
 		},
 		{
 			Title:       "百度校园招聘",
-			Description: "百度官方招聘平台-诚挚邀请来自社会，校园，实习生，海外的各界精英了解百度，加入百度。",
+			Description: "百度官方招聘平台邀请来自社会、校园、实习生、海外的精英加入百度。",
 			ApplyURL:    "https://talent.baidu.com/jobs/list",
 			SourceURL:   "https://talent.baidu.com/jobs/list",
 		},
 		{
 			Title:       "百度招聘",
-			Description: "百度官方招聘平台-诚挚邀请来自社会，校园，实习生，海外的各界精英了解百度，加入百度。",
+			Description: "百度官方招聘平台邀请来自社会、校园、实习生、海外的精英加入百度。",
 			ApplyURL:    "https://talent.baidu.com/static/index.html",
 			SourceURL:   "https://talent.baidu.com/static/index.html",
 		},
@@ -165,8 +187,8 @@ func TestLooksLikeConcreteJobPostingRejectsKnownRecruitmentPortals(t *testing.T)
 
 func TestLooksLikeConcreteJobPostingAcceptsRolePage(t *testing.T) {
 	if !LooksLikeConcreteJobPosting(domain.Job{
-		Title:       "Go Backend Engineer 2027 Campus - Shenzhen",
-		Description: "Job description and requirements for Go backend microservices.",
+		Title:       "Go 后端开发工程师 2027 校招 - 深圳",
+		Description: "岗位职责和任职要求：负责 Go 后端微服务开发。立即申请。",
 		ApplyURL:    "https://career.example.com/jobs/backend-go",
 	}) {
 		t.Fatal("expected concrete role page to be accepted")
