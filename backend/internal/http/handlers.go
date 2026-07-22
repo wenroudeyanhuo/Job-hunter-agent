@@ -180,8 +180,12 @@ func (h *Handlers) RunAgentChat(c *gin.Context) {
 	reply := jobs.BuildLocalAgentChatReply(req.Message, context)
 	if jobs.BuildAgentChatStatus(h.LLM).Configured {
 		if modelReply, err := h.runModelChat(c.Request.Context(), req.Message, context); err == nil && strings.TrimSpace(modelReply) != "" {
-			reply.Content = modelReply
-			reply.Source = "model"
+			parsed := jobs.ParseModelActionReply(modelReply)
+			reply.Content = parsed.Content
+			reply.Source = parsed.Source
+			if len(parsed.Actions) > 0 {
+				reply.Actions = parsed.Actions
+			}
 		} else if err != nil {
 			reply.Content += "\n\n模型调用暂时失败，我先用本地规则继续工作：" + err.Error()
 			reply.Source = "local_fallback"
@@ -250,7 +254,7 @@ func (h *Handlers) runModelChat(ctx context.Context, userMessage string, chatCon
 		"messages": []map[string]string{
 			{
 				"role": "system",
-				"content": fmt.Sprintf("You are Job Hunter Agent, a Chinese-speaking digital employee for autumn recruitment. Be concise, practical, and use the current local context. Current view: %s. Open tasks: %d. Strong matches: %d. Manual decisions: %d. Source issues: %d.",
+				"content": fmt.Sprintf("You are Job Hunter Agent, a Chinese-speaking digital employee for autumn recruitment. Be concise, practical, and use the current local context. Current view: %s. Open tasks: %d. Strong matches: %d. Manual decisions: %d. Source issues: %d. If suggesting an action, return JSON with content and actions. Allowed action types: run_crawl, refresh_tasks, sync_application_plans, send_feishu_report, discover_sources, review_strong_matches, review_manual_check. Never suggest direct resume submission or third-party login actions.",
 					chatContext.ActiveView, chatContext.OpenTasks, chatContext.StrongMatches, chatContext.ManualDecisions, chatContext.SourceIssues),
 			},
 			{"role": "user", "content": userMessage},
@@ -952,6 +956,15 @@ func (h *Handlers) ListSourceCandidates(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, candidates)
+}
+
+func (h *Handlers) GetSourceOperations(c *gin.Context) {
+	summary, err := h.Repo.BuildSourceOperationsSummary(c.Request.Context())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, summary)
 }
 
 func (h *Handlers) AcceptSourceCandidate(c *gin.Context) {

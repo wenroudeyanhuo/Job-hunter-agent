@@ -154,6 +154,29 @@ export interface SourceCandidate {
   updated_at: string;
 }
 
+export interface SourceAttention {
+  id: number;
+  name: string;
+  url: string;
+  status: string;
+  reason: string;
+}
+
+export interface SourceOperationsSummary {
+  total_sources: number;
+  enabled_sources: number;
+  healthy_sources: number;
+  warning_sources: number;
+  broken_sources: number;
+  unknown_sources: number;
+  pending_candidates: number;
+  verified_candidates: number;
+  rejected_candidates: number;
+  needs_attention: SourceAttention[];
+  recommended_promotes: SourceCandidate[];
+  actions: AgentCommandAction[];
+}
+
 export interface SourceDiscoveryResult {
   total: number;
   created: number;

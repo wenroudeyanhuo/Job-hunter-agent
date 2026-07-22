@@ -28,6 +28,7 @@ import type {
   Settings,
   Source,
   SourceCandidate,
+  SourceOperationsSummary,
   SourceDiscoveryResult,
 } from "./types";
 
@@ -228,6 +229,10 @@ export async function listSourceCandidates(status = ""): Promise<SourceCandidate
   const query = status ? `?status=${encodeURIComponent(status)}` : "";
   const candidates = await request<SourceCandidate[] | null>(`/api/sources/candidates${query}`);
   return Array.isArray(candidates) ? candidates : [];
+}
+
+export async function getSourceOperations(): Promise<SourceOperationsSummary> {
+  return request<SourceOperationsSummary>("/api/sources/operations");
 }
 
 export async function acceptSourceCandidate(id: number): Promise<{ candidate: SourceCandidate; source: Source }> {

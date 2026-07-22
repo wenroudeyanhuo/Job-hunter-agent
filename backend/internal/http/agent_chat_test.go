@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/db"
 	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/jobs"
 )
 
@@ -63,6 +64,45 @@ func TestAgentChatStatusReportsLocalMode(t *testing.T) {
 	}
 	if status.Mode != "local_rules" || status.Configured {
 		t.Fatalf("expected local mode, got %#v", status)
+	}
+}
+
+func TestAgentChatAPIParsesModelSuggestedActions(t *testing.T) {
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"content\":\"我建议同步投递计划。\",\"actions\":[{\"type\":\"sync_application_plans\",\"target\":\"applications\",\"detail\":\"准备投递\"},{\"type\":\"auto_apply_resume\",\"target\":\"external\",\"detail\":\"危险动作\"}]}"}}]}`))
+	}))
+	defer model.Close()
+
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	repo := jobs.NewRepository(conn)
+	handler := NewRouter(&Handlers{
+		Repo: repo,
+		LLM:  jobs.LLMConfig{APIKey: "test-key", BaseURL: model.URL, Model: "test-model"},
+	})
+
+	body := bytes.NewBufferString(`{"message":"帮我准备投递","active_view":"applications"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/agent/chat", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Reply jobs.AgentChatReply `json:"reply"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Reply.Source != "model" || !containsHTTPCommandAction(response.Reply.Actions, "sync_application_plans") {
+		t.Fatalf("expected safe model action, got %#v", response.Reply)
+	}
+	if containsHTTPCommandAction(response.Reply.Actions, "auto_apply_resume") {
+		t.Fatalf("unsafe model action should be filtered: %#v", response.Reply.Actions)
 	}
 }
 

@@ -52,6 +52,7 @@ func NewRouter(handlers *Handlers) http.Handler {
 	api.GET("/companies", handlers.ListCompanies)
 	api.PATCH("/companies/:id", handlers.UpdateCompany)
 	api.GET("/sources", handlers.ListSources)
+	api.GET("/sources/operations", handlers.GetSourceOperations)
 	api.POST("/sources/discovery/run", handlers.RunSourceDiscovery)
 	api.GET("/sources/candidates", handlers.ListSourceCandidates)
 	api.POST("/sources/candidates/:id/validate", handlers.ValidateSourceCandidate)

@@ -49,7 +49,7 @@ func TestApplicationPlansAPIListsAndUpdatesPlans(t *testing.T) {
 		t.Fatalf("expected one plan, got %#v", plans)
 	}
 
-	req = httptest.NewRequest(http.MethodPatch, "/api/applications/"+strconv.FormatInt(plans[0].ID, 10), strings.NewReader(`{"status":"ready","next_action":"Submit after resume review","checklist":["Resume ready"],"target_apply_date":"2026-07-23"}`))
+	req = httptest.NewRequest(http.MethodPatch, "/api/applications/"+strconv.FormatInt(plans[0].ID, 10), strings.NewReader(`{"status":"ready","next_action":"Submit after resume review","checklist":["Resume ready"],"resume_version":"backend-v2","draft_notes":"Mention Go service experience.","target_apply_date":"2026-07-23","follow_up_date":"2026-07-30"}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -62,5 +62,8 @@ func TestApplicationPlansAPIListsAndUpdatesPlans(t *testing.T) {
 	}
 	if updated.Status != jobs.ApplicationPlanStatusReady || updated.NextAction != "Submit after resume review" {
 		t.Fatalf("unexpected updated plan: %#v", updated)
+	}
+	if updated.ResumeVersion != "backend-v2" || updated.DraftNotes != "Mention Go service experience." || updated.FollowUpDate != "2026-07-30" {
+		t.Fatalf("expected editable application metadata, got %#v", updated)
 	}
 }

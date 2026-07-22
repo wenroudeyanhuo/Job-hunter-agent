@@ -13,6 +13,7 @@ import {
   getCandidateProfile,
   getJobDetail,
   getSettings,
+  getSourceOperations,
   importURL,
   listAgentEvents,
   listAgentChatMessages,
@@ -48,7 +49,7 @@ import {
   rejectSourceCandidate,
 } from "./api";
 import { DigitalEmployee3D } from "./DigitalEmployee3D";
-import type { AgentAutomationDiagnostics, AgentBriefing, AgentChatMessage, AgentChatStatus, AgentCommandResult, AgentDutyReport, AgentEvent, AgentReview, AgentReviewHistory, AgentState, AgentTask, ApplicationPlan, CandidateProfile, Company, Job, JobDetail, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source, SourceCandidate } from "./types";
+import type { AgentAutomationDiagnostics, AgentBriefing, AgentChatMessage, AgentChatStatus, AgentCommandResult, AgentDutyReport, AgentEvent, AgentReview, AgentReviewHistory, AgentState, AgentTask, ApplicationPlan, CandidateProfile, Company, Job, JobDetail, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source, SourceCandidate, SourceOperationsSummary } from "./types";
 
 const statusLabels: Record<JobStatus | "all", string> = {
   all: "All",
@@ -153,6 +154,7 @@ export default function App() {
   const [importURLValue, setImportURLValue] = useState("");
   const [sources, setSources] = useState<Source[]>([]);
   const [sourceCandidates, setSourceCandidates] = useState<SourceCandidate[]>([]);
+  const [sourceOperations, setSourceOperations] = useState<SourceOperationsSummary | null>(null);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [runs, setRuns] = useState<JobRun[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
@@ -214,6 +216,11 @@ export default function App() {
   async function refreshSourceCandidates() {
     const data = await listSourceCandidates();
     setSourceCandidates(data);
+  }
+
+  async function refreshSourceOperations() {
+    const data = await getSourceOperations();
+    setSourceOperations(data);
   }
 
   async function refreshCompanies() {
@@ -296,7 +303,7 @@ export default function App() {
   }
 
   useEffect(() => {
-    Promise.all([refresh(), refreshSources(), refreshSourceCandidates(), refreshCompanies(), refreshRuns(), refreshSettings(), refreshProfile(), refreshBriefing(), refreshAgentState(), refreshDutyReport(), refreshAgentReview(), refreshAgentReviewHistory(), refreshAgentEvents(), refreshTasks(), refreshApplicationPlans(), refreshAutomationStatus(), refreshChat()])
+    Promise.all([refresh(), refreshSources(), refreshSourceCandidates(), refreshSourceOperations(), refreshCompanies(), refreshRuns(), refreshSettings(), refreshProfile(), refreshBriefing(), refreshAgentState(), refreshDutyReport(), refreshAgentReview(), refreshAgentReviewHistory(), refreshAgentEvents(), refreshTasks(), refreshApplicationPlans(), refreshAutomationStatus(), refreshChat()])
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
@@ -554,6 +561,7 @@ export default function App() {
       setSourceURLValue("");
       setNotice("Source added. It will be used by the next crawl run.");
       await refreshSources();
+      await refreshSourceOperations();
       await refreshCompanies();
       await refreshBriefing();
       await refreshDutyReport();
@@ -573,7 +581,8 @@ export default function App() {
     await refreshBriefing();
     await refreshDutyReport();
     await refreshAgentReview();
-      await refreshAgentReviewHistory();
+    await refreshAgentReviewHistory();
+    await refreshSourceOperations();
     await refreshTasks();
     await refreshAgentState();
   }
@@ -585,7 +594,8 @@ export default function App() {
     await refreshBriefing();
     await refreshDutyReport();
     await refreshAgentReview();
-      await refreshAgentReviewHistory();
+    await refreshAgentReviewHistory();
+    await refreshSourceOperations();
     await refreshAgentEvents();
     await refreshTasks();
     await refreshApplicationPlans();
@@ -604,6 +614,7 @@ export default function App() {
           : "Recommended sources were already added.",
       );
       await refreshSources();
+      await refreshSourceOperations();
       await refreshCompanies();
       await refreshBriefing();
       await refreshDutyReport();
@@ -627,6 +638,7 @@ export default function App() {
       const result = await runSourceDiscovery(settings.target_cities, settings.target_directions);
       setNotice(`Source discovery finished. Proposed ${result.created} new candidates and skipped ${result.duplicated} duplicates.`);
       await refreshSourceCandidates();
+      await refreshSourceOperations();
       await refreshAgentEvents();
       await refreshAgentReview();
       await refreshAgentReviewHistory();
@@ -645,6 +657,7 @@ export default function App() {
       setNotice(`${candidate.name} accepted into active sources.`);
       await refreshSourceCandidates();
       await refreshSources();
+      await refreshSourceOperations();
       await refreshCompanies();
       await refreshBriefing();
       await refreshDutyReport();
@@ -663,6 +676,7 @@ export default function App() {
       await rejectSourceCandidate(candidate.id);
       setNotice(`${candidate.name} rejected.`);
       await refreshSourceCandidates();
+      await refreshSourceOperations();
       await refreshAgentEvents();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not reject source candidate");
@@ -677,6 +691,7 @@ export default function App() {
       const validated = await validateSourceCandidate(candidate.id);
       setNotice(`${candidate.name} checked: ${validated.validation_status}.`);
       await refreshSourceCandidates();
+      await refreshSourceOperations();
       await refreshAgentEvents();
       await refreshAgentState();
     } catch (err) {
@@ -891,6 +906,22 @@ export default function App() {
       await refreshAgentEvents();
       await refreshAgentState();
       setNotice(`Application plan updated to ${status}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update application plan");
+    }
+  }
+
+  async function handleApplicationPlanUpdate(plan: ApplicationPlan, update: Partial<ApplicationPlan>) {
+    setError("");
+    setNotice("");
+    try {
+      await updateApplicationPlan(plan.id, { ...plan, ...update });
+      await refreshApplicationPlans();
+      await refreshTasks();
+      await refreshDutyReport();
+      await refreshAgentEvents();
+      await refreshAgentState();
+      setNotice("Application plan metadata saved.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not update application plan");
     }
@@ -1286,6 +1317,7 @@ export default function App() {
           syncing={syncingApplications}
           onSync={handleSyncApplicationPlans}
           onStatus={handleApplicationPlanStatus}
+          onUpdate={handleApplicationPlanUpdate}
           onOpenJob={handleOpenJobDetail}
         />
       )}
@@ -1306,6 +1338,7 @@ export default function App() {
           <h2>Companies</h2>
           <span>{enabledCompanies} enabled / {companies.length} total</span>
         </div>
+        {sourceOperations && <SourceOperationsPanel summary={sourceOperations} onAction={handleAgentAction} busy={discoveringSources || recommendedRunning} />}
         <div className="company-toolbar">
           <input
             value={companyQuery}
@@ -1663,6 +1696,7 @@ function ApplicationWorkspace({
   syncing,
   onSync,
   onStatus,
+  onUpdate,
   onOpenJob,
 }: {
   plans: ApplicationPlan[];
@@ -1670,10 +1704,17 @@ function ApplicationWorkspace({
   syncing: boolean;
   onSync: () => void | Promise<void>;
   onStatus: (plan: ApplicationPlan, status: ApplicationPlan["status"]) => void | Promise<void>;
+  onUpdate: (plan: ApplicationPlan, update: Partial<ApplicationPlan>) => void | Promise<void>;
   onOpenJob: (id: number) => void | Promise<void>;
 }) {
   const jobsByID = new Map(jobs.map((job) => [job.id, job]));
   const activePlans = plans.filter((plan) => plan.status !== "applied" && plan.status !== "paused");
+  const columns = [
+    { status: "prepare", label: "Prepare" },
+    { status: "ready", label: "Ready" },
+    { status: "applied", label: "Applied" },
+    { status: "paused", label: "Paused" },
+  ];
   return (
     <section className="applications-panel">
       <div className="panel-header">
@@ -1685,52 +1726,112 @@ function ApplicationWorkspace({
           {syncing ? "Syncing..." : "Sync Plans"}
         </button>
       </div>
-      <div className="application-list">
-        {plans.map((plan) => {
-          const job = jobsByID.get(plan.job_id);
+      <div className="application-board">
+        {columns.map((column) => {
+          const columnPlans = plans.filter((plan) => plan.status === column.status);
           return (
-            <div className={`application-row application-${plan.status}`} key={plan.id}>
-              <div>
-                <div className="candidate-title">
-                  <strong>{job ? `${job.company} / ${job.title}` : `Job #${plan.job_id}`}</strong>
-                  <b>{plan.priority}</b>
-                </div>
-                <div className="source-meta">
-                  <span>{plan.status}</span>
-                  <span>{plan.target_apply_date || "No target date"}</span>
-                  <span>follow {plan.follow_up_date || "not set"}</span>
-                  <span>resume {plan.resume_version || "default"}</span>
-                  {job?.city && <span>{job.city}</span>}
-                </div>
-                <p>{plan.next_action || "No next action yet."}</p>
-                {plan.draft_notes && <p className="application-draft">{plan.draft_notes}</p>}
-                <div className="application-checklist">
-                  {plan.checklist.slice(0, 5).map((item) => (
-                    <span key={item}>{item}</span>
-                  ))}
-                </div>
-                {plan.blocker_notes && <small>{plan.blocker_notes}</small>}
+            <div className="application-column" key={column.status}>
+              <div className="application-column-header">
+                <strong>{column.label}</strong>
+                <span>{columnPlans.length}</span>
               </div>
-              <div className="candidate-actions">
-                <button type="button" onClick={() => onOpenJob(plan.job_id)}>
-                  Details
-                </button>
-                <button type="button" onClick={() => onStatus(plan, "ready")}>
-                  Ready
-                </button>
-                <button type="button" onClick={() => onStatus(plan, "applied")}>
-                  Applied
-                </button>
-                <button type="button" onClick={() => onStatus(plan, "paused")}>
-                  Pause
-                </button>
-              </div>
+              {columnPlans.map((plan) => (
+                <ApplicationPlanCard
+                  key={plan.id}
+                  plan={plan}
+                  job={jobsByID.get(plan.job_id)}
+                  onStatus={onStatus}
+                  onUpdate={onUpdate}
+                  onOpenJob={onOpenJob}
+                />
+              ))}
             </div>
           );
         })}
         {plans.length === 0 && <div className="empty-source">No application plans yet. Mark strong jobs as Interested, then sync plans.</div>}
       </div>
     </section>
+  );
+}
+
+function ApplicationPlanCard({
+  plan,
+  job,
+  onStatus,
+  onUpdate,
+  onOpenJob,
+}: {
+  plan: ApplicationPlan;
+  job?: Job;
+  onStatus: (plan: ApplicationPlan, status: ApplicationPlan["status"]) => void | Promise<void>;
+  onUpdate: (plan: ApplicationPlan, update: Partial<ApplicationPlan>) => void | Promise<void>;
+  onOpenJob: (id: number) => void | Promise<void>;
+}) {
+  const [resumeVersion, setResumeVersion] = useState(plan.resume_version || "default");
+  const [draftNotes, setDraftNotes] = useState(plan.draft_notes || "");
+  const [followUpDate, setFollowUpDate] = useState(plan.follow_up_date || "");
+
+  useEffect(() => {
+    setResumeVersion(plan.resume_version || "default");
+    setDraftNotes(plan.draft_notes || "");
+    setFollowUpDate(plan.follow_up_date || "");
+  }, [plan.id, plan.resume_version, plan.draft_notes, plan.follow_up_date]);
+
+  return (
+    <div className={`application-card application-${plan.status}`}>
+      <div className="candidate-title">
+        <strong>{job ? `${job.company} / ${job.title}` : `Job #${plan.job_id}`}</strong>
+        <b>{plan.priority}</b>
+      </div>
+      <div className="source-meta">
+        <span>{plan.target_apply_date || "No target date"}</span>
+        {job?.city && <span>{job.city}</span>}
+      </div>
+      <p>{plan.next_action || "No next action yet."}</p>
+      <div className="application-edit-grid">
+        <label>
+          Resume
+          <input value={resumeVersion} onChange={(event) => setResumeVersion(event.target.value)} />
+        </label>
+        <label>
+          Follow-up
+          <input value={followUpDate} onChange={(event) => setFollowUpDate(event.target.value)} placeholder="YYYY-MM-DD" />
+        </label>
+        <label className="application-edit-wide">
+          Draft notes
+          <textarea value={draftNotes} onChange={(event) => setDraftNotes(event.target.value)} />
+        </label>
+      </div>
+      <div className="application-checklist">
+        {plan.checklist.slice(0, 5).map((item) => (
+          <span key={item}>{item}</span>
+        ))}
+      </div>
+      <div className="candidate-actions">
+        <button type="button" onClick={() => onOpenJob(plan.job_id)}>
+          Details
+        </button>
+        <button type="button" onClick={() => onUpdate(plan, { resume_version: resumeVersion, draft_notes: draftNotes, follow_up_date: followUpDate })}>
+          Save
+        </button>
+        {plan.status !== "ready" && (
+          <button type="button" onClick={() => onStatus(plan, "ready")}>
+            Ready
+          </button>
+        )}
+        {plan.status !== "applied" && (
+          <button type="button" onClick={() => onStatus(plan, "applied")}>
+            Applied
+          </button>
+        )}
+        {plan.status !== "paused" && (
+          <button type="button" onClick={() => onStatus(plan, "paused")}>
+            Pause
+          </button>
+        )}
+      </div>
+      {plan.blocker_notes && <small>{plan.blocker_notes}</small>}
+    </div>
   );
 }
 
@@ -2133,6 +2234,56 @@ function SourceCandidatesPanel({
           ))}
         </div>
       )}
+    </section>
+  );
+}
+
+function SourceOperationsPanel({
+  summary,
+  onAction,
+  busy,
+}: {
+  summary: SourceOperationsSummary;
+  onAction: (action: string) => void | Promise<void>;
+  busy: boolean;
+}) {
+  return (
+    <section className="source-ops-panel">
+      <div className="source-ops-metrics">
+        <Metric label="Sources" value={`${summary.enabled_sources}/${summary.total_sources}`} />
+        <Metric label="Healthy" value={summary.healthy_sources} />
+        <Metric label="Unhealthy" value={summary.warning_sources + summary.broken_sources} />
+        <Metric label="Candidates" value={summary.pending_candidates} />
+      </div>
+      <div className="source-ops-body">
+        <div>
+          <h3>Needs Attention</h3>
+          {summary.needs_attention.slice(0, 4).map((source) => (
+            <div className="source-ops-row" key={source.id}>
+              <strong>{source.name}</strong>
+              <span>{source.status} / {source.reason || "No reason recorded"}</span>
+            </div>
+          ))}
+          {summary.needs_attention.length === 0 && <span className="source-ops-empty">No unhealthy source right now.</span>}
+        </div>
+        <div>
+          <h3>Promote Candidates</h3>
+          {summary.recommended_promotes.slice(0, 4).map((candidate) => (
+            <div className="source-ops-row" key={candidate.id}>
+              <strong>{candidate.name}</strong>
+              <span>{candidate.validation_status} / confidence {candidate.confidence}</span>
+            </div>
+          ))}
+          {summary.recommended_promotes.length === 0 && <span className="source-ops-empty">No high-confidence candidate waiting.</span>}
+        </div>
+        <div className="source-ops-actions">
+          {summary.actions.map((action) => (
+            <button type="button" key={`${action.type}-${action.target}`} onClick={() => onAction(action.type)} disabled={busy}>
+              {formatActionLabel(action.type)}
+            </button>
+          ))}
+        </div>
+      </div>
     </section>
   );
 }
