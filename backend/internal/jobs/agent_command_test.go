@@ -8,7 +8,7 @@ func TestPlanAgentCommandRecognizesWorkflowActions(t *testing.T) {
 	if plan.Result.Intent != "update_workflow" {
 		t.Fatalf("unexpected intent: %#v", plan.Result)
 	}
-	if !containsTestString(plan.TargetCities, "深圳") {
+	if !containsTestString(plan.TargetCities, "Shenzhen") {
 		t.Fatalf("expected Shenzhen target city, got %#v", plan.TargetCities)
 	}
 	if !containsTestString(plan.TargetDirections, "go") || !containsTestString(plan.TargetDirections, "backend") {
@@ -16,6 +16,20 @@ func TestPlanAgentCommandRecognizesWorkflowActions(t *testing.T) {
 	}
 	if !plan.RefreshTasks || !plan.SendFeishuReport {
 		t.Fatalf("expected refresh and feishu actions, got %#v", plan)
+	}
+}
+
+func TestPlanAgentCommandRecognizesNormalChineseWorkflowActions(t *testing.T) {
+	plan := PlanAgentCommand("\u53ea\u770b\u6df1\u5733 Go \u540e\u7aef\uff0c\u5237\u65b0\u4efb\u52a1\u5e76\u91c7\u96c6\u6700\u65b0\u5c97\u4f4d", DefaultSettings())
+
+	if !containsTestString(plan.TargetCities, "Shenzhen") {
+		t.Fatalf("expected Shenzhen target city, got %#v", plan.TargetCities)
+	}
+	if !containsTestString(plan.TargetDirections, "go") || !containsTestString(plan.TargetDirections, "backend") {
+		t.Fatalf("expected go/backend directions, got %#v", plan.TargetDirections)
+	}
+	if !plan.RefreshTasks || !plan.RunCrawl {
+		t.Fatalf("expected refresh and crawl actions, got %#v", plan)
 	}
 }
 

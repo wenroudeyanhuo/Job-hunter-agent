@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/db"
+	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/domain"
 	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/jobs"
 )
 
@@ -103,6 +105,54 @@ func TestAgentChatAPIParsesModelSuggestedActions(t *testing.T) {
 	}
 	if containsHTTPCommandAction(response.Reply.Actions, "auto_apply_resume") {
 		t.Fatalf("unsafe model action should be filtered: %#v", response.Reply.Actions)
+	}
+}
+
+func TestAgentChatModelPromptIncludesRecommendedJobs(t *testing.T) {
+	var requestPayload struct {
+		Messages []struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"messages"`
+	}
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&requestPayload); err != nil {
+			t.Fatalf("decode model request: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"content\":\"我建议先看腾讯 Go 后端。\"}"}}]}`))
+	}))
+	defer model.Close()
+
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	repo := jobs.NewRepository(conn)
+	if _, err := repo.CreateJob(t.Context(), domain.Job{
+		Company:    "Tencent",
+		Title:      "Go Backend Engineer",
+		City:       "Shenzhen",
+		ApplyURL:   "https://careers.example.com/tencent/go-backend",
+		MatchScore: 92,
+	}); err != nil {
+		t.Fatalf("seed job: %v", err)
+	}
+	handler := NewRouter(&Handlers{
+		Repo: repo,
+		LLM:  jobs.LLMConfig{APIKey: "test-key", BaseURL: model.URL, Model: "test-model"},
+	})
+
+	body := bytes.NewBufferString(`{"message":"今天最值得看什么岗位？","active_view":"opportunities"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/agent/chat", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if len(requestPayload.Messages) == 0 || !strings.Contains(requestPayload.Messages[0].Content, "Tencent - Go Backend Engineer - Shenzhen - score 92") {
+		t.Fatalf("expected model prompt to include recommended job context, got %#v", requestPayload.Messages)
 	}
 }
 

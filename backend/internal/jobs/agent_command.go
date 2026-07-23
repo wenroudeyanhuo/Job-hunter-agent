@@ -51,7 +51,12 @@ func PlanAgentCommand(text string, current Settings) AgentCommandPlan {
 			Detail: "Updated target cities or directions.",
 		})
 	}
+	normalChineseRefreshTasks := containsAny(lower, []string{"刷新任务", "更新任务", "任务"})
+	normalChineseApplicationPlans := containsAny(lower, []string{"同步投递", "投递计划", "准备投递", "申请计划"})
+	normalChineseRunCrawl := containsAny(lower, []string{"采集", "抓取", "最新岗位"})
+	normalChineseFeishuReport := containsAny(lower, []string{"飞书", "日报", "报告"})
 	plan.RefreshTasks = containsAny(lower, []string{"刷新任务", "更新任务", "任务", "refresh task", "work queue"})
+	plan.RefreshTasks = plan.RefreshTasks || normalChineseRefreshTasks
 	if plan.RefreshTasks {
 		plan.Result.Actions = append(plan.Result.Actions, AgentCommandAction{
 			Type:   "refresh_tasks",
@@ -60,6 +65,7 @@ func PlanAgentCommand(text string, current Settings) AgentCommandPlan {
 		})
 	}
 	plan.SyncApplicationPlans = containsAny(lower, []string{"同步投递", "投递计划", "准备投递", "申请计划", "application plan", "applications"})
+	plan.SyncApplicationPlans = plan.SyncApplicationPlans || normalChineseApplicationPlans
 	if plan.SyncApplicationPlans {
 		plan.Result.Actions = append(plan.Result.Actions, AgentCommandAction{
 			Type:   "sync_application_plans",
@@ -68,6 +74,7 @@ func PlanAgentCommand(text string, current Settings) AgentCommandPlan {
 		})
 	}
 	plan.RunCrawl = containsAny(lower, []string{"采集", "抓取", "crawl", "run crawl"})
+	plan.RunCrawl = plan.RunCrawl || normalChineseRunCrawl
 	if plan.RunCrawl {
 		plan.Result.Actions = append(plan.Result.Actions, AgentCommandAction{
 			Type:   "run_crawl",
@@ -76,6 +83,7 @@ func PlanAgentCommand(text string, current Settings) AgentCommandPlan {
 		})
 	}
 	plan.SendFeishuReport = containsAny(lower, []string{"飞书", "feishu", "日报", "报告", "report"})
+	plan.SendFeishuReport = plan.SendFeishuReport || normalChineseFeishuReport
 	if plan.SendFeishuReport {
 		plan.Result.Actions = append(plan.Result.Actions, AgentCommandAction{
 			Type:   "send_feishu_report",
@@ -94,6 +102,27 @@ func PlanAgentCommand(text string, current Settings) AgentCommandPlan {
 }
 
 func commandCities(text string, fallback []string) []string {
+	normalized := []string{}
+	cityAliases := map[string][]string{
+		"Shenzhen":  {"深圳", "Shenzhen"},
+		"Guangzhou": {"广州", "Guangzhou"},
+		"Shanghai":  {"上海", "Shanghai"},
+		"Beijing":   {"北京", "Beijing"},
+		"Hangzhou":  {"杭州", "Hangzhou"},
+		"Chengdu":   {"成都", "Chengdu"},
+		"Wuhan":     {"武汉", "Wuhan"},
+	}
+	for city, aliases := range cityAliases {
+		for _, alias := range aliases {
+			if strings.Contains(text, alias) {
+				normalized = append(normalized, city)
+				break
+			}
+		}
+	}
+	if len(normalized) > 0 {
+		return cleanStringList(normalized)
+	}
 	candidates := []string{"深圳", "广州", "上海", "北京", "杭州", "成都", "武汉", "Shenzhen", "Guangzhou", "Shanghai", "Beijing", "Hangzhou", "Chengdu", "Wuhan"}
 	out := []string{}
 	for _, city := range candidates {
@@ -108,6 +137,21 @@ func commandCities(text string, fallback []string) []string {
 }
 
 func commandDirections(lower string, fallback []string) []string {
+	normalAliases := map[string][]string{
+		"frontend":       {"前端"},
+		"backend":        {"后端"},
+		"algorithm":      {"算法"},
+		"ai_application": {"ai应用", "ai 应用", "大模型"},
+	}
+	normalOut := []string{}
+	for direction, aliases := range normalAliases {
+		for _, alias := range aliases {
+			if strings.Contains(lower, strings.ToLower(alias)) {
+				normalOut = append(normalOut, direction)
+				break
+			}
+		}
+	}
 	candidates := []string{"frontend", "backend", "java", "go", "algorithm", "ai_application"}
 	aliases := map[string][]string{
 		"frontend":       {"前端", "frontend"},
@@ -126,6 +170,7 @@ func commandDirections(lower string, fallback []string) []string {
 			}
 		}
 	}
+	out = append(out, normalOut...)
 	if len(out) == 0 {
 		return fallback
 	}

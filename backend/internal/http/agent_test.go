@@ -422,7 +422,7 @@ func TestAgentCommandAPIUpdatesPreferencesAndRefreshesTasks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get settings: %v", err)
 	}
-	if !containsString(settings.TargetCities, "深圳") || !containsString(settings.TargetCities, "广州") {
+	if !containsString(settings.TargetCities, "Shenzhen") || !containsString(settings.TargetCities, "Guangzhou") {
 		t.Fatalf("expected command to update cities, got %#v", settings.TargetCities)
 	}
 	if !containsString(settings.TargetDirections, "go") || !containsString(settings.TargetDirections, "backend") {

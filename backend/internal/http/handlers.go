@@ -162,6 +162,12 @@ func (h *Handlers) UpdateAgentActionRequest(c *gin.Context) {
 		respondRepoError(c, err)
 		return
 	}
+	if request.Status == jobs.AgentActionRequestStatusApproved {
+		if err := h.executeApprovedAgentAction(c, request); err != nil {
+			respondError(c, http.StatusConflict, err)
+			return
+		}
+	}
 	h.recordAgentEvent(c, jobs.AgentEventInput{
 		Type:    "agent_action_" + request.Status,
 		Title:   "Agent action " + request.Status,
@@ -169,6 +175,73 @@ func (h *Handlers) UpdateAgentActionRequest(c *gin.Context) {
 		Level:   "info",
 	})
 	c.JSON(http.StatusOK, request)
+}
+
+func (h *Handlers) executeApprovedAgentAction(c *gin.Context, request jobs.AgentActionRequest) error {
+	ctx := c.Request.Context()
+	switch request.ActionType {
+	case "run_crawl":
+		if h.Runner == nil {
+			return fmt.Errorf("crawl runner is not configured")
+		}
+		summary, err := h.Runner.Run(ctx, "agent_action")
+		if err != nil {
+			return err
+		}
+		cleanup, err := h.cleanupLandingPages(ctx)
+		if err != nil {
+			return err
+		}
+		summary.LandingPagesIgnored = cleanup.Ignored
+		h.recordCrawlEvent(c, "agent_action_crawl_completed", "Agent action crawl completed", summary)
+		h.refreshAgentTasksAfterCrawl(c)
+		h.snapshotAgentReview(c, "agent_action_crawl_completed")
+	case "refresh_tasks":
+		if _, err := h.Repo.SyncAgentTasks(ctx, time.Now().UTC()); err != nil {
+			return err
+		}
+	case "sync_application_plans":
+		if _, err := h.Repo.SyncApplicationPlans(ctx, time.Now().UTC()); err != nil {
+			return err
+		}
+	case "send_feishu_report":
+		webhookURL, err := h.effectiveFeishuWebhookURL(ctx)
+		if err != nil {
+			return err
+		}
+		if webhookURL == "" {
+			return fmt.Errorf("Feishu webhook URL is not configured")
+		}
+		report, err := h.buildDutyReport(ctx)
+		if err != nil {
+			return err
+		}
+		if err := notify.SendFeishuWebhook(ctx, webhookURL, notify.BuildFeishuDutyReport(report)); err != nil {
+			return err
+		}
+	case "discover_sources":
+		settings, err := h.Repo.GetSettings(ctx)
+		if err != nil {
+			return err
+		}
+		if _, err := h.Repo.DiscoverSourceCandidates(ctx, jobs.SourceDiscoveryInput{
+			TargetCities:     settings.TargetCities,
+			TargetDirections: settings.TargetDirections,
+		}); err != nil {
+			return err
+		}
+	case "review_strong_matches", "review_manual_check":
+		// Navigation-only requests are safely completed once the user approves them.
+	default:
+		return fmt.Errorf("unsupported agent action: %s", request.ActionType)
+	}
+	h.recordAgentEvent(c, jobs.AgentEventInput{
+		Type:    "agent_action_executed",
+		Title:   "Executed approved action",
+		Summary: request.ActionType + ": " + request.Detail,
+		Level:   "success",
+	})
+	return nil
 }
 
 func (h *Handlers) GetAutomationStatus(c *gin.Context) {
@@ -267,6 +340,14 @@ func (h *Handlers) buildAgentChatContext(ctx context.Context, activeView string)
 	for _, job := range jobList {
 		if job.MatchScore >= 70 {
 			context.StrongMatches++
+			if len(context.RecommendedJobs) < 5 {
+				context.RecommendedJobs = append(context.RecommendedJobs, jobs.AgentChatJobSummary{
+					Company:    job.Company,
+					Title:      job.Title,
+					City:       job.City,
+					MatchScore: job.MatchScore,
+				})
+			}
 		}
 		if job.Status == domain.StatusManualCheck {
 			context.ManualDecisions++
@@ -295,8 +376,8 @@ func (h *Handlers) runModelChat(ctx context.Context, userMessage string, chatCon
 		"messages": []map[string]string{
 			{
 				"role": "system",
-				"content": fmt.Sprintf("You are Job Hunter Agent, a Chinese-speaking digital employee for autumn recruitment. Be concise, practical, and use the current local context. Current view: %s. Open tasks: %d. Strong matches: %d. Manual decisions: %d. Source issues: %d. If suggesting an action, return JSON with content and actions. Allowed action types: run_crawl, refresh_tasks, sync_application_plans, send_feishu_report, discover_sources, review_strong_matches, review_manual_check. Never suggest direct resume submission or third-party login actions.",
-					chatContext.ActiveView, chatContext.OpenTasks, chatContext.StrongMatches, chatContext.ManualDecisions, chatContext.SourceIssues),
+				"content": fmt.Sprintf("You are Job Hunter Agent, a Chinese-speaking digital employee for autumn recruitment. Be concise, practical, and use the current local context. Current view: %s. Open tasks: %d. Strong matches: %d. Manual decisions: %d. Source issues: %d. Recommended jobs: %s. If suggesting an action, return JSON with content and actions. Allowed action types: run_crawl, refresh_tasks, sync_application_plans, send_feishu_report, discover_sources, review_strong_matches, review_manual_check. Never suggest direct resume submission or third-party login actions.",
+					chatContext.ActiveView, chatContext.OpenTasks, chatContext.StrongMatches, chatContext.ManualDecisions, chatContext.SourceIssues, formatAgentChatJobSummaries(chatContext.RecommendedJobs)),
 			},
 			{"role": "user", "content": userMessage},
 		},
@@ -335,6 +416,17 @@ func (h *Handlers) runModelChat(ctx context.Context, userMessage string, chatCon
 		return "", fmt.Errorf("model returned no choices")
 	}
 	return strings.TrimSpace(decoded.Choices[0].Message.Content), nil
+}
+
+func formatAgentChatJobSummaries(jobList []jobs.AgentChatJobSummary) string {
+	if len(jobList) == 0 {
+		return "none"
+	}
+	parts := make([]string, 0, len(jobList))
+	for _, job := range jobList {
+		parts = append(parts, fmt.Sprintf("%s - %s - %s - score %d", job.Company, job.Title, job.City, job.MatchScore))
+	}
+	return strings.Join(parts, "; ")
 }
 
 func (h *Handlers) RunAutomationDutyReport(c *gin.Context) {

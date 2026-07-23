@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/crawl"
 	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/jobs"
 )
 
@@ -50,6 +52,38 @@ func TestAgentActionRequestsAPIListsAndUpdatesRequests(t *testing.T) {
 	}
 }
 
+func TestAgentActionRequestApprovalExecutesRunCrawl(t *testing.T) {
+	runner := &countingRunner{summary: crawl.RunSummary{JobsCreated: 2}}
+	repo, handler := testRouter(t, runner)
+	if err := repo.RecordAgentActionRequests(t.Context(), "chat", []jobs.AgentCommandAction{
+		{Type: "run_crawl", Target: "sources", Detail: "Run a manual crawl."},
+	}); err != nil {
+		t.Fatalf("seed action request: %v", err)
+	}
+	requests, err := repo.ListAgentActionRequests(t.Context(), jobs.AgentActionRequestStatusPending)
+	if err != nil {
+		t.Fatalf("list requests: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/agent/actions/"+strconv.FormatInt(requests[0].ID, 10), strings.NewReader(`{"status":"approved"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 approve, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if runner.calls != 1 || runner.lastTrigger != "agent_action" {
+		t.Fatalf("expected approved action to run crawl once, got calls=%d trigger=%q", runner.calls, runner.lastTrigger)
+	}
+	events, err := repo.ListAgentEvents(t.Context(), 10)
+	if err != nil {
+		t.Fatalf("list events: %v", err)
+	}
+	if !containsAgentEvent(events, "agent_action_executed") {
+		t.Fatalf("expected execution event, got %#v", events)
+	}
+}
+
 func TestAgentChatRecordsSuggestedActionRequests(t *testing.T) {
 	repo, handler := testRouter(t, nil)
 	body := bytes.NewBufferString(`{"message":"今天该做什么","active_view":"dashboard"}`)
@@ -68,4 +102,25 @@ func TestAgentChatRecordsSuggestedActionRequests(t *testing.T) {
 	if len(requests) == 0 {
 		t.Fatalf("expected chat suggested actions to be persisted")
 	}
+}
+
+type countingRunner struct {
+	summary     crawl.RunSummary
+	calls       int
+	lastTrigger string
+}
+
+func (r *countingRunner) Run(_ context.Context, trigger string) (crawl.RunSummary, error) {
+	r.calls++
+	r.lastTrigger = trigger
+	return r.summary, nil
+}
+
+func containsAgentEvent(events []jobs.AgentEvent, eventType string) bool {
+	for _, event := range events {
+		if event.Type == eventType {
+			return true
+		}
+	}
+	return false
 }

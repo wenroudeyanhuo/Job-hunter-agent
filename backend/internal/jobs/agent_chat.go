@@ -34,6 +34,14 @@ type AgentChatContext struct {
 	SourceIssues    int
 	ActiveView      string
 	ModelEnabled    bool
+	RecommendedJobs []AgentChatJobSummary
+}
+
+type AgentChatJobSummary struct {
+	Company    string
+	Title      string
+	City       string
+	MatchScore int
 }
 
 type AgentChatReply struct {
@@ -110,6 +118,34 @@ func (r *Repository) ListAgentChatMessages(ctx context.Context, limit int) ([]Ag
 func BuildLocalAgentChatReply(input string, context AgentChatContext) AgentChatReply {
 	text := strings.ToLower(strings.TrimSpace(input))
 	reply := AgentChatReply{Source: "local"}
+	if containsAnyText(text, "模型", "model", "llm") {
+		if context.ModelEnabled {
+			reply.Content = "我已经检测到模型配置，可以用模型理解更自由的对话；同时我会保留本地规则作为兜底。"
+		} else {
+			reply.Content = "现在我处于本地规则模式，还没有检测到模型密钥。配置 LLM_API_KEY 和 LLM_MODEL 后，我就能切换到模型对话。"
+		}
+		return reply
+	}
+	if containsAnyText(text, "采集", "抓取", "刷新岗位", "最新岗位", "crawl", "run crawl") {
+		reply.Content = "可以，我可以帮你发起采集。为了避免误操作，我会先把它作为待批准动作展示；你批准后我再执行，并刷新今日任务。"
+		reply.Actions = append(reply.Actions, AgentCommandAction{Type: "run_crawl", Target: "sources", Detail: "Run a manual crawl."})
+		return reply
+	}
+	if containsAnyText(text, "投递", "申请", "简历", "application", "apply") {
+		reply.Content = "可以。我会先把已标记 Interested 的高分岗位同步到投递工作台，形成下一步动作、清单、简历版本和跟进日期。真正提交简历前仍需要你确认。"
+		reply.Actions = append(reply.Actions, AgentCommandAction{Type: "sync_application_plans", Target: "applications", Detail: "Sync interested strong matches into the application workspace."})
+		reply.Actions = append(reply.Actions, AgentCommandAction{Type: "review_strong_matches", Target: "opportunities", Detail: "Review strong opportunities before applying."})
+		return reply
+	}
+	if containsAnyText(text, "今天", "做什么", "推荐", "岗位", "机会", "worth", "recommend") {
+		reply.Content = fmt.Sprintf("我建议先处理今天的闭环：%d 个开放任务、%d 个强匹配岗位、%d 个需要你决策的岗位、%d 个来源异常。优先级是先修来源，再看强匹配，最后清理人工判断队列。", context.OpenTasks, context.StrongMatches, context.ManualDecisions, context.SourceIssues)
+		reply.Actions = append(reply.Actions, AgentCommandAction{Type: "review_strong_matches", Target: "opportunities", Detail: "Open strong opportunities first."})
+		reply.Actions = append(reply.Actions, AgentCommandAction{Type: "sync_application_plans", Target: "applications", Detail: "Prepare application plans for interested roles."})
+		if context.ManualDecisions > 0 {
+			reply.Actions = append(reply.Actions, AgentCommandAction{Type: "review_manual_check", Target: "opportunities", Detail: "Resolve manual decisions."})
+		}
+		return reply
+	}
 	if strings.Contains(text, "模型") || strings.Contains(text, "model") || strings.Contains(text, "llm") {
 		if context.ModelEnabled {
 			reply.Content = "我已经检测到模型配置，可以用模型理解更自由的对话；同时我会保留本地规则作为兜底。"
@@ -140,6 +176,15 @@ func BuildLocalAgentChatReply(input string, context AgentChatContext) AgentChatR
 	}
 	reply.Content = "我在。你可以问我今天该投哪些岗位、为什么某个岗位适合你、哪些任务快过期，或者让我刷新任务、运行采集、同步投递计划。"
 	return reply
+}
+
+func containsAnyText(value string, needles ...string) bool {
+	for _, needle := range needles {
+		if strings.Contains(value, strings.ToLower(needle)) {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeAgentChatRole(role string) string {
