@@ -52,7 +52,7 @@ func (r *Repository) RecordAgentActionRequests(ctx context.Context, source strin
 }
 
 func (r *Repository) ListAgentActionRequests(ctx context.Context, status string) ([]AgentActionRequest, error) {
-	status = normalizeAgentActionRequestStatus(status)
+	status = NormalizeAgentActionRequestStatus(status)
 	query := selectAgentActionRequestSQL()
 	args := []any{}
 	if status != "" {
@@ -80,8 +80,17 @@ func (r *Repository) ListAgentActionRequests(ctx context.Context, status string)
 	return requests, nil
 }
 
+func (r *Repository) GetAgentActionRequest(ctx context.Context, id int64) (AgentActionRequest, error) {
+	row := r.db.QueryRowContext(ctx, selectAgentActionRequestSQL()+` WHERE id = ?`, id)
+	request, err := scanAgentActionRequest(row)
+	if err != nil {
+		return AgentActionRequest{}, fmt.Errorf("get agent action request %d: %w", id, err)
+	}
+	return request, nil
+}
+
 func (r *Repository) UpdateAgentActionRequestStatus(ctx context.Context, id int64, status string) (AgentActionRequest, error) {
-	status = normalizeAgentActionRequestStatus(status)
+	status = NormalizeAgentActionRequestStatus(status)
 	if status == "" {
 		status = AgentActionRequestStatusPending
 	}
@@ -108,7 +117,7 @@ func (r *Repository) UpdateAgentActionRequestStatus(ctx context.Context, id int6
 	return scanAgentActionRequest(row)
 }
 
-func normalizeAgentActionRequestStatus(status string) string {
+func NormalizeAgentActionRequestStatus(status string) string {
 	switch strings.TrimSpace(status) {
 	case AgentActionRequestStatusPending:
 		return AgentActionRequestStatusPending
@@ -139,7 +148,7 @@ func scanAgentActionRequest(scanner jobScanner) (AgentActionRequest, error) {
 	); err != nil {
 		return AgentActionRequest{}, fmt.Errorf("scan agent action request: %w", err)
 	}
-	request.Status = normalizeAgentActionRequestStatus(request.Status)
+	request.Status = NormalizeAgentActionRequestStatus(request.Status)
 	if request.Status == "" {
 		request.Status = AgentActionRequestStatusPending
 	}

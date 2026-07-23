@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -84,6 +85,35 @@ func TestAgentActionRequestApprovalExecutesRunCrawl(t *testing.T) {
 	}
 }
 
+func TestAgentActionRequestApprovalKeepsPendingWhenExecutionFails(t *testing.T) {
+	runner := &countingRunner{err: errors.New("source is busy")}
+	repo, handler := testRouter(t, runner)
+	if err := repo.RecordAgentActionRequests(t.Context(), "chat", []jobs.AgentCommandAction{
+		{Type: "run_crawl", Target: "sources", Detail: "Run a manual crawl."},
+	}); err != nil {
+		t.Fatalf("seed action request: %v", err)
+	}
+	requests, err := repo.ListAgentActionRequests(t.Context(), jobs.AgentActionRequestStatusPending)
+	if err != nil {
+		t.Fatalf("list requests: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/agent/actions/"+strconv.FormatInt(requests[0].ID, 10), strings.NewReader(`{"status":"approved"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409 execution failure, got %d: %s", rec.Code, rec.Body.String())
+	}
+	after, err := repo.ListAgentActionRequests(t.Context(), jobs.AgentActionRequestStatusPending)
+	if err != nil {
+		t.Fatalf("list pending requests: %v", err)
+	}
+	if len(after) != 1 || after[0].Status != jobs.AgentActionRequestStatusPending || after[0].ResolvedAt != nil {
+		t.Fatalf("expected failed action to remain pending, got %#v", after)
+	}
+}
+
 func TestAgentChatRecordsSuggestedActionRequests(t *testing.T) {
 	repo, handler := testRouter(t, nil)
 	body := bytes.NewBufferString(`{"message":"今天该做什么","active_view":"dashboard"}`)
@@ -106,6 +136,7 @@ func TestAgentChatRecordsSuggestedActionRequests(t *testing.T) {
 
 type countingRunner struct {
 	summary     crawl.RunSummary
+	err         error
 	calls       int
 	lastTrigger string
 }
@@ -113,7 +144,7 @@ type countingRunner struct {
 func (r *countingRunner) Run(_ context.Context, trigger string) (crawl.RunSummary, error) {
 	r.calls++
 	r.lastTrigger = trigger
-	return r.summary, nil
+	return r.summary, r.err
 }
 
 func containsAgentEvent(events []jobs.AgentEvent, eventType string) bool {

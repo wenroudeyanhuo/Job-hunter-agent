@@ -1077,14 +1077,58 @@ export default function App() {
     setError("");
     setNotice("");
     try {
-      await handleAgentAction(request.action_type);
       await updateAgentActionRequest(request.id, "approved");
-      await refreshAgentActionRequests();
-      await refreshAgentEvents();
-      setNotice(`Agent action approved: ${formatActionLabel(request.action_type)}.`);
+      await handleApprovedActionNavigation(request.action_type);
+      await refreshAfterAgentActionExecution();
+      setNotice(`Agent action approved and executed: ${formatActionLabel(request.action_type)}.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not approve agent action");
     }
+  }
+
+  async function handleApprovedActionNavigation(action: string) {
+    switch (action) {
+      case "review_manual_check":
+        setActiveView("opportunities");
+        setScoreView("all");
+        await handleStatusFilter("manual_check");
+        return;
+      case "review_strong_matches":
+        setActiveView("opportunities");
+        setStatus("all");
+        setDirection("all");
+        setScoreView("strong");
+        await refresh("all");
+        return;
+      case "sync_application_plans":
+        setActiveView("applications");
+        return;
+      case "discover_sources":
+        setActiveView("companies");
+        return;
+      default:
+        return;
+    }
+  }
+
+  async function refreshAfterAgentActionExecution() {
+    await Promise.all([
+      refresh(),
+      refreshSources(),
+      refreshSourceCandidates(),
+      refreshSourceOperations(),
+      refreshRuns(),
+      refreshBriefing(),
+      refreshDutyReport(),
+      refreshAgentReview(),
+      refreshAgentReviewHistory(),
+      refreshAgentEvents(),
+      refreshAgentActionRequests(),
+      refreshTasks(),
+      refreshApplicationPlans(),
+      refreshAutomationStatus(),
+      refreshAgentState(),
+    ]);
   }
 
   async function handleDismissActionRequest(request: AgentActionRequest) {

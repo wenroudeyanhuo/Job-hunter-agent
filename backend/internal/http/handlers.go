@@ -157,16 +157,21 @@ func (h *Handlers) UpdateAgentActionRequest(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "status is required"})
 		return
 	}
-	request, err := h.Repo.UpdateAgentActionRequestStatus(c.Request.Context(), id, req.Status)
+	current, err := h.Repo.GetAgentActionRequest(c.Request.Context(), id)
 	if err != nil {
 		respondRepoError(c, err)
 		return
 	}
-	if request.Status == jobs.AgentActionRequestStatusApproved {
-		if err := h.executeApprovedAgentAction(c, request); err != nil {
+	if jobs.NormalizeAgentActionRequestStatus(req.Status) == jobs.AgentActionRequestStatusApproved {
+		if err := h.executeApprovedAgentAction(c, current); err != nil {
 			respondError(c, http.StatusConflict, err)
 			return
 		}
+	}
+	request, err := h.Repo.UpdateAgentActionRequestStatus(c.Request.Context(), id, req.Status)
+	if err != nil {
+		respondRepoError(c, err)
+		return
 	}
 	h.recordAgentEvent(c, jobs.AgentEventInput{
 		Type:    "agent_action_" + request.Status,
