@@ -83,6 +83,13 @@ func TestAgentActionRequestApprovalExecutesRunCrawl(t *testing.T) {
 	if !containsAgentEvent(events, "agent_action_executed") {
 		t.Fatalf("expected execution event, got %#v", events)
 	}
+	approved, err := repo.ListAgentActionRequests(t.Context(), jobs.AgentActionRequestStatusApproved)
+	if err != nil {
+		t.Fatalf("list approved requests: %v", err)
+	}
+	if len(approved) != 1 || approved[0].ExecutionStatus != jobs.AgentActionExecutionSucceeded || !strings.Contains(approved[0].ExecutionMessage, "Created 2 jobs") {
+		t.Fatalf("expected execution receipt on approved action, got %#v", approved)
+	}
 }
 
 func TestAgentActionRequestApprovalKeepsPendingWhenExecutionFails(t *testing.T) {
@@ -111,6 +118,9 @@ func TestAgentActionRequestApprovalKeepsPendingWhenExecutionFails(t *testing.T) 
 	}
 	if len(after) != 1 || after[0].Status != jobs.AgentActionRequestStatusPending || after[0].ResolvedAt != nil {
 		t.Fatalf("expected failed action to remain pending, got %#v", after)
+	}
+	if after[0].ExecutionStatus != jobs.AgentActionExecutionFailed || !strings.Contains(after[0].ExecutionMessage, "source is busy") {
+		t.Fatalf("expected failed execution receipt, got %#v", after[0])
 	}
 }
 

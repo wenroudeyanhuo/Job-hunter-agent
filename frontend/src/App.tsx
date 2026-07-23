@@ -2819,6 +2819,11 @@ function AgentActionRequestsPanel({
             <div>
               <strong>{formatActionLabel(request.action_type)}</strong>
               <span>{request.detail || request.target || "Agent suggested a safe workflow action."}</span>
+              {request.execution_status && request.execution_status !== "not_run" && (
+                <small className={`execution-receipt receipt-${request.execution_status}`}>
+                  {formatExecutionStatus(request.execution_status)}: {request.execution_message || "No execution detail recorded."}
+                </small>
+              )}
               <small>{request.source} / {formatDateTime(request.created_at)}</small>
             </div>
             <div className="action-request-actions">
@@ -2964,6 +2969,15 @@ function formatActionLabel(action: string) {
     follow_up_application: "Follow up applications",
   };
   return labels[action] || action.replace(/_/g, " ");
+}
+
+function formatExecutionStatus(status: string) {
+  const labels: Record<string, string> = {
+    succeeded: "Executed",
+    failed: "Failed",
+    not_run: "Not run",
+  };
+  return labels[status] || status.replace(/_/g, " ");
 }
 
 function formatFitVerdict(verdict: string) {

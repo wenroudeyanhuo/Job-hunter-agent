@@ -384,6 +384,9 @@ export interface AgentActionRequest {
   status: "pending" | "approved" | "dismissed" | string;
   created_at: string;
   resolved_at?: string;
+  execution_status: "not_run" | "succeeded" | "failed" | string;
+  execution_message: string;
+  executed_at?: string;
 }
 
 export interface AgentDutyReport {

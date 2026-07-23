@@ -163,8 +163,14 @@ func (h *Handlers) UpdateAgentActionRequest(c *gin.Context) {
 		return
 	}
 	if jobs.NormalizeAgentActionRequestStatus(req.Status) == jobs.AgentActionRequestStatusApproved {
-		if err := h.executeApprovedAgentAction(c, current); err != nil {
+		executionMessage, err := h.executeApprovedAgentAction(c, current)
+		if err != nil {
+			_, _ = h.Repo.RecordAgentActionRequestExecution(c.Request.Context(), id, jobs.AgentActionExecutionFailed, err.Error())
 			respondError(c, http.StatusConflict, err)
+			return
+		}
+		if _, err := h.Repo.RecordAgentActionRequestExecution(c.Request.Context(), id, jobs.AgentActionExecutionSucceeded, executionMessage); err != nil {
+			respondError(c, http.StatusInternalServerError, err)
 			return
 		}
 	}
@@ -182,71 +188,80 @@ func (h *Handlers) UpdateAgentActionRequest(c *gin.Context) {
 	c.JSON(http.StatusOK, request)
 }
 
-func (h *Handlers) executeApprovedAgentAction(c *gin.Context, request jobs.AgentActionRequest) error {
+func (h *Handlers) executeApprovedAgentAction(c *gin.Context, request jobs.AgentActionRequest) (string, error) {
 	ctx := c.Request.Context()
+	message := "Action completed."
 	switch request.ActionType {
 	case "run_crawl":
 		if h.Runner == nil {
-			return fmt.Errorf("crawl runner is not configured")
+			return "", fmt.Errorf("crawl runner is not configured")
 		}
 		summary, err := h.Runner.Run(ctx, "agent_action")
 		if err != nil {
-			return err
+			return "", err
 		}
 		cleanup, err := h.cleanupLandingPages(ctx)
 		if err != nil {
-			return err
+			return "", err
 		}
 		summary.LandingPagesIgnored = cleanup.Ignored
 		h.recordCrawlEvent(c, "agent_action_crawl_completed", "Agent action crawl completed", summary)
 		h.refreshAgentTasksAfterCrawl(c)
 		h.snapshotAgentReview(c, "agent_action_crawl_completed")
+		message = "Created " + strconv.Itoa(summary.JobsCreated) + " jobs, found " + strconv.Itoa(summary.JobsDuplicated) + " duplicates, and flagged " + strconv.Itoa(summary.ManualCheckCount) + " for review."
 	case "refresh_tasks":
 		if _, err := h.Repo.SyncAgentTasks(ctx, time.Now().UTC()); err != nil {
-			return err
+			return "", err
 		}
+		message = "Refreshed today's task queue."
 	case "sync_application_plans":
-		if _, err := h.Repo.SyncApplicationPlans(ctx, time.Now().UTC()); err != nil {
-			return err
+		plans, err := h.Repo.SyncApplicationPlans(ctx, time.Now().UTC())
+		if err != nil {
+			return "", err
 		}
+		message = "Synced " + strconv.Itoa(len(plans)) + " application plans."
 	case "send_feishu_report":
 		webhookURL, err := h.effectiveFeishuWebhookURL(ctx)
 		if err != nil {
-			return err
+			return "", err
 		}
 		if webhookURL == "" {
-			return fmt.Errorf("Feishu webhook URL is not configured")
+			return "", fmt.Errorf("Feishu webhook URL is not configured")
 		}
 		report, err := h.buildDutyReport(ctx)
 		if err != nil {
-			return err
+			return "", err
 		}
 		if err := notify.SendFeishuWebhook(ctx, webhookURL, notify.BuildFeishuDutyReport(report)); err != nil {
-			return err
+			return "", err
 		}
+		message = "Sent the current duty report to Feishu."
 	case "discover_sources":
 		settings, err := h.Repo.GetSettings(ctx)
 		if err != nil {
-			return err
+			return "", err
 		}
-		if _, err := h.Repo.DiscoverSourceCandidates(ctx, jobs.SourceDiscoveryInput{
+		result, err := h.Repo.DiscoverSourceCandidates(ctx, jobs.SourceDiscoveryInput{
 			TargetCities:     settings.TargetCities,
 			TargetDirections: settings.TargetDirections,
-		}); err != nil {
-			return err
+		})
+		if err != nil {
+			return "", err
 		}
+		message = "Discovered " + strconv.Itoa(result.Created) + " new source candidates and skipped " + strconv.Itoa(result.Duplicated) + " duplicates."
 	case "review_strong_matches", "review_manual_check":
 		// Navigation-only requests are safely completed once the user approves them.
+		message = "Opened the requested review workflow."
 	default:
-		return fmt.Errorf("unsupported agent action: %s", request.ActionType)
+		return "", fmt.Errorf("unsupported agent action: %s", request.ActionType)
 	}
 	h.recordAgentEvent(c, jobs.AgentEventInput{
 		Type:    "agent_action_executed",
 		Title:   "Executed approved action",
-		Summary: request.ActionType + ": " + request.Detail,
+		Summary: request.ActionType + ": " + message,
 		Level:   "success",
 	})
-	return nil
+	return message, nil
 }
 
 func (h *Handlers) GetAutomationStatus(c *gin.Context) {

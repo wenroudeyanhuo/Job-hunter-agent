@@ -1244,6 +1244,17 @@ h2 {
   line-height: 1.4;
 }
 
+.action-request-row .execution-receipt {
+  border-left: 3px solid #1fb56e;
+  padding-left: 8px;
+  color: #176443;
+}
+
+.action-request-row .receipt-failed {
+  border-left-color: #dc2626;
+  color: #b42318;
+}
+
 .action-request-actions {
   display: flex;
   gap: 8px;

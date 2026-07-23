@@ -51,6 +51,9 @@ func applySchema(conn *sql.DB) error {
 	if err := ensureApplicationPlanColumns(conn); err != nil {
 		return err
 	}
+	if err := ensureAgentActionRequestColumns(conn); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -204,6 +207,44 @@ func ensureApplicationPlanColumns(conn *sql.DB) error {
 		}
 		if _, err := conn.Exec(fmt.Sprintf("ALTER TABLE application_plans ADD COLUMN %s %s", name, definition)); err != nil {
 			return fmt.Errorf("add application_plans.%s: %w", name, err)
+		}
+	}
+	return nil
+}
+
+func ensureAgentActionRequestColumns(conn *sql.DB) error {
+	columns := map[string]string{
+		"execution_status":  "TEXT NOT NULL DEFAULT 'not_run'",
+		"execution_message": "TEXT NOT NULL DEFAULT ''",
+		"executed_at":       "TIMESTAMP NULL",
+	}
+	existing := map[string]bool{}
+	rows, err := conn.Query(`PRAGMA table_info(agent_action_requests)`)
+	if err != nil {
+		return fmt.Errorf("inspect agent_action_requests columns: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name string
+		var columnType string
+		var notNull int
+		var defaultValue sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &pk); err != nil {
+			return fmt.Errorf("scan agent_action_requests column: %w", err)
+		}
+		existing[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate agent_action_requests columns: %w", err)
+	}
+	for name, definition := range columns {
+		if existing[name] {
+			continue
+		}
+		if _, err := conn.Exec(fmt.Sprintf("ALTER TABLE agent_action_requests ADD COLUMN %s %s", name, definition)); err != nil {
+			return fmt.Errorf("add agent_action_requests.%s: %w", name, err)
 		}
 	}
 	return nil

@@ -12,17 +12,24 @@ const (
 	AgentActionRequestStatusPending   = "pending"
 	AgentActionRequestStatusApproved  = "approved"
 	AgentActionRequestStatusDismissed = "dismissed"
+
+	AgentActionExecutionNotRun    = "not_run"
+	AgentActionExecutionSucceeded = "succeeded"
+	AgentActionExecutionFailed    = "failed"
 )
 
 type AgentActionRequest struct {
-	ID         int64      `json:"id"`
-	Source     string     `json:"source"`
-	ActionType string     `json:"action_type"`
-	Target     string     `json:"target"`
-	Detail     string     `json:"detail"`
-	Status     string     `json:"status"`
-	CreatedAt  time.Time  `json:"created_at"`
-	ResolvedAt *time.Time `json:"resolved_at,omitempty"`
+	ID               int64      `json:"id"`
+	Source           string     `json:"source"`
+	ActionType       string     `json:"action_type"`
+	Target           string     `json:"target"`
+	Detail           string     `json:"detail"`
+	Status           string     `json:"status"`
+	CreatedAt        time.Time  `json:"created_at"`
+	ResolvedAt       *time.Time `json:"resolved_at,omitempty"`
+	ExecutionStatus  string     `json:"execution_status"`
+	ExecutionMessage string     `json:"execution_message"`
+	ExecutedAt       *time.Time `json:"executed_at,omitempty"`
 }
 
 func (r *Repository) RecordAgentActionRequests(ctx context.Context, source string, actions []AgentCommandAction) error {
@@ -117,6 +124,28 @@ func (r *Repository) UpdateAgentActionRequestStatus(ctx context.Context, id int6
 	return scanAgentActionRequest(row)
 }
 
+func (r *Repository) RecordAgentActionRequestExecution(ctx context.Context, id int64, status string, message string) (AgentActionRequest, error) {
+	status = normalizeAgentActionExecutionStatus(status)
+	message = strings.TrimSpace(message)
+	executedAt := time.Now().UTC()
+	result, err := r.db.ExecContext(ctx, `
+		UPDATE agent_action_requests
+		SET execution_status = ?, execution_message = ?, executed_at = ?
+		WHERE id = ?
+	`, status, message, executedAt, id)
+	if err != nil {
+		return AgentActionRequest{}, fmt.Errorf("record agent action execution: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return AgentActionRequest{}, fmt.Errorf("read rows affected: %w", err)
+	}
+	if affected == 0 {
+		return AgentActionRequest{}, sql.ErrNoRows
+	}
+	return r.GetAgentActionRequest(ctx, id)
+}
+
 func NormalizeAgentActionRequestStatus(status string) string {
 	switch strings.TrimSpace(status) {
 	case AgentActionRequestStatusPending:
@@ -130,8 +159,19 @@ func NormalizeAgentActionRequestStatus(status string) string {
 	}
 }
 
+func normalizeAgentActionExecutionStatus(status string) string {
+	switch strings.TrimSpace(status) {
+	case AgentActionExecutionSucceeded:
+		return AgentActionExecutionSucceeded
+	case AgentActionExecutionFailed:
+		return AgentActionExecutionFailed
+	default:
+		return AgentActionExecutionNotRun
+	}
+}
+
 func selectAgentActionRequestSQL() string {
-	return `SELECT id, source, action_type, target, detail, status, created_at, resolved_at FROM agent_action_requests`
+	return `SELECT id, source, action_type, target, detail, status, created_at, resolved_at, execution_status, execution_message, executed_at FROM agent_action_requests`
 }
 
 func scanAgentActionRequest(scanner jobScanner) (AgentActionRequest, error) {
@@ -145,6 +185,9 @@ func scanAgentActionRequest(scanner jobScanner) (AgentActionRequest, error) {
 		&request.Status,
 		&request.CreatedAt,
 		&request.ResolvedAt,
+		&request.ExecutionStatus,
+		&request.ExecutionMessage,
+		&request.ExecutedAt,
 	); err != nil {
 		return AgentActionRequest{}, fmt.Errorf("scan agent action request: %w", err)
 	}
@@ -152,5 +195,6 @@ func scanAgentActionRequest(scanner jobScanner) (AgentActionRequest, error) {
 	if request.Status == "" {
 		request.Status = AgentActionRequestStatusPending
 	}
+	request.ExecutionStatus = normalizeAgentActionExecutionStatus(request.ExecutionStatus)
 	return request, nil
 }
