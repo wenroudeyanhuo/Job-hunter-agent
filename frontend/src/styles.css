@@ -177,6 +177,7 @@ h2 {
 
 .employee-identity,
 .employee-focus,
+.employee-memory,
 .employee-score,
 .employee-actions,
 .employee-section {
@@ -192,6 +193,8 @@ h2 {
 .employee-identity strong,
 .employee-identity p,
 .employee-focus span,
+.employee-memory span,
+.employee-memory small,
 .employee-score span,
 .capability-row span,
 .gap-item span,
@@ -205,6 +208,9 @@ h2 {
 .employee-identity p,
 .employee-focus span,
 .employee-focus strong,
+.employee-memory span,
+.employee-memory strong,
+.employee-memory small,
 .employee-score span,
 .employee-score strong {
   display: block;
@@ -294,6 +300,27 @@ h2 {
   color: #18212f;
   font-size: 15px;
   line-height: 1.35;
+}
+
+.employee-memory {
+  display: grid;
+  gap: 5px;
+  border-left: 3px solid #1fb56e;
+  margin: 0 16px 16px;
+  padding: 10px 12px;
+  background: #f6fbf8;
+}
+
+.employee-memory strong {
+  color: #18212f;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.employee-memory small {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .employee-score {

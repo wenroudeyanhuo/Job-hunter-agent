@@ -391,6 +391,42 @@ func TestAgentStateAPIReportsDigitalEmployeeReadiness(t *testing.T) {
 	}
 }
 
+func TestAgentStateAPIIncludesMemoryFromReviewSnapshots(t *testing.T) {
+	repo, handler := testRouter(t, nil)
+	first := jobs.BuildAgentReview([]domain.Job{
+		{Company: "Tencent", Title: "Go Backend Engineer", MatchScore: 86, Status: domain.StatusNew},
+	}, []jobs.Source{{Name: "Tencent", Enabled: true}}, []domain.JobRun{{Status: "completed"}}, nil)
+	second := jobs.BuildAgentReview([]domain.Job{
+		{Company: "Tencent", Title: "Go Backend Engineer", MatchScore: 86, Status: domain.StatusNew},
+		{Company: "ByteDance", Title: "AI Application Engineer", MatchScore: 91, Status: domain.StatusNew},
+	}, []jobs.Source{{Name: "Tencent", Enabled: true}}, []domain.JobRun{{Status: "completed"}}, nil)
+	first.GeneratedAt = time.Now().UTC().Add(-time.Hour)
+	second.GeneratedAt = time.Now().UTC()
+	if _, err := repo.CreateAgentReviewSnapshot(t.Context(), first, "crawl_completed"); err != nil {
+		t.Fatalf("create first snapshot: %v", err)
+	}
+	if _, err := repo.CreateAgentReviewSnapshot(t.Context(), second, "agent_action_crawl_completed"); err != nil {
+		t.Fatalf("create second snapshot: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/agent/state", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var response jobs.AgentState
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode state: %v", err)
+	}
+	if response.Memory.LastReviewAt == nil || response.Memory.LastFocusAction == "" {
+		t.Fatalf("expected state memory from snapshots, got %#v", response.Memory)
+	}
+	if !strings.Contains(response.Memory.TrendSummary, "strong matches +1") {
+		t.Fatalf("expected trend summary in memory, got %q", response.Memory.TrendSummary)
+	}
+}
+
 func TestAgentCommandAPIUpdatesPreferencesAndRefreshesTasks(t *testing.T) {
 	repo, handler := testRouter(t, nil)
 	if _, err := repo.CreateJob(t.Context(), domain.Job{

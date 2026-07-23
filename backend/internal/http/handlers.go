@@ -333,9 +333,18 @@ func (h *Handlers) buildAgentChatContext(ctx context.Context, activeView string)
 	if err != nil {
 		return jobs.AgentChatContext{}, err
 	}
+	snapshots, err := h.Repo.ListAgentReviewSnapshots(ctx, 2)
+	if err != nil {
+		return jobs.AgentChatContext{}, err
+	}
+	events, err := h.Repo.ListAgentEvents(ctx, 20)
+	if err != nil {
+		return jobs.AgentChatContext{}, err
+	}
 	context := jobs.AgentChatContext{
 		ActiveView:   activeView,
 		ModelEnabled: jobs.BuildAgentChatStatus(h.LLM).Configured,
+		Memory:       jobs.BuildAgentMemory(snapshots, events),
 	}
 	for _, job := range jobList {
 		if job.MatchScore >= 70 {
@@ -376,8 +385,8 @@ func (h *Handlers) runModelChat(ctx context.Context, userMessage string, chatCon
 		"messages": []map[string]string{
 			{
 				"role": "system",
-				"content": fmt.Sprintf("You are Job Hunter Agent, a Chinese-speaking digital employee for autumn recruitment. Be concise, practical, and use the current local context. Current view: %s. Open tasks: %d. Strong matches: %d. Manual decisions: %d. Source issues: %d. Recommended jobs: %s. If suggesting an action, return JSON with content and actions. Allowed action types: run_crawl, refresh_tasks, sync_application_plans, send_feishu_report, discover_sources, review_strong_matches, review_manual_check. Never suggest direct resume submission or third-party login actions.",
-					chatContext.ActiveView, chatContext.OpenTasks, chatContext.StrongMatches, chatContext.ManualDecisions, chatContext.SourceIssues, formatAgentChatJobSummaries(chatContext.RecommendedJobs)),
+				"content": fmt.Sprintf("You are Job Hunter Agent, a Chinese-speaking digital employee for autumn recruitment. Be concise, practical, and use the current local context. Current view: %s. Open tasks: %d. Strong matches: %d. Manual decisions: %d. Source issues: %d. Recommended jobs: %s. Memory: %s. If suggesting an action, return JSON with content and actions. Allowed action types: run_crawl, refresh_tasks, sync_application_plans, send_feishu_report, discover_sources, review_strong_matches, review_manual_check. Never suggest direct resume submission or third-party login actions.",
+					chatContext.ActiveView, chatContext.OpenTasks, chatContext.StrongMatches, chatContext.ManualDecisions, chatContext.SourceIssues, formatAgentChatJobSummaries(chatContext.RecommendedJobs), formatAgentMemory(chatContext.Memory)),
 			},
 			{"role": "user", "content": userMessage},
 		},
@@ -427,6 +436,14 @@ func formatAgentChatJobSummaries(jobList []jobs.AgentChatJobSummary) string {
 		parts = append(parts, fmt.Sprintf("%s - %s - %s - score %d", job.Company, job.Title, job.City, job.MatchScore))
 	}
 	return strings.Join(parts, "; ")
+}
+
+func formatAgentMemory(memory jobs.AgentMemory) string {
+	if memory.LastFocusAction == "" {
+		return memory.TrendSummary
+	}
+	return fmt.Sprintf("last trigger %s, last focus %s (%s), trend %s, recent executed actions %d",
+		memory.LastTriggerType, memory.LastFocusTitle, memory.LastFocusAction, memory.TrendSummary, memory.RecentActionCount)
 }
 
 func (h *Handlers) RunAutomationDutyReport(c *gin.Context) {
@@ -565,10 +582,18 @@ func (h *Handlers) buildAgentState(ctx context.Context) (jobs.AgentState, error)
 	if err != nil {
 		return jobs.AgentState{}, err
 	}
+	snapshots, err := h.Repo.ListAgentReviewSnapshots(ctx, 2)
+	if err != nil {
+		return jobs.AgentState{}, err
+	}
+	events, err := h.Repo.ListAgentEvents(ctx, 20)
+	if err != nil {
+		return jobs.AgentState{}, err
+	}
 	if strings.TrimSpace(settings.FeishuWebhookURL) == "" {
 		settings.FeishuWebhookURL = strings.TrimSpace(h.FeishuWebhookURL)
 	}
-	return jobs.BuildAgentState(jobList, sources, runs, tasks, settings), nil
+	return jobs.BuildAgentStateWithMemory(jobList, sources, runs, tasks, settings, snapshots, events), nil
 }
 
 func (h *Handlers) ListAgentEvents(c *gin.Context) {

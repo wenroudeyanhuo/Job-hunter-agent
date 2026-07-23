@@ -246,6 +246,7 @@ export interface AgentState {
   maturity_score: number;
   workload: AgentWorkload;
   automation: AgentAutomationState;
+  memory: AgentMemory;
   capabilities: AgentCapability[];
   gaps: AgentCapabilityGap[];
   operating_cycle: AgentOperatingMoment[];
@@ -265,6 +266,15 @@ export interface AgentWorkload {
   strong_matches: number;
   manual_decisions: number;
   source_issues: number;
+}
+
+export interface AgentMemory {
+  last_review_at?: string;
+  last_trigger_type: string;
+  last_focus_title: string;
+  last_focus_action: string;
+  trend_summary: string;
+  recent_action_count: number;
 }
 
 export interface AgentCapability {

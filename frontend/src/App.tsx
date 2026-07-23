@@ -2513,6 +2513,16 @@ function AgentEmployeeSidebar({
         <strong>{state.focus}</strong>
       </div>
 
+      <div className="employee-memory">
+        <span>Memory</span>
+        <strong>{state.memory.last_focus_title || "No review memory yet"}</strong>
+        <small>{state.memory.trend_summary}</small>
+        <small>
+          {state.memory.last_review_at ? `Last review ${formatDateTime(state.memory.last_review_at)}` : "Snapshot after a meaningful run to build memory"}
+          {state.memory.recent_action_count > 0 ? ` / ${state.memory.recent_action_count} recent actions` : ""}
+        </small>
+      </div>
+
       <div className="employee-score">
         <div>
           <span>Digital employee maturity</span>

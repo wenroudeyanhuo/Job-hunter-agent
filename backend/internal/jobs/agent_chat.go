@@ -35,6 +35,7 @@ type AgentChatContext struct {
 	ActiveView      string
 	ModelEnabled    bool
 	RecommendedJobs []AgentChatJobSummary
+	Memory          AgentMemory
 }
 
 type AgentChatJobSummary struct {

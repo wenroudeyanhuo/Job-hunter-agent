@@ -14,6 +14,7 @@ type AgentState struct {
 	MaturityScore  int                    `json:"maturity_score"`
 	Workload       AgentWorkload          `json:"workload"`
 	Automation     AgentAutomationState   `json:"automation"`
+	Memory         AgentMemory            `json:"memory"`
 	Capabilities   []AgentCapability      `json:"capabilities"`
 	Gaps           []AgentCapabilityGap   `json:"gaps"`
 	OperatingCycle []AgentOperatingMoment `json:"operating_cycle"`
@@ -33,6 +34,15 @@ type AgentWorkload struct {
 	StrongMatches   int `json:"strong_matches"`
 	ManualDecisions int `json:"manual_decisions"`
 	SourceIssues    int `json:"source_issues"`
+}
+
+type AgentMemory struct {
+	LastReviewAt      *time.Time `json:"last_review_at,omitempty"`
+	LastTriggerType   string     `json:"last_trigger_type"`
+	LastFocusTitle    string     `json:"last_focus_title"`
+	LastFocusAction   string     `json:"last_focus_action"`
+	TrendSummary      string     `json:"trend_summary"`
+	RecentActionCount int        `json:"recent_action_count"`
 }
 
 type AgentCapability struct {
@@ -57,6 +67,10 @@ type AgentOperatingMoment struct {
 }
 
 func BuildAgentState(jobList []domain.Job, sources []Source, runs []domain.JobRun, tasks []AgentTask, settings Settings) AgentState {
+	return BuildAgentStateWithMemory(jobList, sources, runs, tasks, settings, nil, nil)
+}
+
+func BuildAgentStateWithMemory(jobList []domain.Job, sources []Source, runs []domain.JobRun, tasks []AgentTask, settings Settings, snapshots []AgentReviewSnapshot, events []AgentEvent) AgentState {
 	state := AgentState{
 		GeneratedAt: time.Now().UTC(),
 		Profile: AgentProfile{
@@ -70,6 +84,7 @@ func BuildAgentState(jobList []domain.Job, sources []Source, runs []domain.JobRu
 		Focus:          "Keep the recruitment pipeline moving.",
 		OperatingCycle: buildOperatingCycle(settings.CrawlSchedule),
 		Automation:     BuildAgentAutomationState(settings, tasks, time.Now().UTC()),
+		Memory:         BuildAgentMemory(snapshots, events),
 	}
 
 	for _, task := range tasks {
@@ -171,6 +186,27 @@ func BuildAgentState(jobList []domain.Job, sources []Source, runs []domain.JobRu
 		state.Focus = "There is recruiting work waiting for your decision."
 	}
 	return state
+}
+
+func BuildAgentMemory(snapshots []AgentReviewSnapshot, events []AgentEvent) AgentMemory {
+	memory := AgentMemory{
+		TrendSummary: "No review memory yet. Save or generate a review snapshot after meaningful work.",
+	}
+	if len(snapshots) > 0 {
+		latest := snapshots[0]
+		capturedAt := latest.CapturedAt
+		memory.LastReviewAt = &capturedAt
+		memory.LastTriggerType = latest.TriggerType
+		memory.LastFocusTitle = latest.FocusTitle
+		memory.LastFocusAction = latest.FocusAction
+		memory.TrendSummary = BuildAgentReviewHistory(snapshots).Summary
+	}
+	for _, event := range events {
+		if event.Type == "agent_action_executed" || event.Type == "crawl_completed" || event.Type == "agent_action_crawl_completed" || event.Type == "feishu_report_sent" {
+			memory.RecentActionCount++
+		}
+	}
+	return memory
 }
 
 func buildOperatingCycle(schedule []string) []AgentOperatingMoment {
