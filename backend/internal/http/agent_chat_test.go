@@ -156,6 +156,65 @@ func TestAgentChatModelPromptIncludesRecommendedJobs(t *testing.T) {
 	}
 }
 
+func TestAgentChatModelReceivesRecentConversationHistory(t *testing.T) {
+	var requestPayload struct {
+		Messages []struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"messages"`
+	}
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&requestPayload); err != nil {
+			t.Fatalf("decode model request: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"content\":\"我会接着上次的筛选继续分析。\"}"}}]}`))
+	}))
+	defer model.Close()
+
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	repo := jobs.NewRepository(conn)
+	if _, err := repo.RecordAgentChatMessage(t.Context(), jobs.AgentChatMessageInput{
+		Role:    jobs.AgentChatRoleUser,
+		Content: "\u6211\u60f3\u5148\u770b Go \u540e\u7aef\u5c97\u4f4d",
+		Source:  "user",
+	}); err != nil {
+		t.Fatalf("seed user message: %v", err)
+	}
+	if _, err := repo.RecordAgentChatMessage(t.Context(), jobs.AgentChatMessageInput{
+		Role:    jobs.AgentChatRoleAssistant,
+		Content: "\u4e0a\u6b21\u6211\u5efa\u8bae\u4f60\u5148\u770b\u817e\u8baf\u548c\u7f8e\u56e2",
+		Source:  "model",
+	}); err != nil {
+		t.Fatalf("seed assistant message: %v", err)
+	}
+	handler := NewRouter(&Handlers{
+		Repo: repo,
+		LLM:  jobs.LLMConfig{APIKey: "test-key", BaseURL: model.URL, Model: "test-model"},
+	})
+
+	body := bytes.NewBufferString(`{"message":"那算法岗位呢？","active_view":"opportunities"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/agent/chat", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !containsModelMessage(requestPayload.Messages, jobs.AgentChatRoleUser, "\u6211\u60f3\u5148\u770b Go \u540e\u7aef\u5c97\u4f4d") {
+		t.Fatalf("expected previous user message in model request, got %#v", requestPayload.Messages)
+	}
+	if !containsModelMessage(requestPayload.Messages, jobs.AgentChatRoleAssistant, "\u4e0a\u6b21\u6211\u5efa\u8bae\u4f60\u5148\u770b\u817e\u8baf\u548c\u7f8e\u56e2") {
+		t.Fatalf("expected previous assistant message in model request, got %#v", requestPayload.Messages)
+	}
+	if !containsModelMessage(requestPayload.Messages, jobs.AgentChatRoleUser, "\u90a3\u7b97\u6cd5\u5c97\u4f4d\u5462\uff1f") {
+		t.Fatalf("expected current user message in model request, got %#v", requestPayload.Messages)
+	}
+}
+
 func TestAgentChatHealthcheckCallsConfiguredModel(t *testing.T) {
 	called := false
 	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -210,6 +269,18 @@ func TestAgentChatHealthcheckSkipsWhenModelMissing(t *testing.T) {
 	if response.Status != "skipped" || response.Configured {
 		t.Fatalf("expected skipped local healthcheck, got %#v", response)
 	}
+}
+
+func containsModelMessage(messages []struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}, role string, content string) bool {
+	for _, message := range messages {
+		if message.Role == role && message.Content == content {
+			return true
+		}
+	}
+	return false
 }
 
 func containsHTTPCommandAction(actions []jobs.AgentCommandAction, actionType string) bool {

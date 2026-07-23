@@ -23,7 +23,7 @@ Early MVP. The current version provides a Go backend foundation, SQLite persiste
 - Daily agent task queue generated from recommended jobs, manual decisions, source issues, and crawl history.
 - Digital employee sidebar with an agent profile, avatar, maturity score, capability map, operating cycle, and mainstream capability gaps.
 - Command Center for rule-based natural-language workflow commands such as changing target cities/directions, refreshing tasks, running a crawl, and sending Feishu reports.
-- Global digital employee chat with a persistent 3D avatar, local rule fallback, saved chat history, optional OpenAI-compatible model mode, and safe whitelisted action suggestions.
+- Global digital employee chat with a persistent 3D avatar, local rule fallback, saved chat history, recent-conversation model context, optional OpenAI-compatible or DeepSeek model mode, and safe whitelisted action suggestions.
 - Suggested action approval queue so model or local-rule recommendations are persisted, reviewed, approved, or dismissed before execution.
 - Source discovery that proposes broader official, community, and job-platform search entrances from the user's target cities and directions.
 - Source-candidate validation that fetches candidate pages, checks recruitment signals and discovered job links, then adjusts confidence before the source is accepted.
@@ -44,7 +44,7 @@ Early MVP. The current version provides a Go backend foundation, SQLite persiste
 - Generates a daily task queue for recommended jobs, human decisions, unhealthy sources, and crawl setup.
 - Shows what the assistant can already do, where it is weaker than mainstream digital employees, and which capability should be improved next.
 - Accepts simple workflow commands from the digital employee sidebar. Current parsing is deterministic and transparent, not LLM-based.
-- Keeps a global chat assistant available across pages. Without a model key it answers with local recruiting context; with model settings it calls an OpenAI-compatible chat-completions endpoint, parses safe JSON action suggestions, filters unsafe actions, persists safe suggestions for review, and falls back locally if the model fails.
+- Keeps a global chat assistant available across pages. Without a model key it answers with local recruiting context; with model settings it calls an OpenAI-compatible chat-completions endpoint with recent conversation history, parses safe JSON action suggestions, filters unsafe actions, persists safe suggestions for review, and falls back locally if the model fails.
 - Discovers, validates, and summarizes source candidates so the crawl pool does not stay fixed forever.
 - Tracks stale or escalated daily tasks, supports snoozing or closing work items with reasons, and can send an automatic duty report when enabled and the configured report time is reached.
 - Supports manual crawl runs and scheduled runs at 09:00, 12:00, and 18:00.

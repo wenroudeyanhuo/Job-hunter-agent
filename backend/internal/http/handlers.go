@@ -389,10 +389,15 @@ func (h *Handlers) buildAgentChatContext(ctx context.Context, activeView string)
 	if err != nil {
 		return jobs.AgentChatContext{}, err
 	}
+	recentMessages, err := h.Repo.ListAgentChatMessages(ctx, 8)
+	if err != nil {
+		return jobs.AgentChatContext{}, err
+	}
 	context := jobs.AgentChatContext{
-		ActiveView:   activeView,
-		ModelEnabled: jobs.BuildAgentChatStatus(h.LLM).Configured,
-		Memory:       jobs.BuildAgentMemory(snapshots, events),
+		ActiveView:     activeView,
+		ModelEnabled:   jobs.BuildAgentChatStatus(h.LLM).Configured,
+		Memory:         jobs.BuildAgentMemory(snapshots, events),
+		RecentMessages: recentMessages,
 	}
 	for _, job := range jobList {
 		if job.MatchScore >= 70 {
@@ -424,14 +429,34 @@ func (h *Handlers) buildAgentChatContext(ctx context.Context, activeView string)
 }
 
 func (h *Handlers) runModelChat(ctx context.Context, userMessage string, chatContext jobs.AgentChatContext) (string, error) {
-	return h.callModelChat(ctx, []map[string]string{
+	messages := []map[string]string{
 		{
 			"role": "system",
 			"content": fmt.Sprintf("You are Job Hunter Agent, a Chinese-speaking digital employee for autumn recruitment. Be concise, practical, and use the current local context. Current view: %s. Open tasks: %d. Strong matches: %d. Manual decisions: %d. Source issues: %d. Recommended jobs: %s. Memory: %s. If suggesting an action, return JSON with content and actions. Allowed action types: run_crawl, refresh_tasks, sync_application_plans, send_feishu_report, discover_sources, review_strong_matches, review_manual_check. Never suggest direct resume submission or third-party login actions.",
 				chatContext.ActiveView, chatContext.OpenTasks, chatContext.StrongMatches, chatContext.ManualDecisions, chatContext.SourceIssues, formatAgentChatJobSummaries(chatContext.RecommendedJobs), formatAgentMemory(chatContext.Memory)),
 		},
-		{"role": "user", "content": userMessage},
-	}, 0.4)
+	}
+	messages = append(messages, formatAgentChatHistory(chatContext.RecentMessages)...)
+	if len(messages) == 1 {
+		messages = append(messages, map[string]string{"role": "user", "content": userMessage})
+	}
+	return h.callModelChat(ctx, messages, 0.4)
+}
+
+func formatAgentChatHistory(history []jobs.AgentChatMessage) []map[string]string {
+	out := []map[string]string{}
+	for _, message := range history {
+		role := strings.TrimSpace(message.Role)
+		if role != jobs.AgentChatRoleUser && role != jobs.AgentChatRoleAssistant {
+			continue
+		}
+		content := strings.TrimSpace(message.Content)
+		if content == "" {
+			continue
+		}
+		out = append(out, map[string]string{"role": role, "content": content})
+	}
+	return out
 }
 
 func (h *Handlers) callModelChat(ctx context.Context, messages []map[string]string, temperature float64) (string, error) {
