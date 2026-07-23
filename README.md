@@ -91,16 +91,29 @@ APP_DB_PATH=data/job-hunter-agent.db
 FEISHU_WEBHOOK_URL=
 DISABLE_SCHEDULER=0
 SOURCE_URLS=
+LLM_PROVIDER=
 LLM_API_KEY=
 LLM_BASE_URL=https://api.openai.com/v1
 LLM_MODEL=
+DEEPSEEK_API_KEY=
+DEEPSEEK_MODEL=deepseek-chat
 ```
 
 `SOURCE_URLS` can contain comma-separated or newline-separated public recruitment URLs. Manual and scheduled crawl runs import these URLs, score them, deduplicate them, and store them in the local database.
 
 `FEISHU_WEBHOOK_URL` is optional. Open-source users can also open the dashboard, go to Settings, paste their own Feishu incoming bot webhook URL, save it, and send a test notification. A saved dashboard webhook takes priority over the environment variable and does not require restarting the backend.
 
-`LLM_API_KEY`, `LLM_BASE_URL`, and `LLM_MODEL` are optional. If they are not configured, the global digital employee chat uses local rule-based replies. If they are configured, the backend calls an OpenAI-compatible `/chat/completions` endpoint and falls back to local replies on failure. `OPENAI_API_KEY`, `OPENAI_BASE_URL`, and `OPENAI_MODEL` are also accepted.
+`LLM_PROVIDER`, `LLM_API_KEY`, `LLM_BASE_URL`, and `LLM_MODEL` are optional. If they are not configured, the global digital employee chat uses local rule-based replies. If they are configured, the backend calls an OpenAI-compatible `/chat/completions` endpoint and falls back to local replies on failure. `OPENAI_API_KEY`, `OPENAI_BASE_URL`, and `OPENAI_MODEL` are also accepted.
+
+DeepSeek can be configured without code changes:
+
+```env
+LLM_PROVIDER=deepseek
+DEEPSEEK_API_KEY=your_key
+DEEPSEEK_MODEL=deepseek-chat
+```
+
+The DeepSeek default base URL is `https://api.deepseek.com`. The chat panel includes a model health check button that verifies the configured provider can answer a small chat-completions request.
 
 Automatic Feishu duty reports require the backend process to stay running with the scheduler enabled, a Feishu webhook in Settings or `FEISHU_WEBHOOK_URL`, Automatic duty report enabled in Settings, and the configured duty report time reached in the configured time zone. The default time zone is `Asia/Shanghai`. The Settings page includes an automation diagnostic card that shows webhook readiness, scheduler expectation, next report time, last sent time, and the reason a scheduled report has not fired yet.
 

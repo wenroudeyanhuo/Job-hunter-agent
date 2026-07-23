@@ -14,3 +14,20 @@ func TestParseSourceURLs(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadReadsDeepSeekModelConfig(t *testing.T) {
+	t.Setenv("DEEPSEEK_API_KEY", "deepseek-key")
+	t.Setenv("DEEPSEEK_MODEL", "deepseek-chat")
+
+	cfg := Load()
+
+	if cfg.LLMProvider != "deepseek" {
+		t.Fatalf("expected deepseek provider, got %#v", cfg)
+	}
+	if cfg.LLMAPIKey != "deepseek-key" || cfg.LLMModel != "deepseek-chat" {
+		t.Fatalf("expected deepseek key and model, got %#v", cfg)
+	}
+	if cfg.LLMBaseURL != "https://api.deepseek.com" {
+		t.Fatalf("expected deepseek base URL, got %#v", cfg)
+	}
+}

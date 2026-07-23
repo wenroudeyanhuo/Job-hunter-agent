@@ -3,6 +3,7 @@ import type {
   AgentAutomationDiagnostics,
   AgentActionRequest,
   AgentChatMessage,
+  AgentChatHealthcheck,
   AgentChatResponse,
   AgentChatStatus,
   AgentCommandResult,
@@ -87,6 +88,12 @@ export async function updateAgentActionRequest(id: number, status: "pending" | "
 
 export async function getAgentChatStatus(): Promise<AgentChatStatus> {
   return request<AgentChatStatus>("/api/agent/chat/status");
+}
+
+export async function checkAgentChatModel(): Promise<AgentChatHealthcheck> {
+  return request<AgentChatHealthcheck>("/api/agent/chat/healthcheck", {
+    method: "POST",
+  });
 }
 
 export async function getAutomationStatus(): Promise<AgentAutomationDiagnostics> {

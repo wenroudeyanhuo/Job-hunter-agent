@@ -136,6 +136,34 @@ func (h *Handlers) GetAgentChatStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, jobs.BuildAgentChatStatus(h.LLM))
 }
 
+func (h *Handlers) CheckAgentChatModel(c *gin.Context) {
+	status := jobs.BuildAgentChatStatus(h.LLM)
+	response := jobs.AgentChatHealthcheck{
+		Status:     "skipped",
+		Provider:   status.Provider,
+		Model:      status.Model,
+		BaseURL:    status.BaseURL,
+		Configured: status.Configured,
+		Message:    "Model is not configured; local rules are active.",
+	}
+	if !status.Configured {
+		c.JSON(http.StatusOK, response)
+		return
+	}
+	if _, err := h.callModelChat(c.Request.Context(), []map[string]string{
+		{"role": "system", "content": "Reply with ok."},
+		{"role": "user", "content": "healthcheck"},
+	}, 0); err != nil {
+		response.Status = "failed"
+		response.Message = err.Error()
+		c.JSON(http.StatusOK, response)
+		return
+	}
+	response.Status = "ok"
+	response.Message = "Model responded successfully."
+	c.JSON(http.StatusOK, response)
+}
+
 func (h *Handlers) ListAgentActionRequests(c *gin.Context) {
 	requests, err := h.Repo.ListAgentActionRequests(c.Request.Context(), c.Query("status"))
 	if err != nil {
@@ -396,21 +424,25 @@ func (h *Handlers) buildAgentChatContext(ctx context.Context, activeView string)
 }
 
 func (h *Handlers) runModelChat(ctx context.Context, userMessage string, chatContext jobs.AgentChatContext) (string, error) {
+	return h.callModelChat(ctx, []map[string]string{
+		{
+			"role": "system",
+			"content": fmt.Sprintf("You are Job Hunter Agent, a Chinese-speaking digital employee for autumn recruitment. Be concise, practical, and use the current local context. Current view: %s. Open tasks: %d. Strong matches: %d. Manual decisions: %d. Source issues: %d. Recommended jobs: %s. Memory: %s. If suggesting an action, return JSON with content and actions. Allowed action types: run_crawl, refresh_tasks, sync_application_plans, send_feishu_report, discover_sources, review_strong_matches, review_manual_check. Never suggest direct resume submission or third-party login actions.",
+				chatContext.ActiveView, chatContext.OpenTasks, chatContext.StrongMatches, chatContext.ManualDecisions, chatContext.SourceIssues, formatAgentChatJobSummaries(chatContext.RecommendedJobs), formatAgentMemory(chatContext.Memory)),
+		},
+		{"role": "user", "content": userMessage},
+	}, 0.4)
+}
+
+func (h *Handlers) callModelChat(ctx context.Context, messages []map[string]string, temperature float64) (string, error) {
 	config := jobs.NormalizeLLMConfig(h.LLM)
 	if config.APIKey == "" || config.Model == "" {
 		return "", fmt.Errorf("model is not configured")
 	}
 	payload := map[string]any{
-		"model": config.Model,
-		"messages": []map[string]string{
-			{
-				"role": "system",
-				"content": fmt.Sprintf("You are Job Hunter Agent, a Chinese-speaking digital employee for autumn recruitment. Be concise, practical, and use the current local context. Current view: %s. Open tasks: %d. Strong matches: %d. Manual decisions: %d. Source issues: %d. Recommended jobs: %s. Memory: %s. If suggesting an action, return JSON with content and actions. Allowed action types: run_crawl, refresh_tasks, sync_application_plans, send_feishu_report, discover_sources, review_strong_matches, review_manual_check. Never suggest direct resume submission or third-party login actions.",
-					chatContext.ActiveView, chatContext.OpenTasks, chatContext.StrongMatches, chatContext.ManualDecisions, chatContext.SourceIssues, formatAgentChatJobSummaries(chatContext.RecommendedJobs), formatAgentMemory(chatContext.Memory)),
-			},
-			{"role": "user", "content": userMessage},
-		},
-		"temperature": 0.4,
+		"model":       config.Model,
+		"messages":    messages,
+		"temperature": temperature,
 	}
 	data, err := json.Marshal(payload)
 	if err != nil {

@@ -5,6 +5,7 @@ import {
   createSource,
   getAutomationStatus,
   getAgentChatStatus,
+  checkAgentChatModel,
   getAgentBriefing,
   getAgentDutyReport,
   getAgentReview,
@@ -51,7 +52,7 @@ import {
   rejectSourceCandidate,
 } from "./api";
 import { DigitalEmployee3D } from "./DigitalEmployee3D";
-import type { AgentActionRequest, AgentAutomationDiagnostics, AgentBriefing, AgentChatMessage, AgentChatStatus, AgentCommandResult, AgentDutyReport, AgentEvent, AgentReview, AgentReviewHistory, AgentState, AgentTask, ApplicationPlan, CandidateProfile, Company, Job, JobDetail, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source, SourceCandidate, SourceOperationsSummary } from "./types";
+import type { AgentActionRequest, AgentAutomationDiagnostics, AgentBriefing, AgentChatHealthcheck, AgentChatMessage, AgentChatStatus, AgentCommandResult, AgentDutyReport, AgentEvent, AgentReview, AgentReviewHistory, AgentState, AgentTask, ApplicationPlan, CandidateProfile, Company, Job, JobDetail, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source, SourceCandidate, SourceOperationsSummary } from "./types";
 
 const statusLabels: Record<JobStatus | "all", string> = {
   all: "All",
@@ -191,11 +192,13 @@ export default function App() {
   const [applicationPlans, setApplicationPlans] = useState<ApplicationPlan[]>([]);
   const [automationStatus, setAutomationStatus] = useState<AgentAutomationDiagnostics | null>(null);
   const [chatStatus, setChatStatus] = useState<AgentChatStatus | null>(null);
+  const [chatHealthcheck, setChatHealthcheck] = useState<AgentChatHealthcheck | null>(null);
   const [chatMessages, setChatMessages] = useState<AgentChatMessage[]>([]);
   const [chatActions, setChatActions] = useState<AgentCommandResult["actions"]>([]);
   const [chatText, setChatText] = useState("");
   const [chatOpen, setChatOpen] = useState(true);
   const [chatSending, setChatSending] = useState(false);
+  const [checkingModel, setCheckingModel] = useState(false);
   const [selectedJobDetail, setSelectedJobDetail] = useState<JobDetail | null>(null);
   const [loadingJobDetail, setLoadingJobDetail] = useState(false);
   const [refreshingTasks, setRefreshingTasks] = useState(false);
@@ -293,6 +296,22 @@ export default function App() {
     const [status, messages] = await Promise.all([getAgentChatStatus(), listAgentChatMessages()]);
     setChatStatus(status);
     setChatMessages(messages);
+  }
+
+  async function handleCheckChatModel() {
+    setCheckingModel(true);
+    setError("");
+    setNotice("");
+    try {
+      const result = await checkAgentChatModel();
+      setChatHealthcheck(result);
+      setNotice(result.status === "ok" ? "Model healthcheck passed." : result.message);
+      await refreshChat();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not check model");
+    } finally {
+      setCheckingModel(false);
+    }
   }
 
   async function refreshTasks() {
@@ -1700,10 +1719,13 @@ export default function App() {
         text={chatText}
         open={chatOpen}
         sending={chatSending}
+        checkingModel={checkingModel}
+        healthcheck={chatHealthcheck}
         activeView={activeView}
         onToggle={() => setChatOpen((current) => !current)}
         onTextChange={setChatText}
         onSubmit={handleSendChat}
+        onCheckModel={handleCheckChatModel}
         actions={chatActions}
         onAction={handleAgentAction}
       />
@@ -2676,10 +2698,13 @@ function GlobalEmployeeChat({
   text,
   open,
   sending,
+  checkingModel,
+  healthcheck,
   activeView,
   onToggle,
   onTextChange,
   onSubmit,
+  onCheckModel,
   actions,
   onAction,
 }: {
@@ -2689,14 +2714,17 @@ function GlobalEmployeeChat({
   text: string;
   open: boolean;
   sending: boolean;
+  checkingModel: boolean;
+  healthcheck: AgentChatHealthcheck | null;
   activeView: string;
   onToggle: () => void;
   onTextChange: (value: string) => void;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void | Promise<void>;
+  onCheckModel: () => void | Promise<void>;
   actions: AgentCommandResult["actions"];
   onAction: (action: string) => void | Promise<void>;
 }) {
-  const modeLabel = status?.configured ? `Model: ${status.model}` : "Local rules";
+  const modeLabel = status?.configured ? `${formatProviderLabel(status.provider)}: ${status.model}` : "Local rules";
   return (
     <aside className={open ? "global-employee open" : "global-employee"} aria-label="Digital employee chat">
       <button type="button" className="employee-fab" onClick={onToggle} aria-label="Toggle digital employee chat">
@@ -2711,10 +2739,20 @@ function GlobalEmployeeChat({
               <strong>{state?.profile.name || "Job Hunter Agent"}</strong>
               <span>{modeLabel} / {activeView}</span>
             </div>
+            <button type="button" onClick={onCheckModel} disabled={checkingModel} aria-label="Check model connection">
+              {checkingModel ? "Checking" : "Check model"}
+            </button>
             <button type="button" onClick={onToggle} aria-label="Close chat">
               Close
             </button>
           </div>
+          {healthcheck && (
+            <div className={`model-health model-${healthcheck.status}`}>
+              <strong>{formatExecutionStatus(healthcheck.status)}</strong>
+              <span>{healthcheck.message}</span>
+              <small>{formatProviderLabel(healthcheck.provider)} / {healthcheck.model || "no model"} / {healthcheck.base_url}</small>
+            </div>
+          )}
           <div className="employee-chat-messages">
             {messages.map((message) => (
               <div className={`chat-message chat-${message.role}`} key={message.id}>
@@ -2978,6 +3016,14 @@ function formatExecutionStatus(status: string) {
     not_run: "Not run",
   };
   return labels[status] || status.replace(/_/g, " ");
+}
+
+function formatProviderLabel(provider: string) {
+  const labels: Record<string, string> = {
+    deepseek: "DeepSeek",
+    openai_compatible: "OpenAI-compatible",
+  };
+  return labels[provider] || provider || "Local";
 }
 
 function formatFitVerdict(verdict: string) {

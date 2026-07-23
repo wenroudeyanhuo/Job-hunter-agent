@@ -345,9 +345,20 @@ export interface AgentCommandResult {
 
 export interface AgentChatStatus {
   mode: string;
+  provider: string;
   model: string;
+  base_url: string;
   configured: boolean;
   fallback_mode: string;
+}
+
+export interface AgentChatHealthcheck {
+  status: "ok" | "failed" | "skipped" | string;
+  provider: string;
+  model: string;
+  base_url: string;
+  configured: boolean;
+  message: string;
 }
 
 export interface AgentChatMessage {

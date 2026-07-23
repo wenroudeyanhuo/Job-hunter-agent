@@ -707,6 +707,40 @@ h2 {
   font-weight: 760;
 }
 
+.model-health {
+  display: grid;
+  gap: 3px;
+  border-bottom: 1px solid #edf1f7;
+  background: #f8fafc;
+  padding: 9px 14px;
+}
+
+.model-health strong,
+.model-health span,
+.model-health small {
+  display: block;
+}
+
+.model-health strong {
+  color: #176443;
+  font-size: 12px;
+}
+
+.model-health span,
+.model-health small {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.model-failed strong {
+  color: #b42318;
+}
+
+.model-skipped strong {
+  color: #475569;
+}
+
 .employee-chat-messages {
   display: grid;
   gap: 10px;

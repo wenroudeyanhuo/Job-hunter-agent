@@ -54,9 +54,10 @@ func NewApplication(cfg config.Config) (*Application, error) {
 		Runner:           runner,
 		FeishuWebhookURL: cfg.FeishuWebhookURL,
 		LLM: jobs.LLMConfig{
-			APIKey:  cfg.LLMAPIKey,
-			BaseURL: cfg.LLMBaseURL,
-			Model:   cfg.LLMModel,
+			Provider: cfg.LLMProvider,
+			APIKey:   cfg.LLMAPIKey,
+			BaseURL:  cfg.LLMBaseURL,
+			Model:    cfg.LLMModel,
 		},
 	})
 	return &Application{Handler: handler, DB: conn, Runner: runner, Automation: automation}, nil

@@ -156,6 +156,62 @@ func TestAgentChatModelPromptIncludesRecommendedJobs(t *testing.T) {
 	}
 }
 
+func TestAgentChatHealthcheckCallsConfiguredModel(t *testing.T) {
+	called := false
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		if r.URL.Path != "/chat/completions" {
+			t.Fatalf("unexpected model path %s", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer test-key" {
+			t.Fatalf("unexpected authorization header %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
+	}))
+	defer model.Close()
+
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	handler := NewRouter(&Handlers{
+		Repo: jobs.NewRepository(conn),
+		LLM:  jobs.LLMConfig{Provider: "deepseek", APIKey: "test-key", BaseURL: model.URL, Model: "deepseek-chat"},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/agent/chat/healthcheck", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var response jobs.AgentChatHealthcheck
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode healthcheck: %v", err)
+	}
+	if !called || response.Status != "ok" || response.Provider != "deepseek" {
+		t.Fatalf("expected successful model healthcheck, got called=%v response=%#v", called, response)
+	}
+}
+
+func TestAgentChatHealthcheckSkipsWhenModelMissing(t *testing.T) {
+	_, handler := testRouter(t, nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/agent/chat/healthcheck", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var response jobs.AgentChatHealthcheck
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode healthcheck: %v", err)
+	}
+	if response.Status != "skipped" || response.Configured {
+		t.Fatalf("expected skipped local healthcheck, got %#v", response)
+	}
+}
+
 func containsHTTPCommandAction(actions []jobs.AgentCommandAction, actionType string) bool {
 	for _, action := range actions {
 		if action.Type == actionType {
