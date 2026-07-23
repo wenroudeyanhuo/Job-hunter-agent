@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/db"
@@ -130,5 +131,49 @@ func TestRepositoryValidatesSourceCandidateWithRecruitmentSignals(t *testing.T) 
 	}
 	if validated.LastCheckedAt == nil || validated.ValidationReason == "" {
 		t.Fatalf("expected validation metadata, got %#v", validated)
+	}
+}
+
+func TestRepositoryValidatesSourceCandidateWithStructuredJobCards(t *testing.T) {
+	ctx := context.Background()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<html><body>
+<a class="job-card" href="/roles/go-backend-2027">
+  <h3>Go 后端开发工程师 深圳</h3>
+  <p>负责云服务和微服务开发。</p>
+</a>
+</body></html>`))
+	}))
+	defer server.Close()
+
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	repo := NewRepository(conn)
+	if _, err := repo.createSourceCandidateIfMissing(ctx, sourceCandidateInput{
+		Name:       "Structured careers",
+		URL:        server.URL,
+		Category:   "official",
+		ParserType: "generic",
+		Reason:     "Structured listing candidate",
+		Confidence: 50,
+	}); err != nil {
+		t.Fatalf("create candidate: %v", err)
+	}
+	candidates, err := repo.ListSourceCandidates(ctx, SourceCandidateFilter{})
+	if err != nil {
+		t.Fatalf("list candidates: %v", err)
+	}
+
+	validated, err := repo.ValidateSourceCandidate(ctx, candidates[0].ID, server.Client())
+	if err != nil {
+		t.Fatalf("validate candidate: %v", err)
+	}
+	if validated.ValidationStatus != SourceCandidateValidationGood {
+		t.Fatalf("expected structured job cards to verify the candidate, got %#v", validated)
+	}
+	if !strings.Contains(validated.ValidationReason, "job cards") {
+		t.Fatalf("expected validation reason to mention job cards, got %q", validated.ValidationReason)
 	}
 }

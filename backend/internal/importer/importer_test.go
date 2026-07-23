@@ -146,6 +146,62 @@ func TestDiscoverLinksFindsRecruitmentURLsInScripts(t *testing.T) {
 	}
 }
 
+func TestDiscoverJobCardsExtractsStructuredListingRows(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<html><body>
+<section class="job-list">
+  <a class="job-card" href="/jobs/go-backend-2027">
+    <h3>Go 后端开发工程师 2027 校招</h3>
+    <span>深圳</span>
+    <p>负责云服务后端开发，要求 Go、微服务、MySQL。</p>
+  </a>
+  <a class="job-card" href="/jobs/ai-app-intern">
+    <h3>AI 应用开发实习生</h3>
+    <span>深圳</span>
+    <p>参与 LLM 应用、RAG 和智能体开发。</p>
+  </a>
+  <a href="/about">关于我们</a>
+</section>
+</body></html>`))
+	}))
+	defer server.Close()
+
+	cards, err := DiscoverJobCards(context.Background(), server.URL, server.Client(), 10)
+	if err != nil {
+		t.Fatalf("discover job cards: %v", err)
+	}
+	if len(cards) != 2 {
+		t.Fatalf("expected two job cards, got %#v", cards)
+	}
+	if cards[0].Title != "Go 后端开发工程师 2027 校招" || cards[0].City != "Shenzhen" {
+		t.Fatalf("unexpected first card: %#v", cards[0])
+	}
+	if cards[1].ApplyURL != server.URL+"/jobs/ai-app-intern" {
+		t.Fatalf("unexpected second card URL: %#v", cards[1])
+	}
+}
+
+func TestDiscoverJobCardsFallsBackToAnchorText(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<html><body>
+<a href="/campus/position/1001">Java 后端工程师 深圳 校招 岗位职责 任职要求 投递</a>
+<a href="/news/1">招聘季新闻</a>
+</body></html>`))
+	}))
+	defer server.Close()
+
+	cards, err := DiscoverJobCards(context.Background(), server.URL, server.Client(), 10)
+	if err != nil {
+		t.Fatalf("discover job cards: %v", err)
+	}
+	if len(cards) != 1 {
+		t.Fatalf("expected one text-only card, got %#v", cards)
+	}
+	if cards[0].City != "Shenzhen" || cards[0].ApplyURL != server.URL+"/campus/position/1001" {
+		t.Fatalf("unexpected card: %#v", cards[0])
+	}
+}
+
 func TestLooksLikeConcreteJobPostingRejectsRecruitmentLandingPage(t *testing.T) {
 	if LooksLikeConcreteJobPosting(domain.Job{
 		Title:       "华为应届生_实习生_留学生_海外本地最新招聘信息-华为校园招聘",
