@@ -173,6 +173,15 @@ func (h *Handlers) ListAgentActionRequests(c *gin.Context) {
 	c.JSON(http.StatusOK, requests)
 }
 
+func (h *Handlers) ListAgentPlans(c *gin.Context) {
+	plans, err := h.Repo.ListAgentPlans(c.Request.Context(), c.Query("status"), 20)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, plans)
+}
+
 func (h *Handlers) UpdateAgentActionRequest(c *gin.Context) {
 	id, ok := parseID(c)
 	if !ok {
@@ -357,6 +366,10 @@ func (h *Handlers) RunAgentChat(c *gin.Context) {
 		return
 	}
 	if len(reply.Actions) > 0 {
+		if _, err := h.Repo.CreateAgentPlan(c.Request.Context(), jobs.BuildAgentPlanInputFromReply(req.Message, reply)); err != nil {
+			respondError(c, http.StatusInternalServerError, err)
+			return
+		}
 		if err := h.Repo.RecordAgentActionRequests(c.Request.Context(), reply.Source, reply.Actions); err != nil {
 			respondError(c, http.StatusInternalServerError, err)
 			return

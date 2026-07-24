@@ -19,6 +19,7 @@ import {
   listAgentActionRequests,
   listAgentEvents,
   listAgentChatMessages,
+  listAgentPlans,
   listApplicationPlans,
   listAgentTasks,
   listCompanies,
@@ -52,7 +53,7 @@ import {
   rejectSourceCandidate,
 } from "./api";
 import { DigitalEmployee3D } from "./DigitalEmployee3D";
-import type { AgentActionRequest, AgentAutomationDiagnostics, AgentBriefing, AgentChatHealthcheck, AgentChatMessage, AgentChatStatus, AgentCommandResult, AgentDutyReport, AgentEvent, AgentReview, AgentReviewHistory, AgentState, AgentTask, ApplicationPlan, CandidateProfile, Company, Job, JobDetail, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source, SourceCandidate, SourceOperationsSummary } from "./types";
+import type { AgentActionRequest, AgentAutomationDiagnostics, AgentBriefing, AgentChatHealthcheck, AgentChatMessage, AgentChatStatus, AgentCommandResult, AgentDutyReport, AgentEvent, AgentPlan, AgentReview, AgentReviewHistory, AgentState, AgentTask, ApplicationPlan, CandidateProfile, Company, Job, JobDetail, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source, SourceCandidate, SourceOperationsSummary } from "./types";
 
 const statusLabels: Record<JobStatus | "all", string> = {
   all: "All",
@@ -188,6 +189,7 @@ export default function App() {
   const [agentReviewHistory, setAgentReviewHistory] = useState<AgentReviewHistory | null>(null);
   const [agentEvents, setAgentEvents] = useState<AgentEvent[]>([]);
   const [agentActionRequests, setAgentActionRequests] = useState<AgentActionRequest[]>([]);
+  const [agentPlans, setAgentPlans] = useState<AgentPlan[]>([]);
   const [agentTasks, setAgentTasks] = useState<AgentTask[]>([]);
   const [applicationPlans, setApplicationPlans] = useState<ApplicationPlan[]>([]);
   const [automationStatus, setAutomationStatus] = useState<AgentAutomationDiagnostics | null>(null);
@@ -292,6 +294,11 @@ export default function App() {
     setAgentActionRequests(data);
   }
 
+  async function refreshAgentPlans() {
+    const data = await listAgentPlans();
+    setAgentPlans(data);
+  }
+
   async function refreshChat() {
     const [status, messages] = await Promise.all([getAgentChatStatus(), listAgentChatMessages()]);
     setChatStatus(status);
@@ -330,7 +337,7 @@ export default function App() {
   }
 
   useEffect(() => {
-    Promise.all([refresh(), refreshSources(), refreshSourceCandidates(), refreshSourceOperations(), refreshCompanies(), refreshRuns(), refreshSettings(), refreshProfile(), refreshBriefing(), refreshAgentState(), refreshDutyReport(), refreshAgentReview(), refreshAgentReviewHistory(), refreshAgentEvents(), refreshAgentActionRequests(), refreshTasks(), refreshApplicationPlans(), refreshAutomationStatus(), refreshChat()])
+    Promise.all([refresh(), refreshSources(), refreshSourceCandidates(), refreshSourceOperations(), refreshCompanies(), refreshRuns(), refreshSettings(), refreshProfile(), refreshBriefing(), refreshAgentState(), refreshDutyReport(), refreshAgentReview(), refreshAgentReviewHistory(), refreshAgentEvents(), refreshAgentActionRequests(), refreshAgentPlans(), refreshTasks(), refreshApplicationPlans(), refreshAutomationStatus(), refreshChat()])
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
@@ -1041,6 +1048,7 @@ export default function App() {
       setChatActions(response.reply.actions || []);
       await refreshChat();
       await refreshAgentActionRequests();
+      await refreshAgentPlans();
       await refreshAgentEvents();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not talk to the agent");
@@ -1143,6 +1151,7 @@ export default function App() {
       refreshAgentReviewHistory(),
       refreshAgentEvents(),
       refreshAgentActionRequests(),
+      refreshAgentPlans(),
       refreshTasks(),
       refreshApplicationPlans(),
       refreshAutomationStatus(),
@@ -1156,6 +1165,7 @@ export default function App() {
     try {
       await updateAgentActionRequest(request.id, "dismissed");
       await refreshAgentActionRequests();
+      await refreshAgentPlans();
       await refreshAgentEvents();
       setNotice(`Agent action dismissed: ${formatActionLabel(request.action_type)}.`);
     } catch (err) {
@@ -1213,6 +1223,8 @@ export default function App() {
             </section>
 
             <ProductReadinessPanel items={readinessItems} busy={running || seedingSources || recommendedRunning} />
+
+            <AgentWorkPlansPanel plans={agentPlans} />
 
             <AgentActionRequestsPanel
               requests={agentActionRequests}
@@ -2880,6 +2892,49 @@ function AgentActionRequestsPanel({
   );
 }
 
+function AgentWorkPlansPanel({ plans }: { plans: AgentPlan[] }) {
+  const visiblePlans = plans.slice(0, 4);
+  return (
+    <section className="agent-plans-panel">
+      <div className="panel-header">
+        <div>
+          <h2>Work Plans</h2>
+          <span>{plans.length} recent plans</span>
+        </div>
+      </div>
+      <div className="agent-plan-list">
+        {visiblePlans.map((plan) => (
+          <article className="agent-plan-card" key={plan.id}>
+            <div className="agent-plan-head">
+              <div>
+                <strong>{plan.goal || "Agent planned a recruiting workflow"}</strong>
+                <span>{plan.summary || "Waiting for the next work step."}</span>
+              </div>
+              <small className={`plan-status status-${plan.status}`}>{formatPlanStatus(plan.status)}</small>
+            </div>
+            <div className="agent-plan-steps">
+              {(plan.steps || []).map((step) => (
+                <div className="agent-plan-step" key={`${plan.id}-${step.order}-${step.action_type}`}>
+                  <span>{step.order}</span>
+                  <div>
+                    <strong>{formatActionLabel(step.action_type)}</strong>
+                    <small>{step.detail || step.target || "No detail recorded."}</small>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <footer>
+              <span>{plan.needs_approval ? "Approval required" : "No approval needed"}</span>
+              <span>{formatDateTime(plan.created_at)}</span>
+            </footer>
+          </article>
+        ))}
+        {visiblePlans.length === 0 && <div className="empty-source">No work plans yet. Ask the employee to plan or run a recruiting workflow.</div>}
+      </div>
+    </section>
+  );
+}
+
 function settingsToDraft(settings: Settings) {
   return {
     target_cities: safeSettingsList(settings.target_cities, defaultSettings.target_cities).join("\n"),
@@ -2987,6 +3042,17 @@ function formatTaskStatus(status: string) {
     escalated: "Escalated",
     snoozed: "Snoozed",
     done: "Done",
+  };
+  return labels[status] || status;
+}
+
+function formatPlanStatus(status: string) {
+  const labels: Record<string, string> = {
+    draft: "Draft",
+    waiting_approval: "Waiting approval",
+    executing: "Executing",
+    done: "Done",
+    failed: "Failed",
   };
   return labels[status] || status;
 }

@@ -400,6 +400,29 @@ export interface AgentActionRequest {
   executed_at?: string;
 }
 
+export interface AgentPlanStep {
+  order: number;
+  action_type: string;
+  target: string;
+  detail: string;
+  status: string;
+  message: string;
+}
+
+export interface AgentPlan {
+  id: number;
+  source: string;
+  goal: string;
+  summary: string;
+  status: "draft" | "waiting_approval" | "executing" | "done" | "failed" | string;
+  risk_level: string;
+  needs_approval: boolean;
+  steps: AgentPlanStep[];
+  created_at: string;
+  updated_at: string;
+  completed_at?: string;
+}
+
 export interface AgentDutyReport {
   generated_at: string;
   tone: string;

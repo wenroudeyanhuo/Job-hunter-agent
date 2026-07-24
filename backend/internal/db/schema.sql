@@ -148,6 +148,22 @@ CREATE TABLE IF NOT EXISTS agent_action_requests (
 
 CREATE INDEX IF NOT EXISTS idx_agent_action_requests_status ON agent_action_requests(status, created_at);
 
+CREATE TABLE IF NOT EXISTS agent_plans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source TEXT NOT NULL DEFAULT '',
+    goal TEXT NOT NULL DEFAULT '',
+    summary TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'draft',
+    risk_level TEXT NOT NULL DEFAULT 'low',
+    needs_approval INTEGER NOT NULL DEFAULT 0,
+    steps_json TEXT NOT NULL DEFAULT '[]',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_plans_status ON agent_plans(status, created_at);
+
 CREATE TABLE IF NOT EXISTS application_plans (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     job_id INTEGER NOT NULL UNIQUE,

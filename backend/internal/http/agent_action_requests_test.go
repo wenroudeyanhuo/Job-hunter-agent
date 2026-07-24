@@ -144,6 +144,43 @@ func TestAgentChatRecordsSuggestedActionRequests(t *testing.T) {
 	}
 }
 
+func TestAgentChatPersistsWorkPlanForSuggestedActions(t *testing.T) {
+	repo, handler := testRouter(t, nil)
+	body := bytes.NewBufferString(`{"message":"run crawl","active_view":"dashboard"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/agent/chat", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 chat, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	plans, err := repo.ListAgentPlans(t.Context(), jobs.AgentPlanStatusWaitingApproval, 10)
+	if err != nil {
+		t.Fatalf("list plans: %v", err)
+	}
+	if len(plans) != 1 {
+		t.Fatalf("expected one pending work plan, got %#v", plans)
+	}
+	if plans[0].Goal != "run crawl" || len(plans[0].Steps) != 1 || plans[0].Steps[0].ActionType != "run_crawl" {
+		t.Fatalf("unexpected work plan: %#v", plans[0])
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/agent/plans?status=waiting_approval", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 list plans, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var response []jobs.AgentPlan
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode plans: %v", err)
+	}
+	if len(response) != 1 || response[0].Steps[0].ActionType != "run_crawl" {
+		t.Fatalf("unexpected plan response: %#v", response)
+	}
+}
+
 type countingRunner struct {
 	summary     crawl.RunSummary
 	err         error
