@@ -63,8 +63,18 @@ func (c PublicURLCollector) Collect(ctx context.Context) ([]domain.Job, error) {
 			job.SourceName = "public_urls"
 		}
 
-		links, err := importer.DiscoverLinks(ctx, sourceURL, c.client, discoveredLinksPerSource)
 		discoveredConcreteJobs := 0
+		cardJobsByURL := map[string]domain.Job{}
+		if cardJobs, err := importer.DiscoverJobCards(ctx, sourceURL, c.client, discoveredLinksPerSource); err == nil {
+			for _, cardJob := range cardJobs {
+				if cardJob.SourceName == "" {
+					cardJob.SourceName = job.SourceName
+				}
+				cardJobsByURL[cardJob.ApplyURL] = cardJob
+			}
+		}
+
+		links, err := importer.DiscoverLinks(ctx, sourceURL, c.client, discoveredLinksPerSource)
 		if err == nil {
 			for _, link := range links {
 				discoveredJob, err := importer.ImportURL(ctx, link, c.client)
@@ -74,12 +84,19 @@ func (c PublicURLCollector) Collect(ctx context.Context) ([]domain.Job, error) {
 				if discoveredJob.SourceName == "" {
 					discoveredJob.SourceName = job.SourceName
 				}
+				if cardJob, ok := cardJobsByURL[discoveredJob.ApplyURL]; ok {
+					discoveredJob = mergeDiscoveredJobWithCard(discoveredJob, cardJob)
+				}
 				if !importer.LooksLikeConcreteJobPosting(discoveredJob) && discoveredJob.Status != domain.StatusManualCheck {
 					continue
 				}
 				discoveredConcreteJobs++
 				jobs = appendUniqueJob(jobs, seen, discoveredJob)
 			}
+		}
+		for _, cardJob := range cardJobsByURL {
+			discoveredConcreteJobs++
+			jobs = appendUniqueJob(jobs, seen, cardJob)
 		}
 
 		if importer.LooksLikeConcreteJobPosting(job) || (job.Status == domain.StatusManualCheck && discoveredConcreteJobs == 0) {
@@ -101,6 +118,37 @@ func appendUniqueJob(jobs []domain.Job, seen map[string]struct{}, job domain.Job
 		seen[key] = struct{}{}
 	}
 	return append(jobs, job)
+}
+
+func mergeDiscoveredJobWithCard(job domain.Job, card domain.Job) domain.Job {
+	if betterCardTitle(job.Title, card.Title) {
+		job.Title = card.Title
+	}
+	if job.City == "" {
+		job.City = card.City
+	}
+	if job.Description == "" {
+		job.Description = card.Description
+	}
+	if job.Company == "" {
+		job.Company = card.Company
+	}
+	return job
+}
+
+func betterCardTitle(current string, card string) bool {
+	current = strings.TrimSpace(current)
+	card = strings.TrimSpace(card)
+	if card == "" {
+		return false
+	}
+	if current == "" {
+		return true
+	}
+	if strings.Contains(current, "/") {
+		return true
+	}
+	return len([]rune(card)) > len([]rune(current))+8
 }
 
 type SourceLister interface {

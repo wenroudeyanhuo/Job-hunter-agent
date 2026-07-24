@@ -186,6 +186,62 @@ func DiscoverLinks(ctx context.Context, rawURL string, client *http.Client, limi
 	return links, nil
 }
 
+func DiscoverJobCards(ctx context.Context, rawURL string, client *http.Client, limit int) ([]domain.Job, error) {
+	parsed, err := parseHTTPURL(rawURL)
+	if err != nil {
+		return nil, err
+	}
+	if limit <= 0 {
+		return []domain.Job{}, nil
+	}
+	if client == nil {
+		client = http.DefaultClient
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("create job-card discovery request: %w", err)
+	}
+	req.Header.Set("User-Agent", defaultUserAgent)
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetch job-card page: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("fetch job-card page returned HTTP %d", resp.StatusCode)
+	}
+
+	doc, err := html.Parse(io.LimitReader(resp.Body, maxImportBodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("parse job-card page: %w", err)
+	}
+	jobs := []domain.Job{}
+	seen := map[string]struct{}{}
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if len(jobs) >= limit {
+			return
+		}
+		if n.Type == html.ElementNode && n.Data == "a" {
+			if job, ok := jobFromAnchorCard(n, parsed); ok {
+				if _, exists := seen[job.ApplyURL]; !exists {
+					seen[job.ApplyURL] = struct{}{}
+					jobs = append(jobs, job)
+				}
+			}
+		}
+		for child := n.FirstChild; child != nil; child = child.NextSibling {
+			walk(child)
+			if len(jobs) >= limit {
+				return
+			}
+		}
+	}
+	walk(doc)
+	return jobs, nil
+}
+
 func LooksLikeConcreteJobPosting(job domain.Job) bool {
 	text := cleanText(strings.ToLower(strings.Join([]string{job.Title, job.Description, job.ApplyURL, job.SourceURL}, " ")))
 	landingSignal := containsAny(text,
@@ -209,6 +265,43 @@ func LooksLikeConcreteJobPosting(job domain.Job) bool {
 		return true
 	}
 	return pathSignal && detailSignal && !landingSignal
+}
+
+func jobFromAnchorCard(node *html.Node, base *url.URL) (domain.Job, bool) {
+	href := attrValue(node, "href")
+	if href == "" {
+		return domain.Job{}, false
+	}
+	resolved, err := base.Parse(href)
+	if err != nil || (resolved.Scheme != "http" && resolved.Scheme != "https") || resolved.Host == "" {
+		return domain.Job{}, false
+	}
+	resolved.Fragment = ""
+	text := cleanText(nodeText(node))
+	title := firstHeadingText(node)
+	if title == "" {
+		title = firstUsefulLine(text)
+	}
+	if title == "" {
+		return domain.Job{}, false
+	}
+	if !containsAny(href+" "+title+" "+text, recruitmentLinkKeywords...) {
+		return domain.Job{}, false
+	}
+	job := domain.Job{
+		Company:      companyFromHost(base.Hostname()),
+		Title:        title,
+		City:         cityFromText(text),
+		Description:  cardDescription(text, title),
+		SourceName:   base.Hostname(),
+		SourceURL:    base.String(),
+		ApplyURL:     resolved.String(),
+		DiscoveredAt: time.Now().UTC(),
+	}
+	if !LooksLikeConcreteJobPosting(job) {
+		return domain.Job{}, false
+	}
+	return job, true
 }
 
 func discoverLinksInText(raw string, base *url.URL, seen map[string]struct{}, limit int) []string {
@@ -332,6 +425,66 @@ func nodeText(node *html.Node) string {
 	}
 	walk(node)
 	return strings.Join(values, " ")
+}
+
+func firstHeadingText(node *html.Node) string {
+	var out string
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if out != "" {
+			return
+		}
+		if n.Type == html.ElementNode {
+			switch n.Data {
+			case "h1", "h2", "h3", "h4", "strong", "b":
+				out = cleanText(nodeText(n))
+				return
+			}
+		}
+		for child := n.FirstChild; child != nil; child = child.NextSibling {
+			walk(child)
+		}
+	}
+	walk(node)
+	return out
+}
+
+func firstUsefulLine(text string) string {
+	for _, line := range strings.Split(text, "\n") {
+		line = cleanText(line)
+		if len([]rune(line)) >= 4 {
+			return line
+		}
+	}
+	return cleanText(text)
+}
+
+func cityFromText(text string) string {
+	if containsAny(text, "shenzhen", "深圳") {
+		return "Shenzhen"
+	}
+	if containsAny(text, "guangzhou", "广州") {
+		return "Guangzhou"
+	}
+	if containsAny(text, "shanghai", "上海") {
+		return "Shanghai"
+	}
+	if containsAny(text, "beijing", "北京") {
+		return "Beijing"
+	}
+	if containsAny(text, "hangzhou", "杭州") {
+		return "Hangzhou"
+	}
+	return ""
+}
+
+func cardDescription(text string, title string) string {
+	text = cleanText(strings.Replace(text, title, "", 1))
+	if len([]rune(text)) > 320 {
+		runes := []rune(text)
+		return string(runes[:320])
+	}
+	return text
 }
 
 func containsAny(value string, needles ...string) bool {

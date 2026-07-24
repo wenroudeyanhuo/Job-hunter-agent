@@ -136,6 +136,34 @@ func (h *Handlers) GetAgentChatStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, jobs.BuildAgentChatStatus(h.LLM))
 }
 
+func (h *Handlers) CheckAgentChatModel(c *gin.Context) {
+	status := jobs.BuildAgentChatStatus(h.LLM)
+	response := jobs.AgentChatHealthcheck{
+		Status:     "skipped",
+		Provider:   status.Provider,
+		Model:      status.Model,
+		BaseURL:    status.BaseURL,
+		Configured: status.Configured,
+		Message:    "Model is not configured; local rules are active.",
+	}
+	if !status.Configured {
+		c.JSON(http.StatusOK, response)
+		return
+	}
+	if _, err := h.callModelChat(c.Request.Context(), []map[string]string{
+		{"role": "system", "content": "Reply with ok."},
+		{"role": "user", "content": "healthcheck"},
+	}, 0); err != nil {
+		response.Status = "failed"
+		response.Message = err.Error()
+		c.JSON(http.StatusOK, response)
+		return
+	}
+	response.Status = "ok"
+	response.Message = "Model responded successfully."
+	c.JSON(http.StatusOK, response)
+}
+
 func (h *Handlers) ListAgentActionRequests(c *gin.Context) {
 	requests, err := h.Repo.ListAgentActionRequests(c.Request.Context(), c.Query("status"))
 	if err != nil {
@@ -143,6 +171,15 @@ func (h *Handlers) ListAgentActionRequests(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, requests)
+}
+
+func (h *Handlers) ListAgentPlans(c *gin.Context) {
+	plans, err := h.Repo.ListAgentPlans(c.Request.Context(), c.Query("status"), 20)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, plans)
 }
 
 func (h *Handlers) UpdateAgentActionRequest(c *gin.Context) {
@@ -157,6 +194,23 @@ func (h *Handlers) UpdateAgentActionRequest(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "status is required"})
 		return
 	}
+	current, err := h.Repo.GetAgentActionRequest(c.Request.Context(), id)
+	if err != nil {
+		respondRepoError(c, err)
+		return
+	}
+	if jobs.NormalizeAgentActionRequestStatus(req.Status) == jobs.AgentActionRequestStatusApproved {
+		executionMessage, err := h.executeApprovedAgentAction(c, current)
+		if err != nil {
+			_, _ = h.Repo.RecordAgentActionRequestExecution(c.Request.Context(), id, jobs.AgentActionExecutionFailed, err.Error())
+			respondError(c, http.StatusConflict, err)
+			return
+		}
+		if _, err := h.Repo.RecordAgentActionRequestExecution(c.Request.Context(), id, jobs.AgentActionExecutionSucceeded, executionMessage); err != nil {
+			respondError(c, http.StatusInternalServerError, err)
+			return
+		}
+	}
 	request, err := h.Repo.UpdateAgentActionRequestStatus(c.Request.Context(), id, req.Status)
 	if err != nil {
 		respondRepoError(c, err)
@@ -169,6 +223,82 @@ func (h *Handlers) UpdateAgentActionRequest(c *gin.Context) {
 		Level:   "info",
 	})
 	c.JSON(http.StatusOK, request)
+}
+
+func (h *Handlers) executeApprovedAgentAction(c *gin.Context, request jobs.AgentActionRequest) (string, error) {
+	ctx := c.Request.Context()
+	message := "Action completed."
+	switch request.ActionType {
+	case "run_crawl":
+		if h.Runner == nil {
+			return "", fmt.Errorf("crawl runner is not configured")
+		}
+		summary, err := h.Runner.Run(ctx, "agent_action")
+		if err != nil {
+			return "", err
+		}
+		cleanup, err := h.cleanupLandingPages(ctx)
+		if err != nil {
+			return "", err
+		}
+		summary.LandingPagesIgnored = cleanup.Ignored
+		h.recordCrawlEvent(c, "agent_action_crawl_completed", "Agent action crawl completed", summary)
+		h.refreshAgentTasksAfterCrawl(c)
+		h.snapshotAgentReview(c, "agent_action_crawl_completed")
+		message = "Created " + strconv.Itoa(summary.JobsCreated) + " jobs, found " + strconv.Itoa(summary.JobsDuplicated) + " duplicates, and flagged " + strconv.Itoa(summary.ManualCheckCount) + " for review."
+	case "refresh_tasks":
+		if _, err := h.Repo.SyncAgentTasks(ctx, time.Now().UTC()); err != nil {
+			return "", err
+		}
+		message = "Refreshed today's task queue."
+	case "sync_application_plans":
+		plans, err := h.Repo.SyncApplicationPlans(ctx, time.Now().UTC())
+		if err != nil {
+			return "", err
+		}
+		message = "Synced " + strconv.Itoa(len(plans)) + " application plans."
+	case "send_feishu_report":
+		webhookURL, err := h.effectiveFeishuWebhookURL(ctx)
+		if err != nil {
+			return "", err
+		}
+		if webhookURL == "" {
+			return "", fmt.Errorf("Feishu webhook URL is not configured")
+		}
+		report, err := h.buildDutyReport(ctx)
+		if err != nil {
+			return "", err
+		}
+		if err := notify.SendFeishuWebhook(ctx, webhookURL, notify.BuildFeishuDutyReport(report)); err != nil {
+			return "", err
+		}
+		message = "Sent the current duty report to Feishu."
+	case "discover_sources":
+		settings, err := h.Repo.GetSettings(ctx)
+		if err != nil {
+			return "", err
+		}
+		result, err := h.Repo.DiscoverSourceCandidates(ctx, jobs.SourceDiscoveryInput{
+			TargetCities:     settings.TargetCities,
+			TargetDirections: settings.TargetDirections,
+		})
+		if err != nil {
+			return "", err
+		}
+		message = "Discovered " + strconv.Itoa(result.Created) + " new source candidates and skipped " + strconv.Itoa(result.Duplicated) + " duplicates."
+	case "review_strong_matches", "review_manual_check":
+		// Navigation-only requests are safely completed once the user approves them.
+		message = "Opened the requested review workflow."
+	default:
+		return "", fmt.Errorf("unsupported agent action: %s", request.ActionType)
+	}
+	h.recordAgentEvent(c, jobs.AgentEventInput{
+		Type:    "agent_action_executed",
+		Title:   "Executed approved action",
+		Summary: request.ActionType + ": " + message,
+		Level:   "success",
+	})
+	return message, nil
 }
 
 func (h *Handlers) GetAutomationStatus(c *gin.Context) {
@@ -236,6 +366,10 @@ func (h *Handlers) RunAgentChat(c *gin.Context) {
 		return
 	}
 	if len(reply.Actions) > 0 {
+		if _, err := h.Repo.CreateAgentPlan(c.Request.Context(), jobs.BuildAgentPlanInputFromReply(req.Message, reply)); err != nil {
+			respondError(c, http.StatusInternalServerError, err)
+			return
+		}
 		if err := h.Repo.RecordAgentActionRequests(c.Request.Context(), reply.Source, reply.Actions); err != nil {
 			respondError(c, http.StatusInternalServerError, err)
 			return
@@ -260,13 +394,35 @@ func (h *Handlers) buildAgentChatContext(ctx context.Context, activeView string)
 	if err != nil {
 		return jobs.AgentChatContext{}, err
 	}
+	snapshots, err := h.Repo.ListAgentReviewSnapshots(ctx, 2)
+	if err != nil {
+		return jobs.AgentChatContext{}, err
+	}
+	events, err := h.Repo.ListAgentEvents(ctx, 20)
+	if err != nil {
+		return jobs.AgentChatContext{}, err
+	}
+	recentMessages, err := h.Repo.ListAgentChatMessages(ctx, 8)
+	if err != nil {
+		return jobs.AgentChatContext{}, err
+	}
 	context := jobs.AgentChatContext{
-		ActiveView:   activeView,
-		ModelEnabled: jobs.BuildAgentChatStatus(h.LLM).Configured,
+		ActiveView:     activeView,
+		ModelEnabled:   jobs.BuildAgentChatStatus(h.LLM).Configured,
+		Memory:         jobs.BuildAgentMemory(snapshots, events),
+		RecentMessages: recentMessages,
 	}
 	for _, job := range jobList {
 		if job.MatchScore >= 70 {
 			context.StrongMatches++
+			if len(context.RecommendedJobs) < 5 {
+				context.RecommendedJobs = append(context.RecommendedJobs, jobs.AgentChatJobSummary{
+					Company:    job.Company,
+					Title:      job.Title,
+					City:       job.City,
+					MatchScore: job.MatchScore,
+				})
+			}
 		}
 		if job.Status == domain.StatusManualCheck {
 			context.ManualDecisions++
@@ -286,21 +442,45 @@ func (h *Handlers) buildAgentChatContext(ctx context.Context, activeView string)
 }
 
 func (h *Handlers) runModelChat(ctx context.Context, userMessage string, chatContext jobs.AgentChatContext) (string, error) {
+	messages := []map[string]string{
+		{
+			"role": "system",
+			"content": fmt.Sprintf("You are Job Hunter Agent, a Chinese-speaking digital employee for autumn recruitment. Be concise, practical, and use the current local context. Current view: %s. Open tasks: %d. Strong matches: %d. Manual decisions: %d. Source issues: %d. Recommended jobs: %s. Memory: %s. If suggesting an action, return JSON with content and actions. Allowed action types: run_crawl, refresh_tasks, sync_application_plans, send_feishu_report, discover_sources, review_strong_matches, review_manual_check. Never suggest direct resume submission or third-party login actions.",
+				chatContext.ActiveView, chatContext.OpenTasks, chatContext.StrongMatches, chatContext.ManualDecisions, chatContext.SourceIssues, formatAgentChatJobSummaries(chatContext.RecommendedJobs), formatAgentMemory(chatContext.Memory)),
+		},
+	}
+	messages = append(messages, formatAgentChatHistory(chatContext.RecentMessages)...)
+	if len(messages) == 1 {
+		messages = append(messages, map[string]string{"role": "user", "content": userMessage})
+	}
+	return h.callModelChat(ctx, messages, 0.4)
+}
+
+func formatAgentChatHistory(history []jobs.AgentChatMessage) []map[string]string {
+	out := []map[string]string{}
+	for _, message := range history {
+		role := strings.TrimSpace(message.Role)
+		if role != jobs.AgentChatRoleUser && role != jobs.AgentChatRoleAssistant {
+			continue
+		}
+		content := strings.TrimSpace(message.Content)
+		if content == "" {
+			continue
+		}
+		out = append(out, map[string]string{"role": role, "content": content})
+	}
+	return out
+}
+
+func (h *Handlers) callModelChat(ctx context.Context, messages []map[string]string, temperature float64) (string, error) {
 	config := jobs.NormalizeLLMConfig(h.LLM)
 	if config.APIKey == "" || config.Model == "" {
 		return "", fmt.Errorf("model is not configured")
 	}
 	payload := map[string]any{
-		"model": config.Model,
-		"messages": []map[string]string{
-			{
-				"role": "system",
-				"content": fmt.Sprintf("You are Job Hunter Agent, a Chinese-speaking digital employee for autumn recruitment. Be concise, practical, and use the current local context. Current view: %s. Open tasks: %d. Strong matches: %d. Manual decisions: %d. Source issues: %d. If suggesting an action, return JSON with content and actions. Allowed action types: run_crawl, refresh_tasks, sync_application_plans, send_feishu_report, discover_sources, review_strong_matches, review_manual_check. Never suggest direct resume submission or third-party login actions.",
-					chatContext.ActiveView, chatContext.OpenTasks, chatContext.StrongMatches, chatContext.ManualDecisions, chatContext.SourceIssues),
-			},
-			{"role": "user", "content": userMessage},
-		},
-		"temperature": 0.4,
+		"model":       config.Model,
+		"messages":    messages,
+		"temperature": temperature,
 	}
 	data, err := json.Marshal(payload)
 	if err != nil {
@@ -335,6 +515,25 @@ func (h *Handlers) runModelChat(ctx context.Context, userMessage string, chatCon
 		return "", fmt.Errorf("model returned no choices")
 	}
 	return strings.TrimSpace(decoded.Choices[0].Message.Content), nil
+}
+
+func formatAgentChatJobSummaries(jobList []jobs.AgentChatJobSummary) string {
+	if len(jobList) == 0 {
+		return "none"
+	}
+	parts := make([]string, 0, len(jobList))
+	for _, job := range jobList {
+		parts = append(parts, fmt.Sprintf("%s - %s - %s - score %d", job.Company, job.Title, job.City, job.MatchScore))
+	}
+	return strings.Join(parts, "; ")
+}
+
+func formatAgentMemory(memory jobs.AgentMemory) string {
+	if memory.LastFocusAction == "" {
+		return memory.TrendSummary
+	}
+	return fmt.Sprintf("last trigger %s, last focus %s (%s), trend %s, recent executed actions %d",
+		memory.LastTriggerType, memory.LastFocusTitle, memory.LastFocusAction, memory.TrendSummary, memory.RecentActionCount)
 }
 
 func (h *Handlers) RunAutomationDutyReport(c *gin.Context) {
@@ -473,10 +672,18 @@ func (h *Handlers) buildAgentState(ctx context.Context) (jobs.AgentState, error)
 	if err != nil {
 		return jobs.AgentState{}, err
 	}
+	snapshots, err := h.Repo.ListAgentReviewSnapshots(ctx, 2)
+	if err != nil {
+		return jobs.AgentState{}, err
+	}
+	events, err := h.Repo.ListAgentEvents(ctx, 20)
+	if err != nil {
+		return jobs.AgentState{}, err
+	}
 	if strings.TrimSpace(settings.FeishuWebhookURL) == "" {
 		settings.FeishuWebhookURL = strings.TrimSpace(h.FeishuWebhookURL)
 	}
-	return jobs.BuildAgentState(jobList, sources, runs, tasks, settings), nil
+	return jobs.BuildAgentStateWithMemory(jobList, sources, runs, tasks, settings, snapshots, events), nil
 }
 
 func (h *Handlers) ListAgentEvents(c *gin.Context) {

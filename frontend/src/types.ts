@@ -246,6 +246,7 @@ export interface AgentState {
   maturity_score: number;
   workload: AgentWorkload;
   automation: AgentAutomationState;
+  memory: AgentMemory;
   capabilities: AgentCapability[];
   gaps: AgentCapabilityGap[];
   operating_cycle: AgentOperatingMoment[];
@@ -265,6 +266,15 @@ export interface AgentWorkload {
   strong_matches: number;
   manual_decisions: number;
   source_issues: number;
+}
+
+export interface AgentMemory {
+  last_review_at?: string;
+  last_trigger_type: string;
+  last_focus_title: string;
+  last_focus_action: string;
+  trend_summary: string;
+  recent_action_count: number;
 }
 
 export interface AgentCapability {
@@ -335,9 +345,20 @@ export interface AgentCommandResult {
 
 export interface AgentChatStatus {
   mode: string;
+  provider: string;
   model: string;
+  base_url: string;
   configured: boolean;
   fallback_mode: string;
+}
+
+export interface AgentChatHealthcheck {
+  status: "ok" | "failed" | "skipped" | string;
+  provider: string;
+  model: string;
+  base_url: string;
+  configured: boolean;
+  message: string;
 }
 
 export interface AgentChatMessage {
@@ -374,6 +395,32 @@ export interface AgentActionRequest {
   status: "pending" | "approved" | "dismissed" | string;
   created_at: string;
   resolved_at?: string;
+  execution_status: "not_run" | "succeeded" | "failed" | string;
+  execution_message: string;
+  executed_at?: string;
+}
+
+export interface AgentPlanStep {
+  order: number;
+  action_type: string;
+  target: string;
+  detail: string;
+  status: string;
+  message: string;
+}
+
+export interface AgentPlan {
+  id: number;
+  source: string;
+  goal: string;
+  summary: string;
+  status: "draft" | "waiting_approval" | "executing" | "done" | "failed" | string;
+  risk_level: string;
+  needs_approval: boolean;
+  steps: AgentPlanStep[];
+  created_at: string;
+  updated_at: string;
+  completed_at?: string;
 }
 
 export interface AgentDutyReport {

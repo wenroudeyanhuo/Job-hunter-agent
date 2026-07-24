@@ -177,6 +177,7 @@ h2 {
 
 .employee-identity,
 .employee-focus,
+.employee-memory,
 .employee-score,
 .employee-actions,
 .employee-section {
@@ -192,6 +193,8 @@ h2 {
 .employee-identity strong,
 .employee-identity p,
 .employee-focus span,
+.employee-memory span,
+.employee-memory small,
 .employee-score span,
 .capability-row span,
 .gap-item span,
@@ -205,6 +208,9 @@ h2 {
 .employee-identity p,
 .employee-focus span,
 .employee-focus strong,
+.employee-memory span,
+.employee-memory strong,
+.employee-memory small,
 .employee-score span,
 .employee-score strong {
   display: block;
@@ -294,6 +300,27 @@ h2 {
   color: #18212f;
   font-size: 15px;
   line-height: 1.35;
+}
+
+.employee-memory {
+  display: grid;
+  gap: 5px;
+  border-left: 3px solid #1fb56e;
+  margin: 0 16px 16px;
+  padding: 10px 12px;
+  background: #f6fbf8;
+}
+
+.employee-memory strong {
+  color: #18212f;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.employee-memory small {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .employee-score {
@@ -678,6 +705,40 @@ h2 {
   padding: 7px 9px;
   font-size: 12px;
   font-weight: 760;
+}
+
+.model-health {
+  display: grid;
+  gap: 3px;
+  border-bottom: 1px solid #edf1f7;
+  background: #f8fafc;
+  padding: 9px 14px;
+}
+
+.model-health strong,
+.model-health span,
+.model-health small {
+  display: block;
+}
+
+.model-health strong {
+  color: #176443;
+  font-size: 12px;
+}
+
+.model-health span,
+.model-health small {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.model-failed strong {
+  color: #b42318;
+}
+
+.model-skipped strong {
+  color: #475569;
 }
 
 .employee-chat-messages {
@@ -1184,6 +1245,130 @@ h2 {
   margin-bottom: 16px;
 }
 
+.agent-plans-panel {
+  overflow: hidden;
+  border: 1px solid #d8e2ef;
+  border-radius: 8px;
+  background: #fff;
+  margin-bottom: 16px;
+}
+
+.agent-plan-list {
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid #edf1f7;
+  padding: 14px;
+}
+
+.agent-plan-card {
+  border: 1px solid #dbe6f4;
+  border-radius: 8px;
+  background: #fbfdff;
+  padding: 14px;
+}
+
+.agent-plan-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.agent-plan-head strong,
+.agent-plan-head span {
+  display: block;
+}
+
+.agent-plan-head strong {
+  color: #18212f;
+  font-size: 14px;
+}
+
+.agent-plan-head span {
+  margin-top: 5px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.plan-status {
+  border-radius: 999px;
+  background: #eaf2ff;
+  color: #1769e0;
+  padding: 4px 9px;
+  font-size: 11px;
+  font-weight: 760;
+  white-space: nowrap;
+}
+
+.status-waiting_approval {
+  background: #fff7e6;
+  color: #9a5b00;
+}
+
+.status-done {
+  background: #e7f8ef;
+  color: #176443;
+}
+
+.status-failed {
+  background: #fff0f0;
+  color: #b42318;
+}
+
+.agent-plan-steps {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.agent-plan-step {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 9px;
+  align-items: flex-start;
+}
+
+.agent-plan-step > span {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #e8f5f0;
+  color: #15734f;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.agent-plan-step strong,
+.agent-plan-step small {
+  display: block;
+}
+
+.agent-plan-step strong {
+  color: #26364d;
+  font-size: 12px;
+}
+
+.agent-plan-step small {
+  margin-top: 2px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.agent-plan-card footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  border-top: 1px solid #edf1f7;
+  padding-top: 10px;
+  color: #718096;
+  font-size: 11px;
+}
+
 .action-request-list {
   display: grid;
 }
@@ -1215,6 +1400,17 @@ h2 {
   color: #64748b;
   font-size: 12px;
   line-height: 1.4;
+}
+
+.action-request-row .execution-receipt {
+  border-left: 3px solid #1fb56e;
+  padding-left: 8px;
+  color: #176443;
+}
+
+.action-request-row .receipt-failed {
+  border-left-color: #dc2626;
+  color: #b42318;
 }
 
 .action-request-actions {

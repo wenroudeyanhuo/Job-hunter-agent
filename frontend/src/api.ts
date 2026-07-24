@@ -2,7 +2,9 @@ import type {
   AgentBriefing,
   AgentAutomationDiagnostics,
   AgentActionRequest,
+  AgentPlan,
   AgentChatMessage,
+  AgentChatHealthcheck,
   AgentChatResponse,
   AgentChatStatus,
   AgentCommandResult,
@@ -78,6 +80,12 @@ export async function listAgentActionRequests(status = "pending"): Promise<Agent
   return Array.isArray(requests) ? requests : [];
 }
 
+export async function listAgentPlans(status = ""): Promise<AgentPlan[]> {
+  const query = status ? `?status=${encodeURIComponent(status)}` : "";
+  const plans = await request<AgentPlan[] | null>(`/api/agent/plans${query}`);
+  return Array.isArray(plans) ? plans : [];
+}
+
 export async function updateAgentActionRequest(id: number, status: "pending" | "approved" | "dismissed"): Promise<AgentActionRequest> {
   return request<AgentActionRequest>(`/api/agent/actions/${id}`, {
     method: "PATCH",
@@ -87,6 +95,12 @@ export async function updateAgentActionRequest(id: number, status: "pending" | "
 
 export async function getAgentChatStatus(): Promise<AgentChatStatus> {
   return request<AgentChatStatus>("/api/agent/chat/status");
+}
+
+export async function checkAgentChatModel(): Promise<AgentChatHealthcheck> {
+  return request<AgentChatHealthcheck>("/api/agent/chat/healthcheck", {
+    method: "POST",
+  });
 }
 
 export async function getAutomationStatus(): Promise<AgentAutomationDiagnostics> {

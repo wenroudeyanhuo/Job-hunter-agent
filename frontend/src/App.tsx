@@ -5,6 +5,7 @@ import {
   createSource,
   getAutomationStatus,
   getAgentChatStatus,
+  checkAgentChatModel,
   getAgentBriefing,
   getAgentDutyReport,
   getAgentReview,
@@ -18,6 +19,7 @@ import {
   listAgentActionRequests,
   listAgentEvents,
   listAgentChatMessages,
+  listAgentPlans,
   listApplicationPlans,
   listAgentTasks,
   listCompanies,
@@ -51,7 +53,7 @@ import {
   rejectSourceCandidate,
 } from "./api";
 import { DigitalEmployee3D } from "./DigitalEmployee3D";
-import type { AgentActionRequest, AgentAutomationDiagnostics, AgentBriefing, AgentChatMessage, AgentChatStatus, AgentCommandResult, AgentDutyReport, AgentEvent, AgentReview, AgentReviewHistory, AgentState, AgentTask, ApplicationPlan, CandidateProfile, Company, Job, JobDetail, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source, SourceCandidate, SourceOperationsSummary } from "./types";
+import type { AgentActionRequest, AgentAutomationDiagnostics, AgentBriefing, AgentChatHealthcheck, AgentChatMessage, AgentChatStatus, AgentCommandResult, AgentDutyReport, AgentEvent, AgentPlan, AgentReview, AgentReviewHistory, AgentState, AgentTask, ApplicationPlan, CandidateProfile, Company, Job, JobDetail, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source, SourceCandidate, SourceOperationsSummary } from "./types";
 
 const statusLabels: Record<JobStatus | "all", string> = {
   all: "All",
@@ -187,15 +189,18 @@ export default function App() {
   const [agentReviewHistory, setAgentReviewHistory] = useState<AgentReviewHistory | null>(null);
   const [agentEvents, setAgentEvents] = useState<AgentEvent[]>([]);
   const [agentActionRequests, setAgentActionRequests] = useState<AgentActionRequest[]>([]);
+  const [agentPlans, setAgentPlans] = useState<AgentPlan[]>([]);
   const [agentTasks, setAgentTasks] = useState<AgentTask[]>([]);
   const [applicationPlans, setApplicationPlans] = useState<ApplicationPlan[]>([]);
   const [automationStatus, setAutomationStatus] = useState<AgentAutomationDiagnostics | null>(null);
   const [chatStatus, setChatStatus] = useState<AgentChatStatus | null>(null);
+  const [chatHealthcheck, setChatHealthcheck] = useState<AgentChatHealthcheck | null>(null);
   const [chatMessages, setChatMessages] = useState<AgentChatMessage[]>([]);
   const [chatActions, setChatActions] = useState<AgentCommandResult["actions"]>([]);
   const [chatText, setChatText] = useState("");
   const [chatOpen, setChatOpen] = useState(true);
   const [chatSending, setChatSending] = useState(false);
+  const [checkingModel, setCheckingModel] = useState(false);
   const [selectedJobDetail, setSelectedJobDetail] = useState<JobDetail | null>(null);
   const [loadingJobDetail, setLoadingJobDetail] = useState(false);
   const [refreshingTasks, setRefreshingTasks] = useState(false);
@@ -289,10 +294,31 @@ export default function App() {
     setAgentActionRequests(data);
   }
 
+  async function refreshAgentPlans() {
+    const data = await listAgentPlans();
+    setAgentPlans(data);
+  }
+
   async function refreshChat() {
     const [status, messages] = await Promise.all([getAgentChatStatus(), listAgentChatMessages()]);
     setChatStatus(status);
     setChatMessages(messages);
+  }
+
+  async function handleCheckChatModel() {
+    setCheckingModel(true);
+    setError("");
+    setNotice("");
+    try {
+      const result = await checkAgentChatModel();
+      setChatHealthcheck(result);
+      setNotice(result.status === "ok" ? "Model healthcheck passed." : result.message);
+      await refreshChat();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not check model");
+    } finally {
+      setCheckingModel(false);
+    }
   }
 
   async function refreshTasks() {
@@ -311,7 +337,7 @@ export default function App() {
   }
 
   useEffect(() => {
-    Promise.all([refresh(), refreshSources(), refreshSourceCandidates(), refreshSourceOperations(), refreshCompanies(), refreshRuns(), refreshSettings(), refreshProfile(), refreshBriefing(), refreshAgentState(), refreshDutyReport(), refreshAgentReview(), refreshAgentReviewHistory(), refreshAgentEvents(), refreshAgentActionRequests(), refreshTasks(), refreshApplicationPlans(), refreshAutomationStatus(), refreshChat()])
+    Promise.all([refresh(), refreshSources(), refreshSourceCandidates(), refreshSourceOperations(), refreshCompanies(), refreshRuns(), refreshSettings(), refreshProfile(), refreshBriefing(), refreshAgentState(), refreshDutyReport(), refreshAgentReview(), refreshAgentReviewHistory(), refreshAgentEvents(), refreshAgentActionRequests(), refreshAgentPlans(), refreshTasks(), refreshApplicationPlans(), refreshAutomationStatus(), refreshChat()])
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
@@ -1022,6 +1048,7 @@ export default function App() {
       setChatActions(response.reply.actions || []);
       await refreshChat();
       await refreshAgentActionRequests();
+      await refreshAgentPlans();
       await refreshAgentEvents();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not talk to the agent");
@@ -1077,14 +1104,59 @@ export default function App() {
     setError("");
     setNotice("");
     try {
-      await handleAgentAction(request.action_type);
       await updateAgentActionRequest(request.id, "approved");
-      await refreshAgentActionRequests();
-      await refreshAgentEvents();
-      setNotice(`Agent action approved: ${formatActionLabel(request.action_type)}.`);
+      await handleApprovedActionNavigation(request.action_type);
+      await refreshAfterAgentActionExecution();
+      setNotice(`Agent action approved and executed: ${formatActionLabel(request.action_type)}.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not approve agent action");
     }
+  }
+
+  async function handleApprovedActionNavigation(action: string) {
+    switch (action) {
+      case "review_manual_check":
+        setActiveView("opportunities");
+        setScoreView("all");
+        await handleStatusFilter("manual_check");
+        return;
+      case "review_strong_matches":
+        setActiveView("opportunities");
+        setStatus("all");
+        setDirection("all");
+        setScoreView("strong");
+        await refresh("all");
+        return;
+      case "sync_application_plans":
+        setActiveView("applications");
+        return;
+      case "discover_sources":
+        setActiveView("companies");
+        return;
+      default:
+        return;
+    }
+  }
+
+  async function refreshAfterAgentActionExecution() {
+    await Promise.all([
+      refresh(),
+      refreshSources(),
+      refreshSourceCandidates(),
+      refreshSourceOperations(),
+      refreshRuns(),
+      refreshBriefing(),
+      refreshDutyReport(),
+      refreshAgentReview(),
+      refreshAgentReviewHistory(),
+      refreshAgentEvents(),
+      refreshAgentActionRequests(),
+      refreshAgentPlans(),
+      refreshTasks(),
+      refreshApplicationPlans(),
+      refreshAutomationStatus(),
+      refreshAgentState(),
+    ]);
   }
 
   async function handleDismissActionRequest(request: AgentActionRequest) {
@@ -1093,6 +1165,7 @@ export default function App() {
     try {
       await updateAgentActionRequest(request.id, "dismissed");
       await refreshAgentActionRequests();
+      await refreshAgentPlans();
       await refreshAgentEvents();
       setNotice(`Agent action dismissed: ${formatActionLabel(request.action_type)}.`);
     } catch (err) {
@@ -1150,6 +1223,8 @@ export default function App() {
             </section>
 
             <ProductReadinessPanel items={readinessItems} busy={running || seedingSources || recommendedRunning} />
+
+            <AgentWorkPlansPanel plans={agentPlans} />
 
             <AgentActionRequestsPanel
               requests={agentActionRequests}
@@ -1656,10 +1731,13 @@ export default function App() {
         text={chatText}
         open={chatOpen}
         sending={chatSending}
+        checkingModel={checkingModel}
+        healthcheck={chatHealthcheck}
         activeView={activeView}
         onToggle={() => setChatOpen((current) => !current)}
         onTextChange={setChatText}
         onSubmit={handleSendChat}
+        onCheckModel={handleCheckChatModel}
         actions={chatActions}
         onAction={handleAgentAction}
       />
@@ -2513,6 +2591,16 @@ function AgentEmployeeSidebar({
         <strong>{state.focus}</strong>
       </div>
 
+      <div className="employee-memory">
+        <span>Memory</span>
+        <strong>{state.memory.last_focus_title || "No review memory yet"}</strong>
+        <small>{state.memory.trend_summary}</small>
+        <small>
+          {state.memory.last_review_at ? `Last review ${formatDateTime(state.memory.last_review_at)}` : "Snapshot after a meaningful run to build memory"}
+          {state.memory.recent_action_count > 0 ? ` / ${state.memory.recent_action_count} recent actions` : ""}
+        </small>
+      </div>
+
       <div className="employee-score">
         <div>
           <span>Digital employee maturity</span>
@@ -2622,10 +2710,13 @@ function GlobalEmployeeChat({
   text,
   open,
   sending,
+  checkingModel,
+  healthcheck,
   activeView,
   onToggle,
   onTextChange,
   onSubmit,
+  onCheckModel,
   actions,
   onAction,
 }: {
@@ -2635,14 +2726,17 @@ function GlobalEmployeeChat({
   text: string;
   open: boolean;
   sending: boolean;
+  checkingModel: boolean;
+  healthcheck: AgentChatHealthcheck | null;
   activeView: string;
   onToggle: () => void;
   onTextChange: (value: string) => void;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void | Promise<void>;
+  onCheckModel: () => void | Promise<void>;
   actions: AgentCommandResult["actions"];
   onAction: (action: string) => void | Promise<void>;
 }) {
-  const modeLabel = status?.configured ? `Model: ${status.model}` : "Local rules";
+  const modeLabel = status?.configured ? `${formatProviderLabel(status.provider)}: ${status.model}` : "Local rules";
   return (
     <aside className={open ? "global-employee open" : "global-employee"} aria-label="Digital employee chat">
       <button type="button" className="employee-fab" onClick={onToggle} aria-label="Toggle digital employee chat">
@@ -2657,10 +2751,20 @@ function GlobalEmployeeChat({
               <strong>{state?.profile.name || "Job Hunter Agent"}</strong>
               <span>{modeLabel} / {activeView}</span>
             </div>
+            <button type="button" onClick={onCheckModel} disabled={checkingModel} aria-label="Check model connection">
+              {checkingModel ? "Checking" : "Check model"}
+            </button>
             <button type="button" onClick={onToggle} aria-label="Close chat">
               Close
             </button>
           </div>
+          {healthcheck && (
+            <div className={`model-health model-${healthcheck.status}`}>
+              <strong>{formatExecutionStatus(healthcheck.status)}</strong>
+              <span>{healthcheck.message}</span>
+              <small>{formatProviderLabel(healthcheck.provider)} / {healthcheck.model || "no model"} / {healthcheck.base_url}</small>
+            </div>
+          )}
           <div className="employee-chat-messages">
             {messages.map((message) => (
               <div className={`chat-message chat-${message.role}`} key={message.id}>
@@ -2765,6 +2869,11 @@ function AgentActionRequestsPanel({
             <div>
               <strong>{formatActionLabel(request.action_type)}</strong>
               <span>{request.detail || request.target || "Agent suggested a safe workflow action."}</span>
+              {request.execution_status && request.execution_status !== "not_run" && (
+                <small className={`execution-receipt receipt-${request.execution_status}`}>
+                  {formatExecutionStatus(request.execution_status)}: {request.execution_message || "No execution detail recorded."}
+                </small>
+              )}
               <small>{request.source} / {formatDateTime(request.created_at)}</small>
             </div>
             <div className="action-request-actions">
@@ -2778,6 +2887,49 @@ function AgentActionRequestsPanel({
           </div>
         ))}
         {requests.length === 0 && <div className="empty-source">No suggested actions waiting for approval.</div>}
+      </div>
+    </section>
+  );
+}
+
+function AgentWorkPlansPanel({ plans }: { plans: AgentPlan[] }) {
+  const visiblePlans = plans.slice(0, 4);
+  return (
+    <section className="agent-plans-panel">
+      <div className="panel-header">
+        <div>
+          <h2>Work Plans</h2>
+          <span>{plans.length} recent plans</span>
+        </div>
+      </div>
+      <div className="agent-plan-list">
+        {visiblePlans.map((plan) => (
+          <article className="agent-plan-card" key={plan.id}>
+            <div className="agent-plan-head">
+              <div>
+                <strong>{plan.goal || "Agent planned a recruiting workflow"}</strong>
+                <span>{plan.summary || "Waiting for the next work step."}</span>
+              </div>
+              <small className={`plan-status status-${plan.status}`}>{formatPlanStatus(plan.status)}</small>
+            </div>
+            <div className="agent-plan-steps">
+              {(plan.steps || []).map((step) => (
+                <div className="agent-plan-step" key={`${plan.id}-${step.order}-${step.action_type}`}>
+                  <span>{step.order}</span>
+                  <div>
+                    <strong>{formatActionLabel(step.action_type)}</strong>
+                    <small>{step.detail || step.target || "No detail recorded."}</small>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <footer>
+              <span>{plan.needs_approval ? "Approval required" : "No approval needed"}</span>
+              <span>{formatDateTime(plan.created_at)}</span>
+            </footer>
+          </article>
+        ))}
+        {visiblePlans.length === 0 && <div className="empty-source">No work plans yet. Ask the employee to plan or run a recruiting workflow.</div>}
       </div>
     </section>
   );
@@ -2894,6 +3046,17 @@ function formatTaskStatus(status: string) {
   return labels[status] || status;
 }
 
+function formatPlanStatus(status: string) {
+  const labels: Record<string, string> = {
+    draft: "Draft",
+    waiting_approval: "Waiting approval",
+    executing: "Executing",
+    done: "Done",
+    failed: "Failed",
+  };
+  return labels[status] || status;
+}
+
 function formatActionLabel(action: string) {
   const labels: Record<string, string> = {
     add_recommended_and_crawl: "Add sources and crawl",
@@ -2910,6 +3073,23 @@ function formatActionLabel(action: string) {
     follow_up_application: "Follow up applications",
   };
   return labels[action] || action.replace(/_/g, " ");
+}
+
+function formatExecutionStatus(status: string) {
+  const labels: Record<string, string> = {
+    succeeded: "Executed",
+    failed: "Failed",
+    not_run: "Not run",
+  };
+  return labels[status] || status.replace(/_/g, " ");
+}
+
+function formatProviderLabel(provider: string) {
+  const labels: Record<string, string> = {
+    deepseek: "DeepSeek",
+    openai_compatible: "OpenAI-compatible",
+  };
+  return labels[provider] || provider || "Local";
 }
 
 function formatFitVerdict(verdict: string) {

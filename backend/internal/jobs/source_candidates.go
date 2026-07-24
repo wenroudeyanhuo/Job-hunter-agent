@@ -361,6 +361,10 @@ func validateSourceCandidatePage(ctx context.Context, rawURL string, client *htt
 		"\u62db\u8058", "\u6821\u62db", "\u79cb\u62db", "\u5b9e\u4e60", "\u5c97\u4f4d", "\u804c\u4f4d", "\u6295\u9012", "\u6df1\u5733",
 	)
 	links, _ := importer.DiscoverLinks(ctx, parsed.String(), client, 8)
+	jobCards, _ := importer.DiscoverJobCards(ctx, parsed.String(), client, 6)
+	if len(jobCards) > 0 {
+		return SourceCandidateValidationGood, fmt.Sprintf("Verified %d recruitment signals, %d candidate links, and %d structured job cards.", signalCount, len(links), len(jobCards)), 20
+	}
 	if signalCount >= 3 || len(links) >= 2 {
 		return SourceCandidateValidationGood, fmt.Sprintf("Verified %d recruitment signals and %d candidate links.", signalCount, len(links)), 18
 	}
