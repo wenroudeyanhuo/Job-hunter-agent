@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/db"
+	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/domain"
 )
 
 func TestRepositoryCreatesAndListsAgentPlans(t *testing.T) {
@@ -42,5 +43,27 @@ func TestRepositoryCreatesAndListsAgentPlans(t *testing.T) {
 	}
 	if plans[0].Goal != "帮我刷新并整理今天的岗位" || plans[0].Steps[0].ActionType != "run_crawl" {
 		t.Fatalf("plan fields were not persisted: %#v", plans[0])
+	}
+}
+
+func TestBuildAgentPlanInputFromReviewKeepsSafeNextSteps(t *testing.T) {
+	review := BuildAgentReview([]domain.Job{
+		{Title: "Go Backend Engineer", MatchScore: 88, Status: domain.StatusNew},
+	}, []Source{
+		{Name: "Tencent Careers", Enabled: true, HealthStatus: SourceHealthHealthy},
+	}, nil, nil)
+
+	input := BuildAgentPlanInputFromReview(review)
+
+	if input.Goal != "今日秋招工作计划" || !input.NeedsApproval {
+		t.Fatalf("expected approval-gated daily plan, got %#v", input)
+	}
+	if len(input.Steps) == 0 {
+		t.Fatalf("expected safe review steps to become plan steps")
+	}
+	for _, step := range input.Steps {
+		if step.ActionType == "keep_monitoring" || step.ActionType == "add_recommended_and_crawl" || step.ActionType == "inspect_failed_sources" {
+			t.Fatalf("unsafe or unsupported step should not be planned directly: %#v", step)
+		}
 	}
 }

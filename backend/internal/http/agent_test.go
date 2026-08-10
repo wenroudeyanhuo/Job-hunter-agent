@@ -140,6 +140,49 @@ func TestAgentReviewAPI(t *testing.T) {
 	}
 }
 
+func TestCreateTodayAgentPlanAPI(t *testing.T) {
+	repo, handler := testRouter(t, nil)
+	if _, err := repo.CreateJob(t.Context(), domain.Job{
+		Company:    "Tencent",
+		Title:      "Go Backend Engineer",
+		City:       "Shenzhen",
+		MatchScore: 88,
+		Status:     domain.StatusNew,
+	}); err != nil {
+		t.Fatalf("seed job: %v", err)
+	}
+	if _, err := repo.CreateSource(t.Context(), jobs.SourceInput{
+		Name:       "Tencent Careers",
+		URL:        "https://careers.tencent.com/",
+		Enabled:    true,
+		ParserType: "tencent_api",
+	}); err != nil {
+		t.Fatalf("seed source: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/agent/plans/today", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var plan jobs.AgentPlan
+	if err := json.Unmarshal(rec.Body.Bytes(), &plan); err != nil {
+		t.Fatalf("decode plan: %v", err)
+	}
+	if plan.Goal != "今日秋招工作计划" || plan.Status != jobs.AgentPlanStatusWaitingApproval || len(plan.Steps) == 0 {
+		t.Fatalf("unexpected today plan: %#v", plan)
+	}
+	requests, err := repo.ListAgentActionRequests(t.Context(), jobs.AgentActionRequestStatusPending)
+	if err != nil {
+		t.Fatalf("list action requests: %v", err)
+	}
+	if len(requests) != len(plan.Steps) || requests[0].PlanID != plan.ID {
+		t.Fatalf("expected linked action requests, got %#v for plan %#v", requests, plan)
+	}
+}
+
 func TestAgentReviewSnapshotAndHistoryAPI(t *testing.T) {
 	repo, handler := testRouter(t, nil)
 	if _, err := repo.CreateJob(t.Context(), domain.Job{

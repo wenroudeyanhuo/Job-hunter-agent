@@ -182,6 +182,39 @@ func (h *Handlers) ListAgentPlans(c *gin.Context) {
 	c.JSON(http.StatusOK, plans)
 }
 
+func (h *Handlers) CreateTodayAgentPlan(c *gin.Context) {
+	review, err := h.buildAgentReview(c.Request.Context())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	input := jobs.BuildAgentPlanInputFromReview(review)
+	plan, err := h.Repo.CreateAgentPlan(c.Request.Context(), input)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	actions := make([]jobs.AgentCommandAction, 0, len(plan.Steps))
+	for _, step := range plan.Steps {
+		actions = append(actions, jobs.AgentCommandAction{
+			Type:   step.ActionType,
+			Target: step.Target,
+			Detail: step.Detail,
+		})
+	}
+	if err := h.Repo.RecordAgentActionRequestsForPlan(c.Request.Context(), plan.ID, plan.Source, actions); err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	h.recordAgentEvent(c, jobs.AgentEventInput{
+		Type:    "agent_plan_created",
+		Title:   "Created today's work plan",
+		Summary: plan.Summary,
+		Level:   "info",
+	})
+	c.JSON(http.StatusCreated, plan)
+}
+
 func (h *Handlers) UpdateAgentActionRequest(c *gin.Context) {
 	id, ok := parseID(c)
 	if !ok {

@@ -210,6 +210,35 @@ func BuildAgentPlanInputFromReply(goal string, reply AgentChatReply) AgentPlanIn
 	}
 }
 
+func BuildAgentPlanInputFromReview(review AgentReview) AgentPlanInput {
+	steps := []AgentPlanStep{}
+	for _, nextStep := range review.NextSteps {
+		allowed, ok := allowedModelActionTypes[strings.TrimSpace(nextStep.Action)]
+		if !ok {
+			continue
+		}
+		detail := strings.TrimSpace(nextStep.Reason)
+		if detail == "" {
+			detail = allowed.Detail
+		}
+		steps = append(steps, AgentPlanStep{
+			Order:      len(steps) + 1,
+			ActionType: allowed.Type,
+			Target:     allowed.Target,
+			Detail:     detail,
+			Status:     AgentPlanStepStatusPending,
+		})
+	}
+	return AgentPlanInput{
+		Source:        "review",
+		Goal:          "今日秋招工作计划",
+		Summary:       review.Focus.Title + ": " + review.Focus.Detail,
+		RiskLevel:     AgentPlanRiskApprovalRequired,
+		NeedsApproval: len(steps) > 0,
+		Steps:         steps,
+	}
+}
+
 func normalizeAgentPlanStatus(status string) string {
 	switch strings.TrimSpace(status) {
 	case AgentPlanStatusDraft:

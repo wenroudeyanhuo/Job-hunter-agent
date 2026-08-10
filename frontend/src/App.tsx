@@ -6,6 +6,7 @@ import {
   getAutomationStatus,
   getAgentChatStatus,
   checkAgentChatModel,
+  createTodayAgentPlan,
   getAgentBriefing,
   getAgentDutyReport,
   getAgentReview,
@@ -209,6 +210,7 @@ export default function App() {
   const [commandResult, setCommandResult] = useState<AgentCommandResult | null>(null);
   const [runningCommand, setRunningCommand] = useState(false);
   const [savingReviewSnapshot, setSavingReviewSnapshot] = useState(false);
+  const [planningToday, setPlanningToday] = useState(false);
 
   async function refresh(nextStatus = status) {
     setError("");
@@ -1100,6 +1102,23 @@ export default function App() {
     }
   }
 
+  async function handleCreateTodayPlan() {
+    setPlanningToday(true);
+    setError("");
+    setNotice("");
+    try {
+      const plan = await createTodayAgentPlan();
+      await refreshAgentPlans();
+      await refreshAgentActionRequests();
+      await refreshAgentEvents();
+      setNotice(`Today's work plan created with ${plan.steps.length} steps.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not create today's work plan");
+    } finally {
+      setPlanningToday(false);
+    }
+  }
+
   async function handleApproveActionRequest(request: AgentActionRequest) {
     setError("");
     setNotice("");
@@ -1224,7 +1243,7 @@ export default function App() {
 
             <ProductReadinessPanel items={readinessItems} busy={running || seedingSources || recommendedRunning} />
 
-            <AgentWorkPlansPanel plans={agentPlans} />
+            <AgentWorkPlansPanel plans={agentPlans} onCreateTodayPlan={handleCreateTodayPlan} busy={planningToday} />
 
             <AgentActionRequestsPanel
               requests={agentActionRequests}
@@ -2892,7 +2911,15 @@ function AgentActionRequestsPanel({
   );
 }
 
-function AgentWorkPlansPanel({ plans }: { plans: AgentPlan[] }) {
+function AgentWorkPlansPanel({
+  plans,
+  onCreateTodayPlan,
+  busy,
+}: {
+  plans: AgentPlan[];
+  onCreateTodayPlan: () => void | Promise<void>;
+  busy: boolean;
+}) {
   const visiblePlans = plans.slice(0, 4);
   return (
     <section className="agent-plans-panel">
@@ -2901,6 +2928,9 @@ function AgentWorkPlansPanel({ plans }: { plans: AgentPlan[] }) {
           <h2>Work Plans</h2>
           <span>{plans.length} recent plans</span>
         </div>
+        <button type="button" onClick={onCreateTodayPlan} disabled={busy}>
+          {busy ? "Planning..." : "Plan Today"}
+        </button>
       </div>
       <div className="agent-plan-list">
         {visiblePlans.map((plan) => (

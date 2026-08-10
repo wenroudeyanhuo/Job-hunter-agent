@@ -86,6 +86,10 @@ export async function listAgentPlans(status = ""): Promise<AgentPlan[]> {
   return Array.isArray(plans) ? plans : [];
 }
 
+export async function createTodayAgentPlan(): Promise<AgentPlan> {
+  return request<AgentPlan>("/api/agent/plans/today", { method: "POST" });
+}
+
 export async function updateAgentActionRequest(id: number, status: "pending" | "approved" | "dismissed"): Promise<AgentActionRequest> {
   return request<AgentActionRequest>(`/api/agent/actions/${id}`, {
     method: "PATCH",
