@@ -388,6 +388,7 @@ export interface AgentCommandAction {
 
 export interface AgentActionRequest {
   id: number;
+  plan_id: number;
   source: string;
   action_type: string;
   target: string;

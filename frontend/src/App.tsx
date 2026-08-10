@@ -2914,11 +2914,12 @@ function AgentWorkPlansPanel({ plans }: { plans: AgentPlan[] }) {
             </div>
             <div className="agent-plan-steps">
               {(plan.steps || []).map((step) => (
-                <div className="agent-plan-step" key={`${plan.id}-${step.order}-${step.action_type}`}>
+                <div className={`agent-plan-step step-${step.status}`} key={`${plan.id}-${step.order}-${step.action_type}`}>
                   <span>{step.order}</span>
                   <div>
                     <strong>{formatActionLabel(step.action_type)}</strong>
                     <small>{step.detail || step.target || "No detail recorded."}</small>
+                    {step.message && <small className="step-message">{step.message}</small>}
                   </div>
                 </div>
               ))}

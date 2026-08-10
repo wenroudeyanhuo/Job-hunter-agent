@@ -20,6 +20,7 @@ const (
 
 type AgentActionRequest struct {
 	ID               int64      `json:"id"`
+	PlanID           int64      `json:"plan_id"`
 	Source           string     `json:"source"`
 	ActionType       string     `json:"action_type"`
 	Target           string     `json:"target"`
@@ -33,6 +34,10 @@ type AgentActionRequest struct {
 }
 
 func (r *Repository) RecordAgentActionRequests(ctx context.Context, source string, actions []AgentCommandAction) error {
+	return r.RecordAgentActionRequestsForPlan(ctx, 0, source, actions)
+}
+
+func (r *Repository) RecordAgentActionRequestsForPlan(ctx context.Context, planID int64, source string, actions []AgentCommandAction) error {
 	source = strings.TrimSpace(source)
 	if source == "" {
 		source = "agent"
@@ -49,9 +54,9 @@ func (r *Repository) RecordAgentActionRequests(ctx context.Context, source strin
 			allowed.Detail = strings.TrimSpace(action.Detail)
 		}
 		if _, err := r.db.ExecContext(ctx, `
-			INSERT INTO agent_action_requests (source, action_type, target, detail, status)
-			VALUES (?, ?, ?, ?, ?)
-		`, source, allowed.Type, allowed.Target, allowed.Detail, AgentActionRequestStatusPending); err != nil {
+			INSERT INTO agent_action_requests (plan_id, source, action_type, target, detail, status)
+			VALUES (?, ?, ?, ?, ?, ?)
+		`, planID, source, allowed.Type, allowed.Target, allowed.Detail, AgentActionRequestStatusPending); err != nil {
 			return fmt.Errorf("insert agent action request: %w", err)
 		}
 	}
@@ -171,13 +176,14 @@ func normalizeAgentActionExecutionStatus(status string) string {
 }
 
 func selectAgentActionRequestSQL() string {
-	return `SELECT id, source, action_type, target, detail, status, created_at, resolved_at, execution_status, execution_message, executed_at FROM agent_action_requests`
+	return `SELECT id, plan_id, source, action_type, target, detail, status, created_at, resolved_at, execution_status, execution_message, executed_at FROM agent_action_requests`
 }
 
 func scanAgentActionRequest(scanner jobScanner) (AgentActionRequest, error) {
 	var request AgentActionRequest
 	if err := scanner.Scan(
 		&request.ID,
+		&request.PlanID,
 		&request.Source,
 		&request.ActionType,
 		&request.Target,

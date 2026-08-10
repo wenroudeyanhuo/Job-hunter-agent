@@ -203,10 +203,15 @@ func (h *Handlers) UpdateAgentActionRequest(c *gin.Context) {
 		executionMessage, err := h.executeApprovedAgentAction(c, current)
 		if err != nil {
 			_, _ = h.Repo.RecordAgentActionRequestExecution(c.Request.Context(), id, jobs.AgentActionExecutionFailed, err.Error())
+			_, _ = h.Repo.RecordAgentPlanStepExecution(c.Request.Context(), current.PlanID, current.ActionType, jobs.AgentPlanStepStatusFailed, err.Error())
 			respondError(c, http.StatusConflict, err)
 			return
 		}
 		if _, err := h.Repo.RecordAgentActionRequestExecution(c.Request.Context(), id, jobs.AgentActionExecutionSucceeded, executionMessage); err != nil {
+			respondError(c, http.StatusInternalServerError, err)
+			return
+		}
+		if _, err := h.Repo.RecordAgentPlanStepExecution(c.Request.Context(), current.PlanID, current.ActionType, jobs.AgentPlanStepStatusDone, executionMessage); err != nil {
 			respondError(c, http.StatusInternalServerError, err)
 			return
 		}
@@ -366,11 +371,12 @@ func (h *Handlers) RunAgentChat(c *gin.Context) {
 		return
 	}
 	if len(reply.Actions) > 0 {
-		if _, err := h.Repo.CreateAgentPlan(c.Request.Context(), jobs.BuildAgentPlanInputFromReply(req.Message, reply)); err != nil {
+		plan, err := h.Repo.CreateAgentPlan(c.Request.Context(), jobs.BuildAgentPlanInputFromReply(req.Message, reply))
+		if err != nil {
 			respondError(c, http.StatusInternalServerError, err)
 			return
 		}
-		if err := h.Repo.RecordAgentActionRequests(c.Request.Context(), reply.Source, reply.Actions); err != nil {
+		if err := h.Repo.RecordAgentActionRequestsForPlan(c.Request.Context(), plan.ID, reply.Source, reply.Actions); err != nil {
 			respondError(c, http.StatusInternalServerError, err)
 			return
 		}

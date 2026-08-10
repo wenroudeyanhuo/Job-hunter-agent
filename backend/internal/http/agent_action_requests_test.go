@@ -181,6 +181,45 @@ func TestAgentChatPersistsWorkPlanForSuggestedActions(t *testing.T) {
 	}
 }
 
+func TestAgentActionApprovalUpdatesLinkedWorkPlan(t *testing.T) {
+	runner := &countingRunner{summary: crawl.RunSummary{JobsCreated: 3}}
+	repo, handler := testRouter(t, runner)
+	body := bytes.NewBufferString(`{"message":"run crawl","active_view":"dashboard"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/agent/chat", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 chat, got %d: %s", rec.Code, rec.Body.String())
+	}
+	requests, err := repo.ListAgentActionRequests(t.Context(), jobs.AgentActionRequestStatusPending)
+	if err != nil {
+		t.Fatalf("list action requests: %v", err)
+	}
+	if len(requests) != 1 {
+		t.Fatalf("expected one action request, got %#v", requests)
+	}
+
+	req = httptest.NewRequest(http.MethodPatch, "/api/agent/actions/"+strconv.FormatInt(requests[0].ID, 10), strings.NewReader(`{"status":"approved"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 approve, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	plans, err := repo.ListAgentPlans(t.Context(), jobs.AgentPlanStatusDone, 10)
+	if err != nil {
+		t.Fatalf("list done plans: %v", err)
+	}
+	if len(plans) != 1 || plans[0].CompletedAt == nil {
+		t.Fatalf("expected linked plan to be done, got %#v", plans)
+	}
+	if len(plans[0].Steps) != 1 || plans[0].Steps[0].Status != jobs.AgentPlanStepStatusDone || !strings.Contains(plans[0].Steps[0].Message, "Created 3 jobs") {
+		t.Fatalf("expected executed step receipt, got %#v", plans[0].Steps)
+	}
+}
+
 type countingRunner struct {
 	summary     crawl.RunSummary
 	err         error
