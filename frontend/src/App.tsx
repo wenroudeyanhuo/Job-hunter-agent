@@ -1134,6 +1134,9 @@ export default function App() {
 
   async function handleApprovedActionNavigation(action: string) {
     switch (action) {
+      case "add_recommended_and_crawl":
+        setActiveView("companies");
+        return;
       case "review_manual_check":
         setActiveView("opportunities");
         setScoreView("all");

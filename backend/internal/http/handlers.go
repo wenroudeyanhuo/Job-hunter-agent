@@ -267,6 +267,27 @@ func (h *Handlers) executeApprovedAgentAction(c *gin.Context, request jobs.Agent
 	ctx := c.Request.Context()
 	message := "Action completed."
 	switch request.ActionType {
+	case "add_recommended_and_crawl":
+		if h.Runner == nil {
+			return "", fmt.Errorf("crawl runner is not configured")
+		}
+		seeded, err := h.Repo.SeedRecommendedSources(ctx)
+		if err != nil {
+			return "", err
+		}
+		summary, err := h.Runner.Run(ctx, "agent_action_recommended_crawl")
+		if err != nil {
+			return "", err
+		}
+		cleanup, err := h.cleanupLandingPages(ctx)
+		if err != nil {
+			return "", err
+		}
+		summary.LandingPagesIgnored = cleanup.Ignored
+		h.recordCrawlEvent(c, "agent_action_recommended_crawl_completed", "Agent recommended source crawl completed", summary)
+		h.refreshAgentTasksAfterCrawl(c)
+		h.snapshotAgentReview(c, "agent_action_recommended_crawl_completed")
+		message = "Seeded " + strconv.Itoa(seeded.Created) + " recommended sources, skipped " + strconv.Itoa(seeded.Duplicated) + " duplicates, created " + strconv.Itoa(summary.JobsCreated) + " jobs, and flagged " + strconv.Itoa(summary.ManualCheckCount) + " for review."
 	case "run_crawl":
 		if h.Runner == nil {
 			return "", fmt.Errorf("crawl runner is not configured")

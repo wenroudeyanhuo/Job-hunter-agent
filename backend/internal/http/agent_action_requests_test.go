@@ -92,6 +92,45 @@ func TestAgentActionRequestApprovalExecutesRunCrawl(t *testing.T) {
 	}
 }
 
+func TestAgentActionRequestApprovalExecutesRecommendedSourceBootstrap(t *testing.T) {
+	runner := &countingRunner{summary: crawl.RunSummary{JobsCreated: 4}}
+	repo, handler := testRouter(t, runner)
+	if err := repo.RecordAgentActionRequests(t.Context(), "review", []jobs.AgentCommandAction{
+		{Type: "add_recommended_and_crawl", Target: "sources", Detail: "Add recommended sources and run the first crawl."},
+	}); err != nil {
+		t.Fatalf("seed action request: %v", err)
+	}
+	requests, err := repo.ListAgentActionRequests(t.Context(), jobs.AgentActionRequestStatusPending)
+	if err != nil {
+		t.Fatalf("list requests: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/agent/actions/"+strconv.FormatInt(requests[0].ID, 10), strings.NewReader(`{"status":"approved"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 approve, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if runner.calls != 1 || runner.lastTrigger != "agent_action_recommended_crawl" {
+		t.Fatalf("expected recommended crawl to run once, got calls=%d trigger=%q", runner.calls, runner.lastTrigger)
+	}
+	sources, err := repo.ListSources(t.Context(), false)
+	if err != nil {
+		t.Fatalf("list sources: %v", err)
+	}
+	if len(sources) == 0 {
+		t.Fatalf("expected recommended sources to be seeded")
+	}
+	approved, err := repo.ListAgentActionRequests(t.Context(), jobs.AgentActionRequestStatusApproved)
+	if err != nil {
+		t.Fatalf("list approved requests: %v", err)
+	}
+	if len(approved) != 1 || !strings.Contains(approved[0].ExecutionMessage, "Seeded") || !strings.Contains(approved[0].ExecutionMessage, "created 4 jobs") {
+		t.Fatalf("expected bootstrap execution receipt, got %#v", approved)
+	}
+}
+
 func TestAgentActionRequestApprovalKeepsPendingWhenExecutionFails(t *testing.T) {
 	runner := &countingRunner{err: errors.New("source is busy")}
 	repo, handler := testRouter(t, runner)

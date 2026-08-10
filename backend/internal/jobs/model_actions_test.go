@@ -28,3 +28,13 @@ func TestParseModelActionReplyRejectsUnsafeActions(t *testing.T) {
 		t.Fatalf("expected safe feishu action, got %#v", parsed.Actions)
 	}
 }
+
+func TestParseModelActionReplyAllowsRecommendedSourceBootstrap(t *testing.T) {
+	reply := `{"content":"I should bootstrap the source pool first.","actions":[{"type":"add_recommended_and_crawl","target":"sources","detail":"Add recommended sources and run the first crawl."}]}`
+
+	parsed := ParseModelActionReply(reply)
+
+	if len(parsed.Actions) != 1 || parsed.Actions[0].Type != "add_recommended_and_crawl" {
+		t.Fatalf("expected recommended source bootstrap action, got %#v", parsed.Actions)
+	}
+}

@@ -49,9 +49,7 @@ func TestRepositoryCreatesAndListsAgentPlans(t *testing.T) {
 func TestBuildAgentPlanInputFromReviewKeepsSafeNextSteps(t *testing.T) {
 	review := BuildAgentReview([]domain.Job{
 		{Title: "Go Backend Engineer", MatchScore: 88, Status: domain.StatusNew},
-	}, []Source{
-		{Name: "Tencent Careers", Enabled: true, HealthStatus: SourceHealthHealthy},
-	}, nil, nil)
+	}, nil, nil, nil)
 
 	input := BuildAgentPlanInputFromReview(review)
 
@@ -61,8 +59,11 @@ func TestBuildAgentPlanInputFromReviewKeepsSafeNextSteps(t *testing.T) {
 	if len(input.Steps) == 0 {
 		t.Fatalf("expected safe review steps to become plan steps")
 	}
+	if input.Steps[0].ActionType != "add_recommended_and_crawl" {
+		t.Fatalf("expected source bootstrap to be planned first, got %#v", input.Steps)
+	}
 	for _, step := range input.Steps {
-		if step.ActionType == "keep_monitoring" || step.ActionType == "add_recommended_and_crawl" || step.ActionType == "inspect_failed_sources" {
+		if step.ActionType == "keep_monitoring" || step.ActionType == "inspect_failed_sources" {
 			t.Fatalf("unsafe or unsupported step should not be planned directly: %#v", step)
 		}
 	}
