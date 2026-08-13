@@ -248,6 +248,11 @@ func (h *Handlers) UpdateAgentActionRequest(c *gin.Context) {
 			respondError(c, http.StatusInternalServerError, err)
 			return
 		}
+	} else if jobs.NormalizeAgentActionRequestStatus(req.Status) == jobs.AgentActionRequestStatusDismissed {
+		if _, err := h.Repo.RecordAgentPlanStepExecution(c.Request.Context(), current.PlanID, current.ActionType, jobs.AgentPlanStepStatusSkipped, "Action dismissed by user."); err != nil {
+			respondError(c, http.StatusInternalServerError, err)
+			return
+		}
 	}
 	request, err := h.Repo.UpdateAgentActionRequestStatus(c.Request.Context(), id, req.Status)
 	if err != nil {
