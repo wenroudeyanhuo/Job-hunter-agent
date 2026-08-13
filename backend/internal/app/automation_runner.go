@@ -52,6 +52,13 @@ func (r *automationRunner) Tick(ctx context.Context, now time.Time) (bool, error
 	if !jobs.ShouldSendDutyReport(settings, now) {
 		return ran, nil
 	}
+	planned, err := r.ensureDailyWorkPlan(ctx, now)
+	if err != nil {
+		return false, err
+	}
+	if planned {
+		ran = true
+	}
 	webhookURL := strings.TrimSpace(settings.FeishuWebhookURL)
 	if webhookURL == "" {
 		webhookURL = r.fallbackWebhookURL
@@ -83,6 +90,48 @@ func (r *automationRunner) Tick(ctx context.Context, now time.Time) (bool, error
 	if review, err := r.buildAgentReview(ctx); err == nil {
 		_, _ = r.repo.CreateAgentReviewSnapshot(ctx, review, "automation_tick")
 	}
+	return true, nil
+}
+
+func (r *automationRunner) ensureDailyWorkPlan(ctx context.Context, now time.Time) (bool, error) {
+	review, err := r.buildAgentReview(ctx)
+	if err != nil {
+		return false, err
+	}
+	input := jobs.BuildAgentPlanInputFromReview(review)
+	input.Source = "automation"
+	if len(input.Steps) == 0 {
+		return false, nil
+	}
+	day := now.UTC().Format("2006-01-02")
+	exists, err := r.repo.HasAgentPlanForDay(ctx, input.Source, input.Goal, day)
+	if err != nil {
+		return false, err
+	}
+	if exists {
+		return false, nil
+	}
+	plan, err := r.repo.CreateAgentPlan(ctx, input)
+	if err != nil {
+		return false, err
+	}
+	actions := make([]jobs.AgentCommandAction, 0, len(plan.Steps))
+	for _, step := range plan.Steps {
+		actions = append(actions, jobs.AgentCommandAction{
+			Type:   step.ActionType,
+			Target: step.Target,
+			Detail: step.Detail,
+		})
+	}
+	if err := r.repo.RecordAgentActionRequestsForPlan(ctx, plan.ID, plan.Source, actions); err != nil {
+		return false, err
+	}
+	_, _ = r.repo.CreateAgentEvent(ctx, jobs.AgentEventInput{
+		Type:    "auto_plan_created",
+		Title:   "Created automatic daily work plan",
+		Summary: plan.Summary,
+		Level:   "info",
+	})
 	return true, nil
 }
 

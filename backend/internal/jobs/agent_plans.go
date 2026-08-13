@@ -132,6 +132,24 @@ func (r *Repository) ListAgentPlans(ctx context.Context, status string, limit in
 	return plans, nil
 }
 
+func (r *Repository) HasAgentPlanForDay(ctx context.Context, source string, goal string, day string) (bool, error) {
+	source = strings.TrimSpace(source)
+	goal = strings.TrimSpace(goal)
+	day = strings.TrimSpace(day)
+	if source == "" || goal == "" || day == "" {
+		return false, nil
+	}
+	var count int
+	if err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM agent_plans
+		WHERE source = ? AND goal = ? AND date(created_at) = date(?)
+	`, source, goal, day).Scan(&count); err != nil {
+		return false, fmt.Errorf("count agent plans for day: %w", err)
+	}
+	return count > 0, nil
+}
+
 func (r *Repository) RecordAgentPlanStepExecution(ctx context.Context, planID int64, actionType string, status string, message string) (AgentPlan, error) {
 	if planID <= 0 {
 		return AgentPlan{}, nil

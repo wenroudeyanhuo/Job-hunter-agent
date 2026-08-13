@@ -114,3 +114,66 @@ func TestAutomationRunnerDiscoversSourcesWhenDue(t *testing.T) {
 		t.Fatalf("expected last source discovery time to be persisted")
 	}
 }
+
+func TestAutomationRunnerCreatesDailyWorkPlanOnce(t *testing.T) {
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	repo := jobs.NewRepository(conn)
+	settings := jobs.DefaultSettings()
+	settings.AutoDutyReportEnabled = true
+	settings.AutoSourceDiscoveryEnabled = false
+	settings.DutyReportTime = "09:00"
+	settings.TimeZone = "UTC"
+	if _, err := repo.SaveSettings(context.Background(), settings); err != nil {
+		t.Fatalf("save settings: %v", err)
+	}
+	if _, err := repo.CreateSource(context.Background(), jobs.SourceInput{
+		Name:       "Tencent Careers",
+		URL:        "https://careers.tencent.com/",
+		Enabled:    true,
+		ParserType: "tencent_api",
+	}); err != nil {
+		t.Fatalf("seed source: %v", err)
+	}
+
+	runner := newAutomationRunner(repo, "")
+	now := time.Date(2026, 8, 13, 9, 1, 0, 0, time.UTC)
+	ran, err := runner.Tick(context.Background(), now)
+	if err != nil {
+		t.Fatalf("tick: %v", err)
+	}
+	if !ran {
+		t.Fatal("expected automation tick to create a daily plan")
+	}
+	plans, err := repo.ListAgentPlans(context.Background(), jobs.AgentPlanStatusWaitingApproval, 10)
+	if err != nil {
+		t.Fatalf("list plans: %v", err)
+	}
+	if len(plans) != 1 || plans[0].Source != "automation" || len(plans[0].Steps) == 0 {
+		t.Fatalf("expected one automation work plan, got %#v", plans)
+	}
+	requests, err := repo.ListAgentActionRequests(context.Background(), jobs.AgentActionRequestStatusPending)
+	if err != nil {
+		t.Fatalf("list action requests: %v", err)
+	}
+	if len(requests) != len(plans[0].Steps) || requests[0].PlanID != plans[0].ID {
+		t.Fatalf("expected linked approval requests, got requests=%#v plans=%#v", requests, plans)
+	}
+
+	ran, err = runner.Tick(context.Background(), now.Add(30*time.Minute))
+	if err != nil {
+		t.Fatalf("second tick: %v", err)
+	}
+	if ran {
+		t.Fatal("expected same-day automation plan to be skipped")
+	}
+	plans, err = repo.ListAgentPlans(context.Background(), "", 10)
+	if err != nil {
+		t.Fatalf("list all plans: %v", err)
+	}
+	if len(plans) != 1 {
+		t.Fatalf("expected no duplicate daily plans, got %#v", plans)
+	}
+}

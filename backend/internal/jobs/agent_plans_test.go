@@ -46,6 +46,37 @@ func TestRepositoryCreatesAndListsAgentPlans(t *testing.T) {
 	}
 }
 
+func TestRepositoryFindsAgentPlanForDay(t *testing.T) {
+	ctx := context.Background()
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	repo := NewRepository(conn)
+
+	created, err := repo.CreateAgentPlan(ctx, AgentPlanInput{
+		Source:        "automation",
+		Goal:          "daily plan",
+		Summary:       "Plan the day.",
+		RiskLevel:     AgentPlanRiskApprovalRequired,
+		NeedsApproval: true,
+		Steps: []AgentPlanStep{
+			{ActionType: "run_crawl", Target: "sources", Detail: "Run a manual crawl."},
+		},
+	})
+	if err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+
+	exists, err := repo.HasAgentPlanForDay(ctx, "automation", "daily plan", created.CreatedAt.Format("2006-01-02"))
+	if err != nil {
+		t.Fatalf("check plan for day: %v", err)
+	}
+	if !exists {
+		t.Fatal("expected plan lookup to find created plan")
+	}
+}
+
 func TestBuildAgentPlanInputFromReviewKeepsSafeNextSteps(t *testing.T) {
 	review := BuildAgentReview([]domain.Job{
 		{Title: "Go Backend Engineer", MatchScore: 88, Status: domain.StatusNew},
