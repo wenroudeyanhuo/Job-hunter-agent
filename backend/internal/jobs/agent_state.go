@@ -29,11 +29,14 @@ type AgentProfile struct {
 }
 
 type AgentWorkload struct {
-	OpenTasks       int `json:"open_tasks"`
-	DoneTasks       int `json:"done_tasks"`
-	StrongMatches   int `json:"strong_matches"`
-	ManualDecisions int `json:"manual_decisions"`
-	SourceIssues    int `json:"source_issues"`
+	OpenTasks        int `json:"open_tasks"`
+	DoneTasks        int `json:"done_tasks"`
+	StrongMatches    int `json:"strong_matches"`
+	ManualDecisions  int `json:"manual_decisions"`
+	SourceIssues     int `json:"source_issues"`
+	ActivePlans      int `json:"active_plans"`
+	PendingApprovals int `json:"pending_approvals"`
+	CompletedPlans   int `json:"completed_plans"`
 }
 
 type AgentMemory struct {
@@ -71,6 +74,10 @@ func BuildAgentState(jobList []domain.Job, sources []Source, runs []domain.JobRu
 }
 
 func BuildAgentStateWithMemory(jobList []domain.Job, sources []Source, runs []domain.JobRun, tasks []AgentTask, settings Settings, snapshots []AgentReviewSnapshot, events []AgentEvent) AgentState {
+	return BuildAgentStateWithAgentWork(jobList, sources, runs, tasks, settings, snapshots, events, nil, nil)
+}
+
+func BuildAgentStateWithAgentWork(jobList []domain.Job, sources []Source, runs []domain.JobRun, tasks []AgentTask, settings Settings, snapshots []AgentReviewSnapshot, events []AgentEvent, plans []AgentPlan, actionRequests []AgentActionRequest) AgentState {
 	state := AgentState{
 		GeneratedAt: time.Now().UTC(),
 		Profile: AgentProfile{
@@ -112,8 +119,30 @@ func BuildAgentStateWithMemory(jobList []domain.Job, sources []Source, runs []do
 			state.Workload.SourceIssues++
 		}
 	}
+	for _, plan := range plans {
+		switch plan.Status {
+		case AgentPlanStatusDone:
+			state.Workload.CompletedPlans++
+		case AgentPlanStatusFailed:
+			continue
+		default:
+			state.Workload.ActivePlans++
+		}
+	}
+	for _, request := range actionRequests {
+		if request.Status == AgentActionRequestStatusPending {
+			state.Workload.PendingApprovals++
+		}
+	}
 
 	state.Capabilities = []AgentCapability{
+		{
+			Key:      "planning",
+			Label:    "Plan and approval loop",
+			Status:   capabilityStatus(len(plans) > 0),
+			Level:    capabilityLevel(len(plans) > 0, 72),
+			Evidence: itoa(state.Workload.ActivePlans) + " active plans / " + itoa(state.Workload.PendingApprovals) + " pending approvals",
+		},
 		{
 			Key:      "collection",
 			Label:    "Public source collection",
@@ -181,7 +210,10 @@ func BuildAgentStateWithMemory(jobList []domain.Job, sources []Source, runs []do
 	if state.Workload.SourceIssues > 0 {
 		state.Mode = "needs_attention"
 		state.Focus = "Source health is blocking reliable monitoring."
-	} else if state.Workload.OpenTasks > 0 {
+	} else if state.Workload.PendingApprovals > 0 {
+		state.Mode = "waiting_approval"
+		state.Focus = "I have planned work waiting for your approval."
+	} else if state.Workload.OpenTasks > 0 || state.Workload.ActivePlans > 0 {
 		state.Mode = "on_duty"
 		state.Focus = "There is recruiting work waiting for your decision."
 	}

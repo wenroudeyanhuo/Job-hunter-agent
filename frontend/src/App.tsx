@@ -2635,6 +2635,8 @@ function AgentEmployeeSidebar({
 
       <div className="employee-workload">
         <Metric label="Open tasks" value={state.workload.open_tasks} />
+        <Metric label="Plans" value={state.workload.active_plans} />
+        <Metric label="Approvals" value={state.workload.pending_approvals} />
         <Metric label="Strong" value={state.workload.strong_matches} />
         <Metric label="Decisions" value={state.workload.manual_decisions} />
         <Metric label="Source issues" value={state.workload.source_issues} />

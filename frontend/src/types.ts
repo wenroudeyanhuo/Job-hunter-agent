@@ -266,6 +266,9 @@ export interface AgentWorkload {
   strong_matches: number;
   manual_decisions: number;
   source_issues: number;
+  active_plans: number;
+  pending_approvals: number;
+  completed_plans: number;
 }
 
 export interface AgentMemory {

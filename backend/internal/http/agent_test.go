@@ -434,6 +434,46 @@ func TestAgentStateAPIReportsDigitalEmployeeReadiness(t *testing.T) {
 	}
 }
 
+func TestAgentStateAPIIncludesPlanWorkload(t *testing.T) {
+	repo, handler := testRouter(t, nil)
+	plan, err := repo.CreateAgentPlan(t.Context(), jobs.AgentPlanInput{
+		Source:        "automation",
+		Goal:          "daily plan",
+		Summary:       "Plan the day.",
+		RiskLevel:     jobs.AgentPlanRiskApprovalRequired,
+		NeedsApproval: true,
+		Steps: []jobs.AgentPlanStep{
+			{ActionType: "run_crawl", Target: "sources", Detail: "Run a manual crawl."},
+		},
+	})
+	if err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+	if err := repo.RecordAgentActionRequestsForPlan(t.Context(), plan.ID, plan.Source, []jobs.AgentCommandAction{
+		{Type: "run_crawl", Target: "sources", Detail: "Run a manual crawl."},
+	}); err != nil {
+		t.Fatalf("record action request: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/agent/state", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var response jobs.AgentState
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode state: %v", err)
+	}
+	if response.Workload.ActivePlans != 1 || response.Workload.PendingApprovals != 1 {
+		t.Fatalf("expected active plan and pending approval workload, got %#v", response.Workload)
+	}
+	if !containsCapability(response.Capabilities, "planning") {
+		t.Fatalf("expected planning capability, got %#v", response.Capabilities)
+	}
+}
+
 func TestAgentStateAPIIncludesMemoryFromReviewSnapshots(t *testing.T) {
 	repo, handler := testRouter(t, nil)
 	first := jobs.BuildAgentReview([]domain.Job{
@@ -468,6 +508,15 @@ func TestAgentStateAPIIncludesMemoryFromReviewSnapshots(t *testing.T) {
 	if !strings.Contains(response.Memory.TrendSummary, "strong matches +1") {
 		t.Fatalf("expected trend summary in memory, got %q", response.Memory.TrendSummary)
 	}
+}
+
+func containsCapability(items []jobs.AgentCapability, key string) bool {
+	for _, item := range items {
+		if item.Key == key {
+			return true
+		}
+	}
+	return false
 }
 
 func TestAgentCommandAPIUpdatesPreferencesAndRefreshesTasks(t *testing.T) {

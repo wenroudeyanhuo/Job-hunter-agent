@@ -745,10 +745,18 @@ func (h *Handlers) buildAgentState(ctx context.Context) (jobs.AgentState, error)
 	if err != nil {
 		return jobs.AgentState{}, err
 	}
+	plans, err := h.Repo.ListAgentPlans(ctx, "", 20)
+	if err != nil {
+		return jobs.AgentState{}, err
+	}
+	actionRequests, err := h.Repo.ListAgentActionRequests(ctx, jobs.AgentActionRequestStatusPending)
+	if err != nil {
+		return jobs.AgentState{}, err
+	}
 	if strings.TrimSpace(settings.FeishuWebhookURL) == "" {
 		settings.FeishuWebhookURL = strings.TrimSpace(h.FeishuWebhookURL)
 	}
-	return jobs.BuildAgentStateWithMemory(jobList, sources, runs, tasks, settings, snapshots, events), nil
+	return jobs.BuildAgentStateWithAgentWork(jobList, sources, runs, tasks, settings, snapshots, events, plans, actionRequests), nil
 }
 
 func (h *Handlers) ListAgentEvents(c *gin.Context) {
