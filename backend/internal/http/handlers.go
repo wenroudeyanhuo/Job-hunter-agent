@@ -182,6 +182,34 @@ func (h *Handlers) ListAgentPlans(c *gin.Context) {
 	c.JSON(http.StatusOK, plans)
 }
 
+func (h *Handlers) RebuildSemanticMemory(c *gin.Context) {
+	result, err := h.Repo.RebuildSemanticMemory(c.Request.Context())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	h.recordAgentEvent(c, jobs.AgentEventInput{
+		Type:    "semantic_memory_rebuilt",
+		Title:   "Rebuilt semantic memory",
+		Summary: "Indexed " + strconv.Itoa(result.Created) + " job memories for semantic search.",
+		Level:   "success",
+	})
+	c.JSON(http.StatusOK, result)
+}
+
+func (h *Handlers) SearchSemanticMemory(c *gin.Context) {
+	matches, err := h.Repo.SearchSemanticMemory(c.Request.Context(), jobs.SemanticMemoryQuery{
+		Query: c.Query("q"),
+		Kind:  c.Query("kind"),
+		Limit: parseIntQuery(c, "limit", 8),
+	})
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, matches)
+}
+
 func (h *Handlers) CreateTodayAgentPlan(c *gin.Context) {
 	review, err := h.buildAgentReview(c.Request.Context())
 	if err != nil {
@@ -401,6 +429,9 @@ func (h *Handlers) RunAgentChat(c *gin.Context) {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
+	if semanticMatches, err := h.Repo.SearchSemanticMemory(c.Request.Context(), jobs.SemanticMemoryQuery{Query: req.Message, Limit: 5}); err == nil {
+		context.SemanticMatches = semanticMatches
+	}
 	reply := jobs.BuildLocalAgentChatReply(req.Message, context)
 	if jobs.BuildAgentChatStatus(h.LLM).Configured {
 		if modelReply, err := h.runModelChat(c.Request.Context(), req.Message, context); err == nil && strings.TrimSpace(modelReply) != "" {
@@ -500,8 +531,8 @@ func (h *Handlers) runModelChat(ctx context.Context, userMessage string, chatCon
 	messages := []map[string]string{
 		{
 			"role": "system",
-			"content": fmt.Sprintf("You are Job Hunter Agent, a Chinese-speaking digital employee for autumn recruitment. Be concise, practical, and use the current local context. Current view: %s. Open tasks: %d. Strong matches: %d. Manual decisions: %d. Source issues: %d. Recommended jobs: %s. Memory: %s. If suggesting an action, return JSON with content and actions. Allowed action types: %s. Never suggest direct resume submission or third-party login actions.",
-				chatContext.ActiveView, chatContext.OpenTasks, chatContext.StrongMatches, chatContext.ManualDecisions, chatContext.SourceIssues, formatAgentChatJobSummaries(chatContext.RecommendedJobs), formatAgentMemory(chatContext.Memory), jobs.ModelActionPromptList()),
+			"content": fmt.Sprintf("You are Job Hunter Agent, a Chinese-speaking digital employee for autumn recruitment. Be concise, practical, and use the current local context. Current view: %s. Open tasks: %d. Strong matches: %d. Manual decisions: %d. Source issues: %d. Recommended jobs: %s. Memory: %s. Semantic memories: %s. If suggesting an action, return JSON with content and actions. Allowed action types: %s. Never suggest direct resume submission or third-party login actions.",
+				chatContext.ActiveView, chatContext.OpenTasks, chatContext.StrongMatches, chatContext.ManualDecisions, chatContext.SourceIssues, formatAgentChatJobSummaries(chatContext.RecommendedJobs), formatAgentMemory(chatContext.Memory), formatSemanticMemoryMatches(chatContext.SemanticMatches), jobs.ModelActionPromptList()),
 		},
 	}
 	messages = append(messages, formatAgentChatHistory(chatContext.RecentMessages)...)
@@ -509,6 +540,18 @@ func (h *Handlers) runModelChat(ctx context.Context, userMessage string, chatCon
 		messages = append(messages, map[string]string{"role": "user", "content": userMessage})
 	}
 	return h.callModelChat(ctx, messages, 0.4)
+}
+
+func parseIntQuery(c *gin.Context, key string, fallback int) int {
+	value := strings.TrimSpace(c.Query(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
 }
 
 func formatAgentChatHistory(history []jobs.AgentChatMessage) []map[string]string {
@@ -584,11 +627,26 @@ func formatAgentChatJobSummaries(jobList []jobs.AgentChatJobSummary) string {
 }
 
 func formatAgentMemory(memory jobs.AgentMemory) string {
-	if memory.LastFocusAction == "" {
-		return memory.TrendSummary
+	semantic := ""
+	if memory.SemanticTotalItems > 0 {
+		semantic = fmt.Sprintf(", semantic memories %d (%d jobs via %s/%d)", memory.SemanticTotalItems, memory.SemanticJobItems, memory.SemanticProvider, memory.SemanticDimension)
 	}
-	return fmt.Sprintf("last trigger %s, last focus %s (%s), trend %s, recent executed actions %d",
-		memory.LastTriggerType, memory.LastFocusTitle, memory.LastFocusAction, memory.TrendSummary, memory.RecentActionCount)
+	if memory.LastFocusAction == "" {
+		return memory.TrendSummary + semantic
+	}
+	return fmt.Sprintf("last trigger %s, last focus %s (%s), trend %s, recent executed actions %d%s",
+		memory.LastTriggerType, memory.LastFocusTitle, memory.LastFocusAction, memory.TrendSummary, memory.RecentActionCount, semantic)
+}
+
+func formatSemanticMemoryMatches(matches []jobs.SemanticMemoryMatch) string {
+	if len(matches) == 0 {
+		return "none"
+	}
+	parts := make([]string, 0, len(matches))
+	for _, match := range matches {
+		parts = append(parts, fmt.Sprintf("%s #%d %s score %.2f", match.Kind, match.ReferenceID, match.Title, match.Score))
+	}
+	return strings.Join(parts, "; ")
 }
 
 func (h *Handlers) RunAutomationDutyReport(c *gin.Context) {
@@ -743,10 +801,14 @@ func (h *Handlers) buildAgentState(ctx context.Context) (jobs.AgentState, error)
 	if err != nil {
 		return jobs.AgentState{}, err
 	}
+	semanticStats, err := h.Repo.GetSemanticMemoryStats(ctx)
+	if err != nil {
+		return jobs.AgentState{}, err
+	}
 	if strings.TrimSpace(settings.FeishuWebhookURL) == "" {
 		settings.FeishuWebhookURL = strings.TrimSpace(h.FeishuWebhookURL)
 	}
-	return jobs.BuildAgentStateWithAgentWork(jobList, sources, runs, tasks, settings, snapshots, events, plans, actionRequests), nil
+	return jobs.BuildAgentStateWithSemanticMemory(jobList, sources, runs, tasks, settings, snapshots, events, plans, actionRequests, semanticStats), nil
 }
 
 func (h *Handlers) ListAgentEvents(c *gin.Context) {

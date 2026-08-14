@@ -166,6 +166,23 @@ CREATE TABLE IF NOT EXISTS agent_plans (
 
 CREATE INDEX IF NOT EXISTS idx_agent_plans_status ON agent_plans(status, created_at);
 
+CREATE TABLE IF NOT EXISTS semantic_memory_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,
+    reference_id INTEGER NOT NULL DEFAULT 0,
+    title TEXT NOT NULL DEFAULT '',
+    content TEXT NOT NULL DEFAULT '',
+    metadata_json TEXT NOT NULL DEFAULT '{}',
+    embedding_json TEXT NOT NULL DEFAULT '[]',
+    embedding_provider TEXT NOT NULL DEFAULT 'local_hash',
+    embedding_dimension INTEGER NOT NULL DEFAULT 64,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(kind, reference_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_semantic_memory_kind_ref ON semantic_memory_items(kind, reference_id);
+
 CREATE TABLE IF NOT EXISTS application_plans (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     job_id INTEGER NOT NULL UNIQUE,

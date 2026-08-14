@@ -19,6 +19,8 @@ func NewRouter(handlers *Handlers) http.Handler {
 	api.GET("/agent/briefing", handlers.GetAgentBriefing)
 	api.GET("/agent/state", handlers.GetAgentState)
 	api.POST("/agent/commands", handlers.RunAgentCommand)
+	api.GET("/agent/memory/search", handlers.SearchSemanticMemory)
+	api.POST("/agent/memory/rebuild", handlers.RebuildSemanticMemory)
 	api.GET("/agent/plans", handlers.ListAgentPlans)
 	api.POST("/agent/plans/today", handlers.CreateTodayAgentPlan)
 	api.GET("/agent/actions", handlers.ListAgentActionRequests)

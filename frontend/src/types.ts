@@ -278,6 +278,29 @@ export interface AgentMemory {
   last_focus_action: string;
   trend_summary: string;
   recent_action_count: number;
+  semantic_total_items: number;
+  semantic_job_items: number;
+  semantic_provider: string;
+  semantic_dimension: number;
+}
+
+export interface SemanticMemoryMatch {
+  id: number;
+  kind: string;
+  reference_id: number;
+  title: string;
+  content: string;
+  metadata: Record<string, string>;
+  score: number;
+  embedding_provider: string;
+  embedding_dimension: number;
+  updated_at: string;
+}
+
+export interface SemanticMemoryRebuildResult {
+  scanned: number;
+  created: number;
+  skipped: number;
 }
 
 export interface AgentCapability {

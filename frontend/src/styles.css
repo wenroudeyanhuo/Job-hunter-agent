@@ -124,6 +124,93 @@ h2 {
   color: #fff;
 }
 
+.content-stack {
+  display: grid;
+  gap: 16px;
+}
+
+.panel {
+  background: #fff;
+  border: 1px solid #dbe4f0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px;
+  border-bottom: 1px solid #e7edf5;
+}
+
+.panel-heading h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.panel-heading p {
+  margin: 4px 0 0;
+  color: #5b6b82;
+  font-size: 13px;
+}
+
+.compact-grid {
+  padding: 16px 20px;
+}
+
+.memory-search {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 0 20px 20px;
+}
+
+.memory-search input {
+  min-width: 0;
+  border: 1px solid #cbd7e6;
+  border-radius: 6px;
+  padding: 11px 12px;
+  font: inherit;
+}
+
+.memory-results {
+  display: grid;
+}
+
+.memory-result {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  border-top: 1px solid #e7edf5;
+}
+
+.memory-result:first-child {
+  border-top: 0;
+}
+
+.memory-result-main {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  min-width: 0;
+}
+
+.memory-result h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.memory-result p {
+  margin: 6px 0 8px;
+  color: #42526a;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .employee-sidebar {
   position: sticky;
   top: 18px;
