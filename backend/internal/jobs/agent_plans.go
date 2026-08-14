@@ -47,6 +47,7 @@ type AgentPlanInput struct {
 	RiskLevel     string
 	NeedsApproval bool
 	Steps         []AgentPlanStep
+	CreatedAt     time.Time
 }
 
 type AgentPlanStep struct {
@@ -76,10 +77,19 @@ func (r *Repository) CreateAgentPlan(ctx context.Context, input AgentPlanInput) 
 	if err != nil {
 		return AgentPlan{}, err
 	}
-	result, err := r.db.ExecContext(ctx, `
-		INSERT INTO agent_plans (source, goal, summary, status, risk_level, needs_approval, steps_json)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, input.Source, input.Goal, input.Summary, input.Status, input.RiskLevel, boolToInt(input.NeedsApproval), stepsJSON)
+	var result sql.Result
+	if input.CreatedAt.IsZero() {
+		result, err = r.db.ExecContext(ctx, `
+			INSERT INTO agent_plans (source, goal, summary, status, risk_level, needs_approval, steps_json)
+			VALUES (?, ?, ?, ?, ?, ?, ?)
+		`, input.Source, input.Goal, input.Summary, input.Status, input.RiskLevel, boolToInt(input.NeedsApproval), stepsJSON)
+	} else {
+		createdAt := input.CreatedAt.UTC()
+		result, err = r.db.ExecContext(ctx, `
+			INSERT INTO agent_plans (source, goal, summary, status, risk_level, needs_approval, steps_json, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, input.Source, input.Goal, input.Summary, input.Status, input.RiskLevel, boolToInt(input.NeedsApproval), stepsJSON, createdAt, createdAt)
+	}
 	if err != nil {
 		return AgentPlan{}, fmt.Errorf("insert agent plan: %w", err)
 	}
@@ -143,7 +153,7 @@ func (r *Repository) HasAgentPlanForDay(ctx context.Context, source string, goal
 	if err := r.db.QueryRowContext(ctx, `
 		SELECT COUNT(*)
 		FROM agent_plans
-		WHERE source = ? AND goal = ? AND date(created_at) = date(?)
+		WHERE source = ? AND goal = ? AND substr(created_at, 1, 10) = ?
 	`, source, goal, day).Scan(&count); err != nil {
 		return false, fmt.Errorf("count agent plans for day: %w", err)
 	}

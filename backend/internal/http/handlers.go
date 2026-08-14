@@ -188,31 +188,26 @@ func (h *Handlers) CreateTodayAgentPlan(c *gin.Context) {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
-	input := jobs.BuildAgentPlanInputFromReview(review)
-	plan, err := h.Repo.CreateAgentPlan(c.Request.Context(), input)
+	result, err := jobs.NewAgentRuntime(h.Repo).CreateReviewPlan(c.Request.Context(), jobs.AgentReviewPlanRequest{
+		Review: review,
+		Source: "manual",
+		Now:    time.Now().UTC(),
+	})
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
-	actions := make([]jobs.AgentCommandAction, 0, len(plan.Steps))
-	for _, step := range plan.Steps {
-		actions = append(actions, jobs.AgentCommandAction{
-			Type:   step.ActionType,
-			Target: step.Target,
-			Detail: step.Detail,
-		})
-	}
-	if err := h.Repo.RecordAgentActionRequestsForPlan(c.Request.Context(), plan.ID, plan.Source, actions); err != nil {
-		respondError(c, http.StatusInternalServerError, err)
+	if !result.Created {
+		c.JSON(http.StatusOK, result.Plan)
 		return
 	}
 	h.recordAgentEvent(c, jobs.AgentEventInput{
 		Type:    "agent_plan_created",
 		Title:   "Created today's work plan",
-		Summary: plan.Summary,
+		Summary: result.Plan.Summary,
 		Level:   "info",
 	})
-	c.JSON(http.StatusCreated, plan)
+	c.JSON(http.StatusCreated, result.Plan)
 }
 
 func (h *Handlers) UpdateAgentActionRequest(c *gin.Context) {
@@ -430,12 +425,7 @@ func (h *Handlers) RunAgentChat(c *gin.Context) {
 		return
 	}
 	if len(reply.Actions) > 0 {
-		plan, err := h.Repo.CreateAgentPlan(c.Request.Context(), jobs.BuildAgentPlanInputFromReply(req.Message, reply))
-		if err != nil {
-			respondError(c, http.StatusInternalServerError, err)
-			return
-		}
-		if err := h.Repo.RecordAgentActionRequestsForPlan(c.Request.Context(), plan.ID, reply.Source, reply.Actions); err != nil {
+		if _, err := jobs.NewAgentRuntime(h.Repo).CreateChatPlan(c.Request.Context(), req.Message, reply); err != nil {
 			respondError(c, http.StatusInternalServerError, err)
 			return
 		}
@@ -510,8 +500,8 @@ func (h *Handlers) runModelChat(ctx context.Context, userMessage string, chatCon
 	messages := []map[string]string{
 		{
 			"role": "system",
-			"content": fmt.Sprintf("You are Job Hunter Agent, a Chinese-speaking digital employee for autumn recruitment. Be concise, practical, and use the current local context. Current view: %s. Open tasks: %d. Strong matches: %d. Manual decisions: %d. Source issues: %d. Recommended jobs: %s. Memory: %s. If suggesting an action, return JSON with content and actions. Allowed action types: run_crawl, refresh_tasks, sync_application_plans, send_feishu_report, discover_sources, review_strong_matches, review_manual_check. Never suggest direct resume submission or third-party login actions.",
-				chatContext.ActiveView, chatContext.OpenTasks, chatContext.StrongMatches, chatContext.ManualDecisions, chatContext.SourceIssues, formatAgentChatJobSummaries(chatContext.RecommendedJobs), formatAgentMemory(chatContext.Memory)),
+			"content": fmt.Sprintf("You are Job Hunter Agent, a Chinese-speaking digital employee for autumn recruitment. Be concise, practical, and use the current local context. Current view: %s. Open tasks: %d. Strong matches: %d. Manual decisions: %d. Source issues: %d. Recommended jobs: %s. Memory: %s. If suggesting an action, return JSON with content and actions. Allowed action types: %s. Never suggest direct resume submission or third-party login actions.",
+				chatContext.ActiveView, chatContext.OpenTasks, chatContext.StrongMatches, chatContext.ManualDecisions, chatContext.SourceIssues, formatAgentChatJobSummaries(chatContext.RecommendedJobs), formatAgentMemory(chatContext.Memory), jobs.ModelActionPromptList()),
 		},
 	}
 	messages = append(messages, formatAgentChatHistory(chatContext.RecentMessages)...)
