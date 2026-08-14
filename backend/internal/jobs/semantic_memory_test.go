@@ -65,6 +65,82 @@ func TestRepositoryRebuildsAndSearchesSemanticJobMemory(t *testing.T) {
 	}
 }
 
+func TestRepositoryIndexesSemanticMemoryWhenJobIsCreated(t *testing.T) {
+	ctx := context.Background()
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	repo := NewRepository(conn)
+
+	created, err := repo.CreateJob(ctx, domain.Job{
+		Company:       "DeepAI",
+		Title:         "Agent Platform Go Engineer",
+		City:          "Shenzhen",
+		DirectionTags: []string{"go", "ai_application"},
+		Description:   "Develop agent runtime, tool orchestration, and backend platform services.",
+		MatchScore:    93,
+		Status:        domain.StatusNew,
+	})
+	if err != nil {
+		t.Fatalf("create job: %v", err)
+	}
+
+	stats, err := repo.GetSemanticMemoryStats(ctx)
+	if err != nil {
+		t.Fatalf("get semantic stats: %v", err)
+	}
+	if stats.JobItems != 1 {
+		t.Fatalf("expected created job to be indexed automatically, got %#v", stats)
+	}
+	matches, err := repo.SearchSemanticMemory(ctx, SemanticMemoryQuery{Query: "agent runtime go backend", Limit: 3})
+	if err != nil {
+		t.Fatalf("search semantic memory: %v", err)
+	}
+	if len(matches) == 0 || matches[0].ReferenceID != created.ID {
+		t.Fatalf("expected created job memory to be searchable, got %#v", matches)
+	}
+}
+
+func TestRepositoryRefreshesSemanticMemoryWhenJobChanges(t *testing.T) {
+	ctx := context.Background()
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	repo := NewRepository(conn)
+	created, err := repo.CreateJob(ctx, domain.Job{
+		Company:       "InfraWorks",
+		Title:         "Backend Engineer",
+		City:          "Shenzhen",
+		DirectionTags: []string{"backend"},
+		Description:   "Build service reliability platform.",
+		MatchScore:    75,
+		Status:        domain.StatusNew,
+	})
+	if err != nil {
+		t.Fatalf("create job: %v", err)
+	}
+
+	if err := repo.UpdateStatus(ctx, created.ID, domain.StatusInterested); err != nil {
+		t.Fatalf("update status: %v", err)
+	}
+	if err := repo.UpdateNotes(ctx, created.ID, "Emphasize Kubernetes, Go, and distributed tracing experience."); err != nil {
+		t.Fatalf("update notes: %v", err)
+	}
+
+	item, err := repo.GetSemanticMemoryItemByReference(ctx, SemanticMemoryKindJob, created.ID)
+	if err != nil {
+		t.Fatalf("get memory item: %v", err)
+	}
+	if item.Metadata["status"] != string(domain.StatusInterested) {
+		t.Fatalf("expected semantic metadata status to refresh, got %#v", item.Metadata)
+	}
+	if !strings.Contains(item.Content, "distributed tracing") {
+		t.Fatalf("expected semantic memory content to include updated notes, got %q", item.Content)
+	}
+}
+
 func TestBuildAgentMemoryIncludesSemanticStoreStats(t *testing.T) {
 	stats := SemanticMemoryStats{TotalItems: 4, JobItems: 3, Provider: "local_hash", Dimension: 64}
 

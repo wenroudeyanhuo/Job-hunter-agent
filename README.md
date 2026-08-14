@@ -24,7 +24,7 @@ Early MVP. The current version provides a Go backend foundation, SQLite persiste
 - Digital employee sidebar with an agent profile, avatar, maturity score, capability map, operating cycle, and mainstream capability gaps.
 - Command Center for rule-based natural-language workflow commands such as changing target cities/directions, refreshing tasks, running a crawl, and sending Feishu reports.
 - Global digital employee chat with a persistent 3D avatar, local rule fallback, saved chat history, recent-conversation model context, optional OpenAI-compatible or DeepSeek model mode, and safe whitelisted action suggestions.
-- Local semantic memory with deterministic hash embeddings, a rebuildable memory index, semantic search API, and retrieved memories injected into model chat context.
+- Local semantic memory with deterministic hash embeddings, automatic job-memory sync, a rebuildable memory index, semantic search API, and retrieved memories injected into local/model chat context.
 - Suggested action approval queue so model or local-rule recommendations are persisted, reviewed, approved, or dismissed before execution.
 - Source discovery that proposes broader official, community, and job-platform search entrances from the user's target cities and directions.
 - Source-candidate validation that fetches candidate pages, checks recruitment signals and discovered job links, then adjusts confidence before the source is accepted.

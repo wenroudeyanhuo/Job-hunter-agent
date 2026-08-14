@@ -95,6 +95,7 @@ func SemanticMemoryItemFromJob(job domain.Job) SemanticMemoryItem {
 		"city: " + job.City,
 		"directions: " + strings.Join(job.DirectionTags, ", "),
 		"description: " + job.Description,
+		"notes: " + job.Notes,
 		"recommend reasons: " + strings.Join(job.RecommendReasons, ", "),
 	}, "\n")
 	if len(content) > semanticMemoryMaxContent {
@@ -116,6 +117,17 @@ func SemanticMemoryItemFromJob(job domain.Job) SemanticMemoryItem {
 	}
 }
 
+func (r *Repository) syncSemanticMemoryForJob(ctx context.Context, job domain.Job) error {
+	if job.ID <= 0 {
+		return nil
+	}
+	if strings.TrimSpace(job.Title) == "" && strings.TrimSpace(job.Description) == "" && strings.TrimSpace(job.Notes) == "" {
+		return nil
+	}
+	_, err := r.UpsertSemanticMemoryItem(ctx, SemanticMemoryItemFromJob(job))
+	return err
+}
+
 func (r *Repository) UpsertSemanticMemoryItem(ctx context.Context, item SemanticMemoryItem) (SemanticMemoryItem, error) {
 	item.Kind = strings.TrimSpace(item.Kind)
 	item.Title = strings.TrimSpace(item.Title)
@@ -134,7 +146,7 @@ func (r *Repository) UpsertSemanticMemoryItem(ctx context.Context, item Semantic
 	if err != nil {
 		return SemanticMemoryItem{}, fmt.Errorf("encode semantic memory embedding: %w", err)
 	}
-	result, err := r.db.ExecContext(ctx, `
+	_, err = r.db.ExecContext(ctx, `
 		INSERT INTO semantic_memory_items (
 			kind, reference_id, title, content, metadata_json, embedding_json,
 			embedding_provider, embedding_dimension
@@ -150,10 +162,6 @@ func (r *Repository) UpsertSemanticMemoryItem(ctx context.Context, item Semantic
 	`, item.Kind, item.ReferenceID, item.Title, item.Content, string(metadataJSON), string(embeddingJSON), item.EmbeddingProvider, item.EmbeddingDimension)
 	if err != nil {
 		return SemanticMemoryItem{}, fmt.Errorf("upsert semantic memory item: %w", err)
-	}
-	id, _ := result.LastInsertId()
-	if id > 0 {
-		return r.GetSemanticMemoryItem(ctx, id)
 	}
 	return r.GetSemanticMemoryItemByReference(ctx, item.Kind, item.ReferenceID)
 }

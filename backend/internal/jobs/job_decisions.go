@@ -47,6 +47,11 @@ func (r *Repository) RecordJobDecision(ctx context.Context, input JobDecisionInp
 	if err != nil {
 		return JobDecision{}, fmt.Errorf("read job decision id: %w", err)
 	}
+	if id <= 0 {
+		if err := r.db.QueryRowContext(ctx, `SELECT id FROM job_decisions WHERE job_id = ? ORDER BY id DESC LIMIT 1`, input.JobID).Scan(&id); err != nil {
+			return JobDecision{}, fmt.Errorf("read latest job decision id: %w", err)
+		}
+	}
 	return r.GetJobDecision(ctx, id)
 }
 

@@ -66,6 +66,19 @@ func TestBuildLocalAgentChatReplyUnderstandsNormalChineseDailyQuestion(t *testin
 	}
 }
 
+func TestBuildLocalAgentChatReplyUsesSemanticMemoryMatches(t *testing.T) {
+	reply := BuildLocalAgentChatReply("recommend go backend agent jobs", AgentChatContext{
+		StrongMatches: 2,
+		SemanticMatches: []SemanticMemoryMatch{
+			{Kind: SemanticMemoryKindJob, ReferenceID: 42, Title: "DeepAI Agent Platform Go Engineer", Score: 0.82},
+		},
+	})
+
+	if !containsText(reply.Content, "DeepAI Agent Platform Go Engineer") {
+		t.Fatalf("expected semantic memory match in local reply, got %q", reply.Content)
+	}
+}
+
 func TestBuildLocalAgentChatReplyUnderstandsNormalChineseCrawlRequest(t *testing.T) {
 	reply := BuildLocalAgentChatReply("\u73b0\u5728\u5e2e\u6211\u91c7\u96c6\u6700\u65b0\u5c97\u4f4d", AgentChatContext{})
 	if !containsCommandAction(reply.Actions, "run_crawl") {

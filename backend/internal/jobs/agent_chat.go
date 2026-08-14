@@ -142,6 +142,9 @@ func BuildLocalAgentChatReply(input string, context AgentChatContext) AgentChatR
 	}
 	if containsAnyText(text, "今天", "做什么", "推荐", "岗位", "机会", "worth", "recommend") {
 		reply.Content = fmt.Sprintf("我建议先处理今天的闭环：%d 个开放任务、%d 个强匹配岗位、%d 个需要你决策的岗位、%d 个来源异常。优先级是先修来源，再看强匹配，最后清理人工判断队列。", context.OpenTasks, context.StrongMatches, context.ManualDecisions, context.SourceIssues)
+		if summary := summarizeSemanticMatches(context.SemanticMatches); summary != "" {
+			reply.Content += "\n\nMemory matches: " + summary
+		}
 		reply.Actions = append(reply.Actions, AgentCommandAction{Type: "review_strong_matches", Target: "opportunities", Detail: "Open strong opportunities first."})
 		reply.Actions = append(reply.Actions, AgentCommandAction{Type: "sync_application_plans", Target: "applications", Detail: "Prepare application plans for interested roles."})
 		if context.ManualDecisions > 0 {
@@ -165,6 +168,9 @@ func BuildLocalAgentChatReply(input string, context AgentChatContext) AgentChatR
 	}
 	if strings.Contains(text, "今天") || strings.Contains(text, "做什么") || strings.Contains(text, "推荐") || strings.Contains(text, "岗位") {
 		reply.Content = fmt.Sprintf("我建议先处理今天的闭环：%d 个开放任务、%d 个强匹配岗位、%d 个需要你决策的岗位、%d 个来源异常。优先级是先修来源，再看强匹配，最后清理人工判断队列。", context.OpenTasks, context.StrongMatches, context.ManualDecisions, context.SourceIssues)
+		if summary := summarizeSemanticMatches(context.SemanticMatches); summary != "" {
+			reply.Content += "\n\nMemory matches: " + summary
+		}
 		reply.Actions = append(reply.Actions, AgentCommandAction{Type: "review_strong_matches", Target: "opportunities", Detail: "Open strong opportunities first."})
 		reply.Actions = append(reply.Actions, AgentCommandAction{Type: "sync_application_plans", Target: "applications", Detail: "Prepare application plans for interested roles."})
 		if context.ManualDecisions > 0 {
@@ -179,6 +185,25 @@ func BuildLocalAgentChatReply(input string, context AgentChatContext) AgentChatR
 	}
 	reply.Content = "我在。你可以问我今天该投哪些岗位、为什么某个岗位适合你、哪些任务快过期，或者让我刷新任务、运行采集、同步投递计划。"
 	return reply
+}
+
+func summarizeSemanticMatches(matches []SemanticMemoryMatch) string {
+	if len(matches) == 0 {
+		return ""
+	}
+	limit := len(matches)
+	if limit > 3 {
+		limit = 3
+	}
+	parts := make([]string, 0, limit)
+	for _, match := range matches[:limit] {
+		title := strings.TrimSpace(match.Title)
+		if title == "" {
+			title = match.Kind
+		}
+		parts = append(parts, fmt.Sprintf("%s (%.0f)", title, match.Score*100))
+	}
+	return strings.Join(parts, "; ")
 }
 
 func containsAnyText(value string, needles ...string) bool {

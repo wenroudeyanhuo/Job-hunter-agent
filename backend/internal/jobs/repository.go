@@ -85,7 +85,14 @@ func (r *Repository) CreateJob(ctx context.Context, job domain.Job) (domain.Job,
 	if err != nil {
 		return domain.Job{}, fmt.Errorf("read inserted job id: %w", err)
 	}
-	return r.GetJob(ctx, id)
+	created, err := r.GetJob(ctx, id)
+	if err != nil {
+		return domain.Job{}, err
+	}
+	if err := r.syncSemanticMemoryForJob(ctx, created); err != nil {
+		return domain.Job{}, err
+	}
+	return created, nil
 }
 
 func (r *Repository) GetJob(ctx context.Context, id int64) (domain.Job, error) {
@@ -184,7 +191,14 @@ func (r *Repository) UpdateNotes(ctx context.Context, id int64, notes string) er
 		Action: "notes_updated",
 		Notes:  notes,
 	}); err != nil {
-		return err
+		return fmt.Errorf("record notes decision: %w", err)
+	}
+	updated, err := r.GetJob(ctx, id)
+	if err != nil {
+		return fmt.Errorf("reload job after notes update: %w", err)
+	}
+	if err := r.syncSemanticMemoryForJob(ctx, updated); err != nil {
+		return fmt.Errorf("sync semantic memory after notes update: %w", err)
 	}
 	return nil
 }
