@@ -214,6 +214,7 @@ func ensureApplicationPlanColumns(conn *sql.DB) error {
 
 func ensureAgentActionRequestColumns(conn *sql.DB) error {
 	columns := map[string]string{
+		"plan_id":           "INTEGER NOT NULL DEFAULT 0",
 		"execution_status":  "TEXT NOT NULL DEFAULT 'not_run'",
 		"execution_message": "TEXT NOT NULL DEFAULT ''",
 		"executed_at":       "TIMESTAMP NULL",

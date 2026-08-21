@@ -92,6 +92,45 @@ func TestAgentActionRequestApprovalExecutesRunCrawl(t *testing.T) {
 	}
 }
 
+func TestAgentActionRequestApprovalExecutesRecommendedSourceBootstrap(t *testing.T) {
+	runner := &countingRunner{summary: crawl.RunSummary{JobsCreated: 4}}
+	repo, handler := testRouter(t, runner)
+	if err := repo.RecordAgentActionRequests(t.Context(), "review", []jobs.AgentCommandAction{
+		{Type: "add_recommended_and_crawl", Target: "sources", Detail: "Add recommended sources and run the first crawl."},
+	}); err != nil {
+		t.Fatalf("seed action request: %v", err)
+	}
+	requests, err := repo.ListAgentActionRequests(t.Context(), jobs.AgentActionRequestStatusPending)
+	if err != nil {
+		t.Fatalf("list requests: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/agent/actions/"+strconv.FormatInt(requests[0].ID, 10), strings.NewReader(`{"status":"approved"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 approve, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if runner.calls != 1 || runner.lastTrigger != "agent_action_recommended_crawl" {
+		t.Fatalf("expected recommended crawl to run once, got calls=%d trigger=%q", runner.calls, runner.lastTrigger)
+	}
+	sources, err := repo.ListSources(t.Context(), false)
+	if err != nil {
+		t.Fatalf("list sources: %v", err)
+	}
+	if len(sources) == 0 {
+		t.Fatalf("expected recommended sources to be seeded")
+	}
+	approved, err := repo.ListAgentActionRequests(t.Context(), jobs.AgentActionRequestStatusApproved)
+	if err != nil {
+		t.Fatalf("list approved requests: %v", err)
+	}
+	if len(approved) != 1 || !strings.Contains(approved[0].ExecutionMessage, "Seeded") || !strings.Contains(approved[0].ExecutionMessage, "created 4 jobs") {
+		t.Fatalf("expected bootstrap execution receipt, got %#v", approved)
+	}
+}
+
 func TestAgentActionRequestApprovalKeepsPendingWhenExecutionFails(t *testing.T) {
 	runner := &countingRunner{err: errors.New("source is busy")}
 	repo, handler := testRouter(t, runner)
@@ -178,6 +217,105 @@ func TestAgentChatPersistsWorkPlanForSuggestedActions(t *testing.T) {
 	}
 	if len(response) != 1 || response[0].Steps[0].ActionType != "run_crawl" {
 		t.Fatalf("unexpected plan response: %#v", response)
+	}
+}
+
+func TestAgentActionApprovalUpdatesLinkedWorkPlan(t *testing.T) {
+	runner := &countingRunner{summary: crawl.RunSummary{JobsCreated: 3}}
+	repo, handler := testRouter(t, runner)
+	body := bytes.NewBufferString(`{"message":"run crawl","active_view":"dashboard"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/agent/chat", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 chat, got %d: %s", rec.Code, rec.Body.String())
+	}
+	requests, err := repo.ListAgentActionRequests(t.Context(), jobs.AgentActionRequestStatusPending)
+	if err != nil {
+		t.Fatalf("list action requests: %v", err)
+	}
+	if len(requests) != 1 {
+		t.Fatalf("expected one action request, got %#v", requests)
+	}
+
+	req = httptest.NewRequest(http.MethodPatch, "/api/agent/actions/"+strconv.FormatInt(requests[0].ID, 10), strings.NewReader(`{"status":"approved"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 approve, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	plans, err := repo.ListAgentPlans(t.Context(), jobs.AgentPlanStatusDone, 10)
+	if err != nil {
+		t.Fatalf("list done plans: %v", err)
+	}
+	if len(plans) != 1 || plans[0].CompletedAt == nil {
+		t.Fatalf("expected linked plan to be done, got %#v", plans)
+	}
+	if len(plans[0].Steps) != 1 || plans[0].Steps[0].Status != jobs.AgentPlanStepStatusDone || !strings.Contains(plans[0].Steps[0].Message, "Created 3 jobs") {
+		t.Fatalf("expected executed step receipt, got %#v", plans[0].Steps)
+	}
+}
+
+func TestAgentActionDismissalSkipsLinkedWorkPlanStep(t *testing.T) {
+	repo, handler := testRouter(t, nil)
+	plan, err := repo.CreateAgentPlan(t.Context(), jobs.AgentPlanInput{
+		Source:        "test",
+		Goal:          "daily plan",
+		Summary:       "Two approval steps.",
+		RiskLevel:     jobs.AgentPlanRiskApprovalRequired,
+		NeedsApproval: true,
+		Steps: []jobs.AgentPlanStep{
+			{ActionType: "run_crawl", Target: "sources", Detail: "Run a manual crawl."},
+			{ActionType: "refresh_tasks", Target: "daily_tasks", Detail: "Refresh today's task queue."},
+		},
+	})
+	if err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+	if err := repo.RecordAgentActionRequestsForPlan(t.Context(), plan.ID, plan.Source, []jobs.AgentCommandAction{
+		{Type: "run_crawl", Target: "sources", Detail: "Run a manual crawl."},
+		{Type: "refresh_tasks", Target: "daily_tasks", Detail: "Refresh today's task queue."},
+	}); err != nil {
+		t.Fatalf("seed action requests: %v", err)
+	}
+	requests, err := repo.ListAgentActionRequests(t.Context(), jobs.AgentActionRequestStatusPending)
+	if err != nil {
+		t.Fatalf("list action requests: %v", err)
+	}
+
+	requestID := int64(0)
+	for _, request := range requests {
+		if request.ActionType == "run_crawl" {
+			requestID = request.ID
+			break
+		}
+	}
+	if requestID == 0 {
+		t.Fatalf("expected run_crawl action request, got %#v", requests)
+	}
+	req := httptest.NewRequest(http.MethodPatch, "/api/agent/actions/"+strconv.FormatInt(requestID, 10), strings.NewReader(`{"status":"dismissed"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 dismiss, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	updated, err := repo.GetAgentPlan(t.Context(), plan.ID)
+	if err != nil {
+		t.Fatalf("get plan: %v", err)
+	}
+	if updated.Status != jobs.AgentPlanStatusWaitingApproval {
+		t.Fatalf("expected plan to wait for remaining step, got %#v", updated)
+	}
+	if updated.Steps[0].Status != jobs.AgentPlanStepStatusSkipped || !strings.Contains(updated.Steps[0].Message, "dismissed") {
+		t.Fatalf("expected first step to be skipped with receipt, got %#v", updated.Steps)
+	}
+	if updated.Steps[1].Status != jobs.AgentPlanStepStatusPending {
+		t.Fatalf("expected second step to remain pending, got %#v", updated.Steps)
 	}
 }
 

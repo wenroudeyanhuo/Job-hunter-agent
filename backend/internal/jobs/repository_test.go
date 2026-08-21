@@ -58,3 +58,21 @@ func TestRepositoryCreateListAndUpdateStatus(t *testing.T) {
 		t.Fatalf("recommend reasons did not round trip: %#v", list[0].RecommendReasons)
 	}
 }
+
+func TestRepositoryFinishRunDoesNotRequireMatchingJobMemory(t *testing.T) {
+	ctx := context.Background()
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	repo := NewRepository(conn)
+
+	run, err := repo.CreateRun(ctx, "manual", time.Date(2026, 8, 14, 9, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+
+	if err := repo.FinishRun(ctx, run.ID, RunUpdate{Status: "success"}); err != nil {
+		t.Fatalf("finish run should not depend on a job with the same id: %v", err)
+	}
+}

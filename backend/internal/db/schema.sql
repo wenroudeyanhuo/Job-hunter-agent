@@ -134,6 +134,7 @@ CREATE INDEX IF NOT EXISTS idx_agent_tasks_date_status ON agent_tasks(task_date,
 
 CREATE TABLE IF NOT EXISTS agent_action_requests (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    plan_id INTEGER NOT NULL DEFAULT 0,
     source TEXT NOT NULL DEFAULT '',
     action_type TEXT NOT NULL,
     target TEXT NOT NULL DEFAULT '',
@@ -143,7 +144,8 @@ CREATE TABLE IF NOT EXISTS agent_action_requests (
     resolved_at TIMESTAMP NULL,
     execution_status TEXT NOT NULL DEFAULT 'not_run',
     execution_message TEXT NOT NULL DEFAULT '',
-    executed_at TIMESTAMP NULL
+    executed_at TIMESTAMP NULL,
+    FOREIGN KEY(plan_id) REFERENCES agent_plans(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_agent_action_requests_status ON agent_action_requests(status, created_at);
@@ -163,6 +165,23 @@ CREATE TABLE IF NOT EXISTS agent_plans (
 );
 
 CREATE INDEX IF NOT EXISTS idx_agent_plans_status ON agent_plans(status, created_at);
+
+CREATE TABLE IF NOT EXISTS semantic_memory_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,
+    reference_id INTEGER NOT NULL DEFAULT 0,
+    title TEXT NOT NULL DEFAULT '',
+    content TEXT NOT NULL DEFAULT '',
+    metadata_json TEXT NOT NULL DEFAULT '{}',
+    embedding_json TEXT NOT NULL DEFAULT '[]',
+    embedding_provider TEXT NOT NULL DEFAULT 'local_hash',
+    embedding_dimension INTEGER NOT NULL DEFAULT 64,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(kind, reference_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_semantic_memory_kind_ref ON semantic_memory_items(kind, reference_id);
 
 CREATE TABLE IF NOT EXISTS application_plans (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

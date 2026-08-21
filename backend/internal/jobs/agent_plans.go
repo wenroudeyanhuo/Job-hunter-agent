@@ -19,6 +19,7 @@ const (
 	AgentPlanStepStatusPending = "pending"
 	AgentPlanStepStatusDone    = "done"
 	AgentPlanStepStatusFailed  = "failed"
+	AgentPlanStepStatusSkipped = "skipped"
 
 	AgentPlanRiskLow              = "low"
 	AgentPlanRiskApprovalRequired = "approval_required"
@@ -46,6 +47,7 @@ type AgentPlanInput struct {
 	RiskLevel     string
 	NeedsApproval bool
 	Steps         []AgentPlanStep
+	CreatedAt     time.Time
 }
 
 type AgentPlanStep struct {
@@ -75,10 +77,19 @@ func (r *Repository) CreateAgentPlan(ctx context.Context, input AgentPlanInput) 
 	if err != nil {
 		return AgentPlan{}, err
 	}
-	result, err := r.db.ExecContext(ctx, `
-		INSERT INTO agent_plans (source, goal, summary, status, risk_level, needs_approval, steps_json)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, input.Source, input.Goal, input.Summary, input.Status, input.RiskLevel, boolToInt(input.NeedsApproval), stepsJSON)
+	var result sql.Result
+	if input.CreatedAt.IsZero() {
+		result, err = r.db.ExecContext(ctx, `
+			INSERT INTO agent_plans (source, goal, summary, status, risk_level, needs_approval, steps_json)
+			VALUES (?, ?, ?, ?, ?, ?, ?)
+		`, input.Source, input.Goal, input.Summary, input.Status, input.RiskLevel, boolToInt(input.NeedsApproval), stepsJSON)
+	} else {
+		createdAt := input.CreatedAt.UTC()
+		result, err = r.db.ExecContext(ctx, `
+			INSERT INTO agent_plans (source, goal, summary, status, risk_level, needs_approval, steps_json, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, input.Source, input.Goal, input.Summary, input.Status, input.RiskLevel, boolToInt(input.NeedsApproval), stepsJSON, createdAt, createdAt)
+	}
 	if err != nil {
 		return AgentPlan{}, fmt.Errorf("insert agent plan: %w", err)
 	}
@@ -131,6 +142,78 @@ func (r *Repository) ListAgentPlans(ctx context.Context, status string, limit in
 	return plans, nil
 }
 
+func (r *Repository) HasAgentPlanForDay(ctx context.Context, source string, goal string, day string) (bool, error) {
+	source = strings.TrimSpace(source)
+	goal = strings.TrimSpace(goal)
+	day = strings.TrimSpace(day)
+	if source == "" || goal == "" || day == "" {
+		return false, nil
+	}
+	var count int
+	if err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM agent_plans
+		WHERE source = ? AND goal = ? AND substr(created_at, 1, 10) = ?
+	`, source, goal, day).Scan(&count); err != nil {
+		return false, fmt.Errorf("count agent plans for day: %w", err)
+	}
+	return count > 0, nil
+}
+
+func (r *Repository) RecordAgentPlanStepExecution(ctx context.Context, planID int64, actionType string, status string, message string) (AgentPlan, error) {
+	if planID <= 0 {
+		return AgentPlan{}, nil
+	}
+	plan, err := r.GetAgentPlan(ctx, planID)
+	if err != nil {
+		return AgentPlan{}, err
+	}
+	actionType = strings.TrimSpace(actionType)
+	status = normalizeAgentPlanStepStatus(status)
+	message = strings.TrimSpace(message)
+	updated := false
+	for index := range plan.Steps {
+		if plan.Steps[index].ActionType != actionType {
+			continue
+		}
+		if plan.Steps[index].Status == AgentPlanStepStatusDone {
+			continue
+		}
+		plan.Steps[index].Status = status
+		plan.Steps[index].Message = message
+		updated = true
+		break
+	}
+	if !updated {
+		return plan, nil
+	}
+	nextStatus := deriveAgentPlanStatus(plan.Steps)
+	var completedAt any
+	if nextStatus == AgentPlanStatusDone {
+		completedAt = time.Now().UTC()
+	}
+	stepsJSON, err := marshalAgentPlanSteps(plan.Steps)
+	if err != nil {
+		return AgentPlan{}, err
+	}
+	result, err := r.db.ExecContext(ctx, `
+		UPDATE agent_plans
+		SET steps_json = ?, status = ?, completed_at = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?
+	`, stepsJSON, nextStatus, completedAt, plan.ID)
+	if err != nil {
+		return AgentPlan{}, fmt.Errorf("update agent plan step: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return AgentPlan{}, fmt.Errorf("read rows affected: %w", err)
+	}
+	if affected == 0 {
+		return AgentPlan{}, sql.ErrNoRows
+	}
+	return r.GetAgentPlan(ctx, plan.ID)
+}
+
 func BuildAgentPlanInputFromReply(goal string, reply AgentChatReply) AgentPlanInput {
 	steps := make([]AgentPlanStep, 0, len(reply.Actions))
 	for index, action := range reply.Actions {
@@ -149,6 +232,35 @@ func BuildAgentPlanInputFromReply(goal string, reply AgentChatReply) AgentPlanIn
 		Source:        reply.Source,
 		Goal:          goal,
 		Summary:       reply.Content,
+		RiskLevel:     AgentPlanRiskApprovalRequired,
+		NeedsApproval: len(steps) > 0,
+		Steps:         steps,
+	}
+}
+
+func BuildAgentPlanInputFromReview(review AgentReview) AgentPlanInput {
+	steps := []AgentPlanStep{}
+	for _, nextStep := range review.NextSteps {
+		allowed, ok := allowedModelActionTypes[strings.TrimSpace(nextStep.Action)]
+		if !ok {
+			continue
+		}
+		detail := strings.TrimSpace(nextStep.Reason)
+		if detail == "" {
+			detail = allowed.Detail
+		}
+		steps = append(steps, AgentPlanStep{
+			Order:      len(steps) + 1,
+			ActionType: allowed.Type,
+			Target:     allowed.Target,
+			Detail:     detail,
+			Status:     AgentPlanStepStatusPending,
+		})
+	}
+	return AgentPlanInput{
+		Source:        "review",
+		Goal:          "今日秋招工作计划",
+		Summary:       review.Focus.Title + ": " + review.Focus.Detail,
 		RiskLevel:     AgentPlanRiskApprovalRequired,
 		NeedsApproval: len(steps) > 0,
 		Steps:         steps,
@@ -188,7 +300,8 @@ func normalizeAgentPlanSteps(steps []AgentPlanStep) []AgentPlanStep {
 		step.Target = strings.TrimSpace(step.Target)
 		step.Detail = strings.TrimSpace(step.Detail)
 		step.Message = strings.TrimSpace(step.Message)
-		if strings.TrimSpace(step.Status) == "" {
+		step.Status = normalizeAgentPlanStepStatus(step.Status)
+		if step.Status == "" {
 			step.Status = AgentPlanStepStatusPending
 		}
 		if step.Order <= 0 {
@@ -197,6 +310,41 @@ func normalizeAgentPlanSteps(steps []AgentPlanStep) []AgentPlanStep {
 		out = append(out, step)
 	}
 	return out
+}
+
+func normalizeAgentPlanStepStatus(status string) string {
+	switch strings.TrimSpace(status) {
+	case AgentPlanStepStatusPending:
+		return AgentPlanStepStatusPending
+	case AgentPlanStepStatusDone:
+		return AgentPlanStepStatusDone
+	case AgentPlanStepStatusFailed:
+		return AgentPlanStepStatusFailed
+	case AgentPlanStepStatusSkipped:
+		return AgentPlanStepStatusSkipped
+	default:
+		return ""
+	}
+}
+
+func deriveAgentPlanStatus(steps []AgentPlanStep) string {
+	if len(steps) == 0 {
+		return AgentPlanStatusDraft
+	}
+	allDone := true
+	for _, step := range steps {
+		switch step.Status {
+		case AgentPlanStepStatusFailed:
+			return AgentPlanStatusFailed
+		case AgentPlanStepStatusDone, AgentPlanStepStatusSkipped:
+		default:
+			allDone = false
+		}
+	}
+	if allDone {
+		return AgentPlanStatusDone
+	}
+	return AgentPlanStatusWaitingApproval
 }
 
 func selectAgentPlanSQL() string {

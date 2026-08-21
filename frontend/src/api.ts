@@ -28,6 +28,8 @@ import type {
   RecommendedCrawlResponse,
   RunSummary,
   SeedSourcesResult,
+  SemanticMemoryMatch,
+  SemanticMemoryRebuildResult,
   Settings,
   Source,
   SourceCandidate,
@@ -74,6 +76,16 @@ export async function runAgentCommand(text: string): Promise<AgentCommandResult>
   });
 }
 
+export async function rebuildSemanticMemory(): Promise<SemanticMemoryRebuildResult> {
+  return request<SemanticMemoryRebuildResult>("/api/agent/memory/rebuild", { method: "POST" });
+}
+
+export async function searchSemanticMemory(query: string, limit = 8): Promise<SemanticMemoryMatch[]> {
+  const params = new URLSearchParams({ q: query, limit: String(limit) });
+  const matches = await request<SemanticMemoryMatch[] | null>(`/api/agent/memory/search?${params.toString()}`);
+  return Array.isArray(matches) ? matches : [];
+}
+
 export async function listAgentActionRequests(status = "pending"): Promise<AgentActionRequest[]> {
   const query = status ? `?status=${encodeURIComponent(status)}` : "";
   const requests = await request<AgentActionRequest[] | null>(`/api/agent/actions${query}`);
@@ -84,6 +96,10 @@ export async function listAgentPlans(status = ""): Promise<AgentPlan[]> {
   const query = status ? `?status=${encodeURIComponent(status)}` : "";
   const plans = await request<AgentPlan[] | null>(`/api/agent/plans${query}`);
   return Array.isArray(plans) ? plans : [];
+}
+
+export async function createTodayAgentPlan(): Promise<AgentPlan> {
+  return request<AgentPlan>("/api/agent/plans/today", { method: "POST" });
 }
 
 export async function updateAgentActionRequest(id: number, status: "pending" | "approved" | "dismissed"): Promise<AgentActionRequest> {

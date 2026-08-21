@@ -182,6 +182,62 @@ func (h *Handlers) ListAgentPlans(c *gin.Context) {
 	c.JSON(http.StatusOK, plans)
 }
 
+func (h *Handlers) RebuildSemanticMemory(c *gin.Context) {
+	result, err := h.Repo.RebuildSemanticMemory(c.Request.Context())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	h.recordAgentEvent(c, jobs.AgentEventInput{
+		Type:    "semantic_memory_rebuilt",
+		Title:   "Rebuilt semantic memory",
+		Summary: "Indexed " + strconv.Itoa(result.Created) + " job memories for semantic search.",
+		Level:   "success",
+	})
+	c.JSON(http.StatusOK, result)
+}
+
+func (h *Handlers) SearchSemanticMemory(c *gin.Context) {
+	matches, err := h.Repo.SearchSemanticMemory(c.Request.Context(), jobs.SemanticMemoryQuery{
+		Query: c.Query("q"),
+		Kind:  c.Query("kind"),
+		Limit: parseIntQuery(c, "limit", 8),
+	})
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, matches)
+}
+
+func (h *Handlers) CreateTodayAgentPlan(c *gin.Context) {
+	review, err := h.buildAgentReview(c.Request.Context())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	result, err := jobs.NewAgentRuntime(h.Repo).CreateReviewPlan(c.Request.Context(), jobs.AgentReviewPlanRequest{
+		Review: review,
+		Source: "manual",
+		Now:    time.Now().UTC(),
+	})
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	if !result.Created {
+		c.JSON(http.StatusOK, result.Plan)
+		return
+	}
+	h.recordAgentEvent(c, jobs.AgentEventInput{
+		Type:    "agent_plan_created",
+		Title:   "Created today's work plan",
+		Summary: result.Plan.Summary,
+		Level:   "info",
+	})
+	c.JSON(http.StatusCreated, result.Plan)
+}
+
 func (h *Handlers) UpdateAgentActionRequest(c *gin.Context) {
 	id, ok := parseID(c)
 	if !ok {
@@ -203,10 +259,20 @@ func (h *Handlers) UpdateAgentActionRequest(c *gin.Context) {
 		executionMessage, err := h.executeApprovedAgentAction(c, current)
 		if err != nil {
 			_, _ = h.Repo.RecordAgentActionRequestExecution(c.Request.Context(), id, jobs.AgentActionExecutionFailed, err.Error())
+			_, _ = h.Repo.RecordAgentPlanStepExecution(c.Request.Context(), current.PlanID, current.ActionType, jobs.AgentPlanStepStatusFailed, err.Error())
 			respondError(c, http.StatusConflict, err)
 			return
 		}
 		if _, err := h.Repo.RecordAgentActionRequestExecution(c.Request.Context(), id, jobs.AgentActionExecutionSucceeded, executionMessage); err != nil {
+			respondError(c, http.StatusInternalServerError, err)
+			return
+		}
+		if _, err := h.Repo.RecordAgentPlanStepExecution(c.Request.Context(), current.PlanID, current.ActionType, jobs.AgentPlanStepStatusDone, executionMessage); err != nil {
+			respondError(c, http.StatusInternalServerError, err)
+			return
+		}
+	} else if jobs.NormalizeAgentActionRequestStatus(req.Status) == jobs.AgentActionRequestStatusDismissed {
+		if _, err := h.Repo.RecordAgentPlanStepExecution(c.Request.Context(), current.PlanID, current.ActionType, jobs.AgentPlanStepStatusSkipped, "Action dismissed by user."); err != nil {
 			respondError(c, http.StatusInternalServerError, err)
 			return
 		}
@@ -229,6 +295,27 @@ func (h *Handlers) executeApprovedAgentAction(c *gin.Context, request jobs.Agent
 	ctx := c.Request.Context()
 	message := "Action completed."
 	switch request.ActionType {
+	case "add_recommended_and_crawl":
+		if h.Runner == nil {
+			return "", fmt.Errorf("crawl runner is not configured")
+		}
+		seeded, err := h.Repo.SeedRecommendedSources(ctx)
+		if err != nil {
+			return "", err
+		}
+		summary, err := h.Runner.Run(ctx, "agent_action_recommended_crawl")
+		if err != nil {
+			return "", err
+		}
+		cleanup, err := h.cleanupLandingPages(ctx)
+		if err != nil {
+			return "", err
+		}
+		summary.LandingPagesIgnored = cleanup.Ignored
+		h.recordCrawlEvent(c, "agent_action_recommended_crawl_completed", "Agent recommended source crawl completed", summary)
+		h.refreshAgentTasksAfterCrawl(c)
+		h.snapshotAgentReview(c, "agent_action_recommended_crawl_completed")
+		message = "Seeded " + strconv.Itoa(seeded.Created) + " recommended sources, skipped " + strconv.Itoa(seeded.Duplicated) + " duplicates, created " + strconv.Itoa(summary.JobsCreated) + " jobs, and flagged " + strconv.Itoa(summary.ManualCheckCount) + " for review."
 	case "run_crawl":
 		if h.Runner == nil {
 			return "", fmt.Errorf("crawl runner is not configured")
@@ -342,6 +429,9 @@ func (h *Handlers) RunAgentChat(c *gin.Context) {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
+	if semanticMatches, err := h.Repo.SearchSemanticMemory(c.Request.Context(), jobs.SemanticMemoryQuery{Query: req.Message, Limit: 5}); err == nil {
+		context.SemanticMatches = semanticMatches
+	}
 	reply := jobs.BuildLocalAgentChatReply(req.Message, context)
 	if jobs.BuildAgentChatStatus(h.LLM).Configured {
 		if modelReply, err := h.runModelChat(c.Request.Context(), req.Message, context); err == nil && strings.TrimSpace(modelReply) != "" {
@@ -366,11 +456,7 @@ func (h *Handlers) RunAgentChat(c *gin.Context) {
 		return
 	}
 	if len(reply.Actions) > 0 {
-		if _, err := h.Repo.CreateAgentPlan(c.Request.Context(), jobs.BuildAgentPlanInputFromReply(req.Message, reply)); err != nil {
-			respondError(c, http.StatusInternalServerError, err)
-			return
-		}
-		if err := h.Repo.RecordAgentActionRequests(c.Request.Context(), reply.Source, reply.Actions); err != nil {
+		if _, err := jobs.NewAgentRuntime(h.Repo).CreateChatPlan(c.Request.Context(), req.Message, reply); err != nil {
 			respondError(c, http.StatusInternalServerError, err)
 			return
 		}
@@ -445,8 +531,8 @@ func (h *Handlers) runModelChat(ctx context.Context, userMessage string, chatCon
 	messages := []map[string]string{
 		{
 			"role": "system",
-			"content": fmt.Sprintf("You are Job Hunter Agent, a Chinese-speaking digital employee for autumn recruitment. Be concise, practical, and use the current local context. Current view: %s. Open tasks: %d. Strong matches: %d. Manual decisions: %d. Source issues: %d. Recommended jobs: %s. Memory: %s. If suggesting an action, return JSON with content and actions. Allowed action types: run_crawl, refresh_tasks, sync_application_plans, send_feishu_report, discover_sources, review_strong_matches, review_manual_check. Never suggest direct resume submission or third-party login actions.",
-				chatContext.ActiveView, chatContext.OpenTasks, chatContext.StrongMatches, chatContext.ManualDecisions, chatContext.SourceIssues, formatAgentChatJobSummaries(chatContext.RecommendedJobs), formatAgentMemory(chatContext.Memory)),
+			"content": fmt.Sprintf("You are Job Hunter Agent, a Chinese-speaking digital employee for autumn recruitment. Be concise, practical, and use the current local context. Current view: %s. Open tasks: %d. Strong matches: %d. Manual decisions: %d. Source issues: %d. Recommended jobs: %s. Memory: %s. Semantic memories: %s. If suggesting an action, return JSON with content and actions. Allowed action types: %s. Never suggest direct resume submission or third-party login actions.",
+				chatContext.ActiveView, chatContext.OpenTasks, chatContext.StrongMatches, chatContext.ManualDecisions, chatContext.SourceIssues, formatAgentChatJobSummaries(chatContext.RecommendedJobs), formatAgentMemory(chatContext.Memory), formatSemanticMemoryMatches(chatContext.SemanticMatches), jobs.ModelActionPromptList()),
 		},
 	}
 	messages = append(messages, formatAgentChatHistory(chatContext.RecentMessages)...)
@@ -454,6 +540,18 @@ func (h *Handlers) runModelChat(ctx context.Context, userMessage string, chatCon
 		messages = append(messages, map[string]string{"role": "user", "content": userMessage})
 	}
 	return h.callModelChat(ctx, messages, 0.4)
+}
+
+func parseIntQuery(c *gin.Context, key string, fallback int) int {
+	value := strings.TrimSpace(c.Query(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
 }
 
 func formatAgentChatHistory(history []jobs.AgentChatMessage) []map[string]string {
@@ -529,11 +627,26 @@ func formatAgentChatJobSummaries(jobList []jobs.AgentChatJobSummary) string {
 }
 
 func formatAgentMemory(memory jobs.AgentMemory) string {
-	if memory.LastFocusAction == "" {
-		return memory.TrendSummary
+	semantic := ""
+	if memory.SemanticTotalItems > 0 {
+		semantic = fmt.Sprintf(", semantic memories %d (%d jobs via %s/%d)", memory.SemanticTotalItems, memory.SemanticJobItems, memory.SemanticProvider, memory.SemanticDimension)
 	}
-	return fmt.Sprintf("last trigger %s, last focus %s (%s), trend %s, recent executed actions %d",
-		memory.LastTriggerType, memory.LastFocusTitle, memory.LastFocusAction, memory.TrendSummary, memory.RecentActionCount)
+	if memory.LastFocusAction == "" {
+		return memory.TrendSummary + semantic
+	}
+	return fmt.Sprintf("last trigger %s, last focus %s (%s), trend %s, recent executed actions %d%s",
+		memory.LastTriggerType, memory.LastFocusTitle, memory.LastFocusAction, memory.TrendSummary, memory.RecentActionCount, semantic)
+}
+
+func formatSemanticMemoryMatches(matches []jobs.SemanticMemoryMatch) string {
+	if len(matches) == 0 {
+		return "none"
+	}
+	parts := make([]string, 0, len(matches))
+	for _, match := range matches {
+		parts = append(parts, fmt.Sprintf("%s #%d %s score %.2f", match.Kind, match.ReferenceID, match.Title, match.Score))
+	}
+	return strings.Join(parts, "; ")
 }
 
 func (h *Handlers) RunAutomationDutyReport(c *gin.Context) {
@@ -680,10 +793,22 @@ func (h *Handlers) buildAgentState(ctx context.Context) (jobs.AgentState, error)
 	if err != nil {
 		return jobs.AgentState{}, err
 	}
+	plans, err := h.Repo.ListAgentPlans(ctx, "", 20)
+	if err != nil {
+		return jobs.AgentState{}, err
+	}
+	actionRequests, err := h.Repo.ListAgentActionRequests(ctx, jobs.AgentActionRequestStatusPending)
+	if err != nil {
+		return jobs.AgentState{}, err
+	}
+	semanticStats, err := h.Repo.GetSemanticMemoryStats(ctx)
+	if err != nil {
+		return jobs.AgentState{}, err
+	}
 	if strings.TrimSpace(settings.FeishuWebhookURL) == "" {
 		settings.FeishuWebhookURL = strings.TrimSpace(h.FeishuWebhookURL)
 	}
-	return jobs.BuildAgentStateWithMemory(jobList, sources, runs, tasks, settings, snapshots, events), nil
+	return jobs.BuildAgentStateWithSemanticMemory(jobList, sources, runs, tasks, settings, snapshots, events, plans, actionRequests, semanticStats), nil
 }
 
 func (h *Handlers) ListAgentEvents(c *gin.Context) {

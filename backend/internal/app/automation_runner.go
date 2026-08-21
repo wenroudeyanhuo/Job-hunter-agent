@@ -52,6 +52,13 @@ func (r *automationRunner) Tick(ctx context.Context, now time.Time) (bool, error
 	if !jobs.ShouldSendDutyReport(settings, now) {
 		return ran, nil
 	}
+	planned, err := r.ensureDailyWorkPlan(ctx, now)
+	if err != nil {
+		return false, err
+	}
+	if planned {
+		ran = true
+	}
 	webhookURL := strings.TrimSpace(settings.FeishuWebhookURL)
 	if webhookURL == "" {
 		webhookURL = r.fallbackWebhookURL
@@ -83,6 +90,32 @@ func (r *automationRunner) Tick(ctx context.Context, now time.Time) (bool, error
 	if review, err := r.buildAgentReview(ctx); err == nil {
 		_, _ = r.repo.CreateAgentReviewSnapshot(ctx, review, "automation_tick")
 	}
+	return true, nil
+}
+
+func (r *automationRunner) ensureDailyWorkPlan(ctx context.Context, now time.Time) (bool, error) {
+	review, err := r.buildAgentReview(ctx)
+	if err != nil {
+		return false, err
+	}
+	result, err := jobs.NewAgentRuntime(r.repo).CreateReviewPlan(ctx, jobs.AgentReviewPlanRequest{
+		Review: review,
+		Source: "automation",
+		Now:    now,
+		Dedupe: true,
+	})
+	if err != nil {
+		return false, err
+	}
+	if !result.Created {
+		return false, nil
+	}
+	_, _ = r.repo.CreateAgentEvent(ctx, jobs.AgentEventInput{
+		Type:    "auto_plan_created",
+		Title:   "Created automatic daily work plan",
+		Summary: result.Plan.Summary,
+		Level:   "info",
+	})
 	return true, nil
 }
 

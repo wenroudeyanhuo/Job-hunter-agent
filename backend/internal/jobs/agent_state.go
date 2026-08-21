@@ -29,20 +29,27 @@ type AgentProfile struct {
 }
 
 type AgentWorkload struct {
-	OpenTasks       int `json:"open_tasks"`
-	DoneTasks       int `json:"done_tasks"`
-	StrongMatches   int `json:"strong_matches"`
-	ManualDecisions int `json:"manual_decisions"`
-	SourceIssues    int `json:"source_issues"`
+	OpenTasks        int `json:"open_tasks"`
+	DoneTasks        int `json:"done_tasks"`
+	StrongMatches    int `json:"strong_matches"`
+	ManualDecisions  int `json:"manual_decisions"`
+	SourceIssues     int `json:"source_issues"`
+	ActivePlans      int `json:"active_plans"`
+	PendingApprovals int `json:"pending_approvals"`
+	CompletedPlans   int `json:"completed_plans"`
 }
 
 type AgentMemory struct {
-	LastReviewAt      *time.Time `json:"last_review_at,omitempty"`
-	LastTriggerType   string     `json:"last_trigger_type"`
-	LastFocusTitle    string     `json:"last_focus_title"`
-	LastFocusAction   string     `json:"last_focus_action"`
-	TrendSummary      string     `json:"trend_summary"`
-	RecentActionCount int        `json:"recent_action_count"`
+	LastReviewAt       *time.Time `json:"last_review_at,omitempty"`
+	LastTriggerType    string     `json:"last_trigger_type"`
+	LastFocusTitle     string     `json:"last_focus_title"`
+	LastFocusAction    string     `json:"last_focus_action"`
+	TrendSummary       string     `json:"trend_summary"`
+	RecentActionCount  int        `json:"recent_action_count"`
+	SemanticTotalItems int        `json:"semantic_total_items"`
+	SemanticJobItems   int        `json:"semantic_job_items"`
+	SemanticProvider   string     `json:"semantic_provider"`
+	SemanticDimension  int        `json:"semantic_dimension"`
 }
 
 type AgentCapability struct {
@@ -71,6 +78,14 @@ func BuildAgentState(jobList []domain.Job, sources []Source, runs []domain.JobRu
 }
 
 func BuildAgentStateWithMemory(jobList []domain.Job, sources []Source, runs []domain.JobRun, tasks []AgentTask, settings Settings, snapshots []AgentReviewSnapshot, events []AgentEvent) AgentState {
+	return BuildAgentStateWithAgentWork(jobList, sources, runs, tasks, settings, snapshots, events, nil, nil)
+}
+
+func BuildAgentStateWithAgentWork(jobList []domain.Job, sources []Source, runs []domain.JobRun, tasks []AgentTask, settings Settings, snapshots []AgentReviewSnapshot, events []AgentEvent, plans []AgentPlan, actionRequests []AgentActionRequest) AgentState {
+	return BuildAgentStateWithSemanticMemory(jobList, sources, runs, tasks, settings, snapshots, events, plans, actionRequests, SemanticMemoryStats{})
+}
+
+func BuildAgentStateWithSemanticMemory(jobList []domain.Job, sources []Source, runs []domain.JobRun, tasks []AgentTask, settings Settings, snapshots []AgentReviewSnapshot, events []AgentEvent, plans []AgentPlan, actionRequests []AgentActionRequest, semanticStats SemanticMemoryStats) AgentState {
 	state := AgentState{
 		GeneratedAt: time.Now().UTC(),
 		Profile: AgentProfile{
@@ -84,7 +99,7 @@ func BuildAgentStateWithMemory(jobList []domain.Job, sources []Source, runs []do
 		Focus:          "Keep the recruitment pipeline moving.",
 		OperatingCycle: buildOperatingCycle(settings.CrawlSchedule),
 		Automation:     BuildAgentAutomationState(settings, tasks, time.Now().UTC()),
-		Memory:         BuildAgentMemory(snapshots, events),
+		Memory:         BuildAgentMemoryWithSemanticStats(snapshots, events, semanticStats),
 	}
 
 	for _, task := range tasks {
@@ -112,8 +127,30 @@ func BuildAgentStateWithMemory(jobList []domain.Job, sources []Source, runs []do
 			state.Workload.SourceIssues++
 		}
 	}
+	for _, plan := range plans {
+		switch plan.Status {
+		case AgentPlanStatusDone:
+			state.Workload.CompletedPlans++
+		case AgentPlanStatusFailed:
+			continue
+		default:
+			state.Workload.ActivePlans++
+		}
+	}
+	for _, request := range actionRequests {
+		if request.Status == AgentActionRequestStatusPending {
+			state.Workload.PendingApprovals++
+		}
+	}
 
 	state.Capabilities = []AgentCapability{
+		{
+			Key:      "planning",
+			Label:    "Plan and approval loop",
+			Status:   capabilityStatus(len(plans) > 0),
+			Level:    capabilityLevel(len(plans) > 0, 72),
+			Evidence: itoa(state.Workload.ActivePlans) + " active plans / " + itoa(state.Workload.PendingApprovals) + " pending approvals",
+		},
 		{
 			Key:      "collection",
 			Label:    "Public source collection",
@@ -151,10 +188,10 @@ func BuildAgentStateWithMemory(jobList []domain.Job, sources []Source, runs []do
 		},
 		{
 			Key:      "memory",
-			Label:    "Local memory",
+			Label:    "Semantic memory",
 			Status:   "active",
-			Level:    60,
-			Evidence: "SQLite stores jobs, runs, sources, tasks, settings, and events",
+			Level:    semanticMemoryCapabilityLevel(semanticStats),
+			Evidence: semanticMemoryEvidence(semanticStats),
 		},
 	}
 	state.Gaps = []AgentCapabilityGap{
@@ -181,7 +218,10 @@ func BuildAgentStateWithMemory(jobList []domain.Job, sources []Source, runs []do
 	if state.Workload.SourceIssues > 0 {
 		state.Mode = "needs_attention"
 		state.Focus = "Source health is blocking reliable monitoring."
-	} else if state.Workload.OpenTasks > 0 {
+	} else if state.Workload.PendingApprovals > 0 {
+		state.Mode = "waiting_approval"
+		state.Focus = "I have planned work waiting for your approval."
+	} else if state.Workload.OpenTasks > 0 || state.Workload.ActivePlans > 0 {
 		state.Mode = "on_duty"
 		state.Focus = "There is recruiting work waiting for your decision."
 	}
@@ -189,8 +229,19 @@ func BuildAgentStateWithMemory(jobList []domain.Job, sources []Source, runs []do
 }
 
 func BuildAgentMemory(snapshots []AgentReviewSnapshot, events []AgentEvent) AgentMemory {
+	return BuildAgentMemoryWithSemanticStats(snapshots, events, SemanticMemoryStats{})
+}
+
+func BuildAgentMemoryWithSemanticStats(snapshots []AgentReviewSnapshot, events []AgentEvent, semanticStats SemanticMemoryStats) AgentMemory {
 	memory := AgentMemory{
-		TrendSummary: "No review memory yet. Save or generate a review snapshot after meaningful work.",
+		TrendSummary:       "No review memory yet. Save or generate a review snapshot after meaningful work.",
+		SemanticProvider:   defaultText(semanticStats.Provider, SemanticMemoryProvider),
+		SemanticDimension:  semanticStats.Dimension,
+		SemanticTotalItems: semanticStats.TotalItems,
+		SemanticJobItems:   semanticStats.JobItems,
+	}
+	if memory.SemanticDimension == 0 {
+		memory.SemanticDimension = SemanticMemoryDimensions
 	}
 	if len(snapshots) > 0 {
 		latest := snapshots[0]
@@ -207,6 +258,20 @@ func BuildAgentMemory(snapshots []AgentReviewSnapshot, events []AgentEvent) Agen
 		}
 	}
 	return memory
+}
+
+func semanticMemoryCapabilityLevel(stats SemanticMemoryStats) int {
+	if stats.TotalItems > 0 {
+		return 72
+	}
+	return 35
+}
+
+func semanticMemoryEvidence(stats SemanticMemoryStats) string {
+	if stats.TotalItems == 0 {
+		return "No vectorized memory yet"
+	}
+	return itoa(stats.TotalItems) + " vectorized memories / " + itoa(stats.JobItems) + " job memories"
 }
 
 func buildOperatingCycle(schedule []string) []AgentOperatingMoment {

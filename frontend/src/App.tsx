@@ -6,6 +6,7 @@ import {
   getAutomationStatus,
   getAgentChatStatus,
   checkAgentChatModel,
+  createTodayAgentPlan,
   getAgentBriefing,
   getAgentDutyReport,
   getAgentReview,
@@ -35,7 +36,9 @@ import {
   runAgentCommand,
   runRecommendedCrawl,
   runSourceDiscovery,
+  rebuildSemanticMemory,
   saveAgentReviewSnapshot,
+  searchSemanticMemory,
   sendFeishuReport,
   sendFeishuTest,
   seedRecommendedSources,
@@ -53,7 +56,7 @@ import {
   rejectSourceCandidate,
 } from "./api";
 import { DigitalEmployee3D } from "./DigitalEmployee3D";
-import type { AgentActionRequest, AgentAutomationDiagnostics, AgentBriefing, AgentChatHealthcheck, AgentChatMessage, AgentChatStatus, AgentCommandResult, AgentDutyReport, AgentEvent, AgentPlan, AgentReview, AgentReviewHistory, AgentState, AgentTask, ApplicationPlan, CandidateProfile, Company, Job, JobDetail, JobRun, JobRunSource, JobStatus, RunSummary, Settings, Source, SourceCandidate, SourceOperationsSummary } from "./types";
+import type { AgentActionRequest, AgentAutomationDiagnostics, AgentBriefing, AgentChatHealthcheck, AgentChatMessage, AgentChatStatus, AgentCommandResult, AgentDutyReport, AgentEvent, AgentPlan, AgentReview, AgentReviewHistory, AgentState, AgentTask, ApplicationPlan, CandidateProfile, Company, Job, JobDetail, JobRun, JobRunSource, JobStatus, RunSummary, SemanticMemoryMatch, Settings, Source, SourceCandidate, SourceOperationsSummary } from "./types";
 
 const statusLabels: Record<JobStatus | "all", string> = {
   all: "All",
@@ -72,12 +75,13 @@ const sourceHealthLabels: Record<string, string> = {
   unknown: "Unknown",
 };
 
-type AppView = "dashboard" | "opportunities" | "applications" | "profile" | "companies" | "runs" | "settings";
+type AppView = "dashboard" | "opportunities" | "applications" | "memory" | "profile" | "companies" | "runs" | "settings";
 
 const appViews: Array<{ id: AppView; label: string }> = [
   { id: "dashboard", label: "Dashboard" },
   { id: "opportunities", label: "Opportunities" },
   { id: "applications", label: "Applications" },
+  { id: "memory", label: "Memory" },
   { id: "profile", label: "Profile" },
   { id: "companies", label: "Companies" },
   { id: "runs", label: "Runs" },
@@ -198,6 +202,9 @@ export default function App() {
   const [chatMessages, setChatMessages] = useState<AgentChatMessage[]>([]);
   const [chatActions, setChatActions] = useState<AgentCommandResult["actions"]>([]);
   const [chatText, setChatText] = useState("");
+  const [memoryQuery, setMemoryQuery] = useState("Go backend AI application Shenzhen");
+  const [memoryMatches, setMemoryMatches] = useState<SemanticMemoryMatch[]>([]);
+  const [memoryBusy, setMemoryBusy] = useState(false);
   const [chatOpen, setChatOpen] = useState(true);
   const [chatSending, setChatSending] = useState(false);
   const [checkingModel, setCheckingModel] = useState(false);
@@ -209,6 +216,7 @@ export default function App() {
   const [commandResult, setCommandResult] = useState<AgentCommandResult | null>(null);
   const [runningCommand, setRunningCommand] = useState(false);
   const [savingReviewSnapshot, setSavingReviewSnapshot] = useState(false);
+  const [planningToday, setPlanningToday] = useState(false);
 
   async function refresh(nextStatus = status) {
     setError("");
@@ -1100,6 +1108,59 @@ export default function App() {
     }
   }
 
+  async function handleCreateTodayPlan() {
+    setPlanningToday(true);
+    setError("");
+    setNotice("");
+    try {
+      const plan = await createTodayAgentPlan();
+      await refreshAgentPlans();
+      await refreshAgentActionRequests();
+      await refreshAgentEvents();
+      setNotice(`Today's work plan created with ${plan.steps.length} steps.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not create today's work plan");
+    } finally {
+      setPlanningToday(false);
+    }
+  }
+
+  async function handleRebuildSemanticMemory() {
+    setMemoryBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const result = await rebuildSemanticMemory();
+      const matches = await searchSemanticMemory(memoryQuery);
+      setMemoryMatches(matches);
+      await refreshAgentState();
+      await refreshAgentEvents();
+      setNotice(`Semantic memory rebuilt: ${result.created} indexed, ${result.skipped} skipped.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not rebuild semantic memory");
+    } finally {
+      setMemoryBusy(false);
+    }
+  }
+
+  async function handleSearchSemanticMemory(event?: React.FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
+    const query = memoryQuery.trim();
+    if (!query) {
+      setMemoryMatches([]);
+      return;
+    }
+    setMemoryBusy(true);
+    setError("");
+    try {
+      setMemoryMatches(await searchSemanticMemory(query));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not search semantic memory");
+    } finally {
+      setMemoryBusy(false);
+    }
+  }
+
   async function handleApproveActionRequest(request: AgentActionRequest) {
     setError("");
     setNotice("");
@@ -1115,6 +1176,9 @@ export default function App() {
 
   async function handleApprovedActionNavigation(action: string) {
     switch (action) {
+      case "add_recommended_and_crawl":
+        setActiveView("companies");
+        return;
       case "review_manual_check":
         setActiveView("opportunities");
         setScoreView("all");
@@ -1224,7 +1288,7 @@ export default function App() {
 
             <ProductReadinessPanel items={readinessItems} busy={running || seedingSources || recommendedRunning} />
 
-            <AgentWorkPlansPanel plans={agentPlans} />
+            <AgentWorkPlansPanel plans={agentPlans} onCreateTodayPlan={handleCreateTodayPlan} busy={planningToday} />
 
             <AgentActionRequestsPanel
               requests={agentActionRequests}
@@ -1296,6 +1360,72 @@ export default function App() {
               onRunCommand={handleRunAgentCommand}
             />
           )}
+        </section>
+      )}
+
+      {activeView === "memory" && (
+        <section className="content-stack">
+          <section className="panel">
+            <div className="panel-heading">
+              <div>
+                <h2>Semantic Memory</h2>
+                <p>Vectorized local memory for jobs, preferences, and agent retrieval.</p>
+              </div>
+              <button className="secondary-button" onClick={handleRebuildSemanticMemory} disabled={memoryBusy}>
+                {memoryBusy ? "Indexing..." : "Rebuild Index"}
+              </button>
+            </div>
+            <div className="summary-grid compact-grid">
+              <Metric label="Memory items" value={agentState?.memory.semantic_total_items ?? 0} />
+              <Metric label="Job memories" value={agentState?.memory.semantic_job_items ?? 0} />
+              <Metric label="Provider" value={agentState?.memory.semantic_provider || "local_hash"} />
+              <Metric label="Dimension" value={agentState?.memory.semantic_dimension || 64} />
+            </div>
+            <form className="memory-search" onSubmit={handleSearchSemanticMemory}>
+              <input
+                value={memoryQuery}
+                onChange={(event) => setMemoryQuery(event.target.value)}
+                placeholder="Search by intent, e.g. Go backend AI application Shenzhen"
+              />
+              <button type="submit" disabled={memoryBusy}>
+                Search
+              </button>
+            </form>
+          </section>
+
+          <section className="panel">
+            <div className="panel-heading">
+              <div>
+                <h2>Retrieved Memories</h2>
+                <p>{memoryMatches.length} semantic matches</p>
+              </div>
+            </div>
+            <div className="memory-results">
+              {memoryMatches.length === 0 && <p className="empty-state">No semantic matches yet. Rebuild the index, then search by intent.</p>}
+              {memoryMatches.map((match) => (
+                <article className="memory-result" key={`${match.kind}-${match.reference_id}`}>
+                  <div className="memory-result-main">
+                    <span className="score-pill">{Math.round(match.score * 100)}</span>
+                    <div>
+                      <h3>{match.title || `${match.kind} #${match.reference_id}`}</h3>
+                      <p>{compactMemoryContent(match.content)}</p>
+                      <div className="job-reasons">
+                        <span>{match.kind}</span>
+                        {match.metadata.city && <span>{match.metadata.city}</span>}
+                        {match.metadata.status && <span>{match.metadata.status}</span>}
+                        {match.metadata.score && <span>score {match.metadata.score}</span>}
+                      </div>
+                    </div>
+                  </div>
+                  {match.kind === "job" && (
+                    <button className="ghost-button" onClick={() => handleOpenJobDetail(match.reference_id)}>
+                      Open
+                    </button>
+                  )}
+                </article>
+              ))}
+            </div>
+          </section>
         </section>
       )}
 
@@ -2613,6 +2743,8 @@ function AgentEmployeeSidebar({
 
       <div className="employee-workload">
         <Metric label="Open tasks" value={state.workload.open_tasks} />
+        <Metric label="Plans" value={state.workload.active_plans} />
+        <Metric label="Approvals" value={state.workload.pending_approvals} />
         <Metric label="Strong" value={state.workload.strong_matches} />
         <Metric label="Decisions" value={state.workload.manual_decisions} />
         <Metric label="Source issues" value={state.workload.source_issues} />
@@ -2892,7 +3024,15 @@ function AgentActionRequestsPanel({
   );
 }
 
-function AgentWorkPlansPanel({ plans }: { plans: AgentPlan[] }) {
+function AgentWorkPlansPanel({
+  plans,
+  onCreateTodayPlan,
+  busy,
+}: {
+  plans: AgentPlan[];
+  onCreateTodayPlan: () => void | Promise<void>;
+  busy: boolean;
+}) {
   const visiblePlans = plans.slice(0, 4);
   return (
     <section className="agent-plans-panel">
@@ -2901,6 +3041,9 @@ function AgentWorkPlansPanel({ plans }: { plans: AgentPlan[] }) {
           <h2>Work Plans</h2>
           <span>{plans.length} recent plans</span>
         </div>
+        <button type="button" onClick={onCreateTodayPlan} disabled={busy}>
+          {busy ? "Planning..." : "Plan Today"}
+        </button>
       </div>
       <div className="agent-plan-list">
         {visiblePlans.map((plan) => (
@@ -2914,11 +3057,12 @@ function AgentWorkPlansPanel({ plans }: { plans: AgentPlan[] }) {
             </div>
             <div className="agent-plan-steps">
               {(plan.steps || []).map((step) => (
-                <div className="agent-plan-step" key={`${plan.id}-${step.order}-${step.action_type}`}>
+                <div className={`agent-plan-step step-${step.status}`} key={`${plan.id}-${step.order}-${step.action_type}`}>
                   <span>{step.order}</span>
                   <div>
                     <strong>{formatActionLabel(step.action_type)}</strong>
                     <small>{step.detail || step.target || "No detail recorded."}</small>
+                    {step.message && <small className="step-message">{step.message}</small>}
                   </div>
                 </div>
               ))}
@@ -3082,6 +3226,14 @@ function formatExecutionStatus(status: string) {
     not_run: "Not run",
   };
   return labels[status] || status.replace(/_/g, " ");
+}
+
+function compactMemoryContent(value: string) {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= 220) {
+    return normalized;
+  }
+  return `${normalized.slice(0, 220)}...`;
 }
 
 function formatProviderLabel(provider: string) {

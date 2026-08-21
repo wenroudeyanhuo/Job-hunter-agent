@@ -1,6 +1,9 @@
 package jobs
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestParseModelActionReplyAllowsWhitelistedActions(t *testing.T) {
 	reply := `{"content":"我建议先同步投递计划，再刷新任务。","actions":[{"type":"sync_application_plans","target":"applications","detail":"准备投递工作台"},{"type":"refresh_tasks","target":"tasks","detail":"更新今日任务"}]}`
@@ -26,5 +29,32 @@ func TestParseModelActionReplyRejectsUnsafeActions(t *testing.T) {
 	}
 	if parsed.Actions[0].Type != "send_feishu_report" {
 		t.Fatalf("expected safe feishu action, got %#v", parsed.Actions)
+	}
+}
+
+func TestParseModelActionReplyAllowsRecommendedSourceBootstrap(t *testing.T) {
+	reply := `{"content":"I should bootstrap the source pool first.","actions":[{"type":"add_recommended_and_crawl","target":"sources","detail":"Add recommended sources and run the first crawl."}]}`
+
+	parsed := ParseModelActionReply(reply)
+
+	if len(parsed.Actions) != 1 || parsed.Actions[0].Type != "add_recommended_and_crawl" {
+		t.Fatalf("expected recommended source bootstrap action, got %#v", parsed.Actions)
+	}
+}
+
+func TestModelActionPromptListIncludesEveryAllowedAction(t *testing.T) {
+	actions := AllowedModelActionTypes()
+	prompt := ModelActionPromptList()
+
+	if len(actions) == 0 {
+		t.Fatal("expected allowed model actions")
+	}
+	for _, action := range actions {
+		if !strings.Contains(prompt, action.Type) {
+			t.Fatalf("expected prompt list %q to include action %q", prompt, action.Type)
+		}
+	}
+	if !strings.Contains(prompt, "add_recommended_and_crawl") {
+		t.Fatalf("expected recommended bootstrap action in prompt list, got %q", prompt)
 	}
 }

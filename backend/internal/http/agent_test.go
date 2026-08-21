@@ -140,6 +140,49 @@ func TestAgentReviewAPI(t *testing.T) {
 	}
 }
 
+func TestCreateTodayAgentPlanAPI(t *testing.T) {
+	repo, handler := testRouter(t, nil)
+	if _, err := repo.CreateJob(t.Context(), domain.Job{
+		Company:    "Tencent",
+		Title:      "Go Backend Engineer",
+		City:       "Shenzhen",
+		MatchScore: 88,
+		Status:     domain.StatusNew,
+	}); err != nil {
+		t.Fatalf("seed job: %v", err)
+	}
+	if _, err := repo.CreateSource(t.Context(), jobs.SourceInput{
+		Name:       "Tencent Careers",
+		URL:        "https://careers.tencent.com/",
+		Enabled:    true,
+		ParserType: "tencent_api",
+	}); err != nil {
+		t.Fatalf("seed source: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/agent/plans/today", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var plan jobs.AgentPlan
+	if err := json.Unmarshal(rec.Body.Bytes(), &plan); err != nil {
+		t.Fatalf("decode plan: %v", err)
+	}
+	if plan.Goal != "今日秋招工作计划" || plan.Status != jobs.AgentPlanStatusWaitingApproval || len(plan.Steps) == 0 {
+		t.Fatalf("unexpected today plan: %#v", plan)
+	}
+	requests, err := repo.ListAgentActionRequests(t.Context(), jobs.AgentActionRequestStatusPending)
+	if err != nil {
+		t.Fatalf("list action requests: %v", err)
+	}
+	if len(requests) != len(plan.Steps) || requests[0].PlanID != plan.ID {
+		t.Fatalf("expected linked action requests, got %#v for plan %#v", requests, plan)
+	}
+}
+
 func TestAgentReviewSnapshotAndHistoryAPI(t *testing.T) {
 	repo, handler := testRouter(t, nil)
 	if _, err := repo.CreateJob(t.Context(), domain.Job{
@@ -391,6 +434,46 @@ func TestAgentStateAPIReportsDigitalEmployeeReadiness(t *testing.T) {
 	}
 }
 
+func TestAgentStateAPIIncludesPlanWorkload(t *testing.T) {
+	repo, handler := testRouter(t, nil)
+	plan, err := repo.CreateAgentPlan(t.Context(), jobs.AgentPlanInput{
+		Source:        "automation",
+		Goal:          "daily plan",
+		Summary:       "Plan the day.",
+		RiskLevel:     jobs.AgentPlanRiskApprovalRequired,
+		NeedsApproval: true,
+		Steps: []jobs.AgentPlanStep{
+			{ActionType: "run_crawl", Target: "sources", Detail: "Run a manual crawl."},
+		},
+	})
+	if err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+	if err := repo.RecordAgentActionRequestsForPlan(t.Context(), plan.ID, plan.Source, []jobs.AgentCommandAction{
+		{Type: "run_crawl", Target: "sources", Detail: "Run a manual crawl."},
+	}); err != nil {
+		t.Fatalf("record action request: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/agent/state", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var response jobs.AgentState
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode state: %v", err)
+	}
+	if response.Workload.ActivePlans != 1 || response.Workload.PendingApprovals != 1 {
+		t.Fatalf("expected active plan and pending approval workload, got %#v", response.Workload)
+	}
+	if !containsCapability(response.Capabilities, "planning") {
+		t.Fatalf("expected planning capability, got %#v", response.Capabilities)
+	}
+}
+
 func TestAgentStateAPIIncludesMemoryFromReviewSnapshots(t *testing.T) {
 	repo, handler := testRouter(t, nil)
 	first := jobs.BuildAgentReview([]domain.Job{
@@ -425,6 +508,15 @@ func TestAgentStateAPIIncludesMemoryFromReviewSnapshots(t *testing.T) {
 	if !strings.Contains(response.Memory.TrendSummary, "strong matches +1") {
 		t.Fatalf("expected trend summary in memory, got %q", response.Memory.TrendSummary)
 	}
+}
+
+func containsCapability(items []jobs.AgentCapability, key string) bool {
+	for _, item := range items {
+		if item.Key == key {
+			return true
+		}
+	}
+	return false
 }
 
 func TestAgentCommandAPIUpdatesPreferencesAndRefreshesTasks(t *testing.T) {
