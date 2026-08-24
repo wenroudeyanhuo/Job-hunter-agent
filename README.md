@@ -22,6 +22,7 @@ Early MVP. The current version provides a Go backend foundation, SQLite persiste
 - Application Kanban workspace for turning interested strong matches into human-approved application preparation plans, resume-version notes, draft notes, and follow-up dates.
 - Daily agent task queue generated from recommended jobs, manual decisions, source issues, and crawl history.
 - Digital employee sidebar with an agent profile, avatar, maturity score, capability map, operating cycle, and mainstream capability gaps.
+- Multi-agent recruiting runtime with Source Scout, Job Analyst, Memory Keeper, and Planner roles, plus an Eino-ready orchestration boundary.
 - Command Center for rule-based natural-language workflow commands such as changing target cities/directions, refreshing tasks, running a crawl, and sending Feishu reports.
 - Global digital employee chat with a persistent 3D avatar, local rule fallback, saved chat history, recent-conversation model context, optional OpenAI-compatible or DeepSeek model mode, and safe whitelisted action suggestions.
 - Local semantic memory with deterministic hash embeddings, automatic job-memory sync, a rebuildable memory index, semantic search API, and retrieved memories injected into local/model chat context.
