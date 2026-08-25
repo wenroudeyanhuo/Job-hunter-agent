@@ -18,6 +18,24 @@ Job Hunter Agent is a local-first recruiting digital employee. It discovers recr
 - Approval-gated Agent Tool Registry so suggested actions are reviewed before execution.
 - Local semantic memory by default, with optional Qdrant vector search for personal deployments and provider hooks for future DeepSeek embeddings / pgvector.
 
+## Architecture
+
+```mermaid
+flowchart LR
+  Sources["Public sources<br/>career sites, job platforms, manual URLs"] --> Backend["Go backend<br/>crawl, parse, score, agent runtime"]
+  Backend --> SQLite["SQLite<br/>jobs, tasks, plans, cycles, decisions"]
+  SQLite --> Dashboard["React dashboard<br/>opportunities, tasks, approvals, memory"]
+  SQLite --> Agent["Digital employee<br/>Source Scout / Job Analyst / Memory Keeper / Planner / Observer"]
+  Agent --> Approval["Human approval gate<br/>Suggested Actions"]
+  Approval --> Tools["Tool Executor<br/>crawl, validate sources, refresh tasks, send reports"]
+  Tools --> SQLite
+  Agent -. optional .-> Model["DeepSeek / OpenAI-compatible model"]
+  SQLite -. optional .-> Qdrant["Qdrant vector search"]
+  Tools -. optional .-> Feishu["Feishu bot"]
+```
+
+See the full architecture guide: [docs/architecture.md](docs/architecture.md)
+
 ## Quick Start / 快速开始
 
 Backend:
@@ -51,6 +69,7 @@ docker compose up --build
 
 - [中文文档](README.zh-CN.md)
 - [English README](README.en.md)
+- [Architecture](docs/architecture.md)
 - [Open source setup guide](docs/open-source-setup.md)
 - [Multi-Agent and Eino roadmap](docs/multi-agent-eino-roadmap.md)
 - [数字员工产品化路线图](docs/product-agent-roadmap.zh-CN.md)
