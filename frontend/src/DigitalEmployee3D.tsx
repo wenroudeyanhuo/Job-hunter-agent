@@ -24,7 +24,7 @@ export function DigitalEmployee3D({ active, thinking }: DigitalEmployee3DProps) 
   return (
     <div
       className={`employee-avatar-stage ${active ? "avatar-active" : ""} ${thinking ? "avatar-thinking" : ""}`}
-      aria-label="Digital employee avatar"
+      aria-label="avatar"
       onPointerLeave={() => setGaze({ x: 0, y: 0 })}
       onPointerMove={handlePointerMove}
     >

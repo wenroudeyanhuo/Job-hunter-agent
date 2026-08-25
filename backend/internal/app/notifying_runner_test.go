@@ -37,7 +37,7 @@ func TestNotifyingRunnerSendsFeishuSummary(t *testing.T) {
 			City:       "Shenzhen",
 			MatchScore: 90,
 		}},
-	}}, nil, server.URL)
+	}}, nil, server.URL, nil)
 
 	if _, err := runner.Run(context.Background(), "manual"); err != nil {
 		t.Fatalf("run: %v", err)
@@ -57,7 +57,7 @@ func TestNotifyingRunnerSkipsEmptySummary(t *testing.T) {
 	}))
 	defer server.Close()
 
-	runner := newNotifyingRunner(fakeSummaryRunner{summary: crawl.RunSummary{}}, nil, server.URL)
+	runner := newNotifyingRunner(fakeSummaryRunner{summary: crawl.RunSummary{}}, nil, server.URL, nil)
 	if _, err := runner.Run(context.Background(), "manual"); err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -85,12 +85,41 @@ func TestNotifyingRunnerUsesSavedFeishuWebhook(t *testing.T) {
 		t.Fatalf("save settings: %v", err)
 	}
 
-	runner := newNotifyingRunner(fakeSummaryRunner{summary: crawl.RunSummary{JobsCreated: 1}}, repo, "")
+	runner := newNotifyingRunner(fakeSummaryRunner{summary: crawl.RunSummary{JobsCreated: 1}}, repo, "", nil)
 	if _, err := runner.Run(context.Background(), "manual"); err != nil {
 		t.Fatalf("run: %v", err)
 	}
 	if !called {
 		t.Fatal("expected saved Feishu webhook to be called")
+	}
+}
+
+func TestNotifyingRunnerRecordsCycleForScheduledRuns(t *testing.T) {
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	repo := jobs.NewRepository(conn)
+	if _, err := repo.CreateJob(context.Background(), domain.Job{
+		Company:    "Tencent",
+		Title:      "Go Backend Engineer",
+		City:       "Shenzhen",
+		MatchScore: 90,
+		Status:     domain.StatusNew,
+	}); err != nil {
+		t.Fatalf("seed job: %v", err)
+	}
+
+	runner := newNotifyingRunner(fakeSummaryRunner{summary: crawl.RunSummary{JobsCreated: 1}}, repo, "", nil)
+	if _, err := runner.Run(context.Background(), "scheduled_09:00"); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	cycles, err := repo.ListAgentCycles(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("list cycles: %v", err)
+	}
+	if len(cycles) != 1 || len(cycles[0].Trace) != 4 {
+		t.Fatalf("expected scheduled run to record a cycle, got %#v", cycles)
 	}
 }
 

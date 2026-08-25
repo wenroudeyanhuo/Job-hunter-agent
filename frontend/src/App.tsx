@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
+import { useLang } from "./useLang";
+import type { TranslationKey } from "./i18n";
 import {
   acceptSourceCandidate,
   cleanupLandingPages,
   createSource,
   getAutomationStatus,
+  getAgentChatConfig,
   getAgentChatStatus,
   checkAgentChatModel,
   createTodayAgentPlan,
@@ -18,6 +21,7 @@ import {
   getSourceOperations,
   importURL,
   listAgentActionRequests,
+  listAgentCycles,
   listAgentEvents,
   listAgentChatMessages,
   listAgentPlans,
@@ -32,6 +36,7 @@ import {
   refreshAgentTasks,
   runAutomationDutyReport,
   runAgentChat,
+  runAgentCycle,
   runCrawl,
   runAgentCommand,
   runRecommendedCrawl,
@@ -43,6 +48,7 @@ import {
   sendFeishuTest,
   seedRecommendedSources,
   syncApplicationPlans,
+  updateAgentChatConfig,
   updateAgentTaskStatus,
   updateAgentActionRequest,
   updateApplicationPlan,
@@ -56,53 +62,55 @@ import {
   rejectSourceCandidate,
 } from "./api";
 import { DigitalEmployee3D } from "./DigitalEmployee3D";
-import type { AgentActionRequest, AgentAutomationDiagnostics, AgentBriefing, AgentChatHealthcheck, AgentChatMessage, AgentChatStatus, AgentCommandResult, AgentDutyReport, AgentEvent, AgentPlan, AgentReview, AgentReviewHistory, AgentState, AgentTask, ApplicationPlan, CandidateProfile, Company, Job, JobDetail, JobRun, JobRunSource, JobStatus, RunSummary, SemanticMemoryMatch, Settings, Source, SourceCandidate, SourceOperationsSummary } from "./types";
-
-const statusLabels: Record<JobStatus | "all", string> = {
-  all: "All",
-  new: "New",
-  interested: "Interested",
-  applied: "Applied",
-  ignored: "Ignored",
-  manual_check: "Manual check",
-  expired: "Expired",
-};
-
-const sourceHealthLabels: Record<string, string> = {
-  healthy: "Healthy",
-  warning: "Warning",
-  broken: "Broken",
-  unknown: "Unknown",
-};
+import type { AgentActionRequest, AgentAutomationDiagnostics, AgentBriefing, AgentChatHealthcheck, AgentChatMessage, AgentChatStatus, AgentCommandResult, AgentCycleRecord, AgentDutyReport, AgentEvent, AgentPlan, AgentReview, AgentReviewHistory, AgentState, AgentTask, ApplicationPlan, CandidateProfile, Company, Job, JobDetail, JobRun, JobRunSource, JobStatus, LLMConfig, RunSummary, SemanticMemoryMatch, Settings, Source, SourceCandidate, SourceOperationsSummary } from "./types";
 
 type AppView = "dashboard" | "opportunities" | "applications" | "memory" | "profile" | "companies" | "runs" | "settings";
 
-const appViews: Array<{ id: AppView; label: string }> = [
-  { id: "dashboard", label: "Dashboard" },
-  { id: "opportunities", label: "Opportunities" },
-  { id: "applications", label: "Applications" },
-  { id: "memory", label: "Memory" },
-  { id: "profile", label: "Profile" },
-  { id: "companies", label: "Companies" },
-  { id: "runs", label: "Runs" },
-  { id: "settings", label: "Settings" },
-];
+const statusLabelKeys: Record<JobStatus | "all", TranslationKey> = {
+  all: "status.all",
+  new: "status.new",
+  interested: "status.interested",
+  applied: "status.applied",
+  ignored: "status.ignored",
+  manual_check: "status.manualCheck",
+  expired: "status.expired",
+};
 
-const categoryLabels: Record<string, string> = {
-  all: "All categories",
-  internet: "Internet",
-  ai: "AI",
-  hardware: "Hardware",
-  fintech: "Fintech",
-  game: "Games",
-  new_energy: "New energy",
-  software: "Software",
-  security: "Security",
-  logistics: "Logistics",
-  medical: "Medical",
-  manufacturing: "Manufacturing",
-  custom: "Custom",
-  general: "General",
+const sourceHealthLabelKeys: Record<string, TranslationKey> = {
+  healthy: "health.healthy",
+  warning: "health.warning",
+  broken: "health.broken",
+  unknown: "health.unknown",
+};
+
+const appViewIds: AppView[] = ["dashboard", "opportunities", "applications", "memory", "profile", "companies", "runs", "settings"];
+
+const appViewLabelKeys: Record<AppView, TranslationKey> = {
+  dashboard: "view.dashboard",
+  opportunities: "view.opportunities",
+  applications: "view.applications",
+  memory: "view.memory",
+  profile: "view.profile",
+  companies: "view.companies",
+  runs: "view.runs",
+  settings: "view.settings",
+};
+
+const categoryLabelKeys: Record<string, TranslationKey> = {
+  all: "category.all",
+  internet: "category.internet",
+  ai: "category.ai",
+  hardware: "category.hardware",
+  fintech: "category.fintech",
+  game: "category.game",
+  new_energy: "category.newEnergy",
+  software: "category.software",
+  security: "category.security",
+  logistics: "category.logistics",
+  medical: "category.medical",
+  manufacturing: "category.manufacturing",
+  custom: "category.custom",
+  general: "category.general",
 };
 
 const directionOptions = ["all", "frontend", "backend", "java", "go", "algorithm", "ai_application"];
@@ -150,6 +158,7 @@ const defaultProfile: CandidateProfile = {
 };
 
 export default function App() {
+  const { lang, toggleLang, t } = useLang();
   const [activeView, setActiveView] = useState<AppView>("dashboard");
   const [jobs, setJobs] = useState<Job[]>([]);
   const [status, setStatus] = useState<JobStatus | "all">("all");
@@ -183,6 +192,9 @@ export default function App() {
   const [savingSettings, setSavingSettings] = useState(false);
   const [testingFeishu, setTestingFeishu] = useState(false);
   const [sendingFeishuReport, setSendingFeishuReport] = useState(false);
+  const [llmConfig, setLLMConfig] = useState<LLMConfig | null>(null);
+  const [llmDraft, setLLMDraft] = useState({ provider: "", apiKey: "", baseURL: "", model: "" });
+  const [savingLLM, setSavingLLM] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [lastRun, setLastRun] = useState<RunSummary | null>(null);
@@ -194,6 +206,7 @@ export default function App() {
   const [agentEvents, setAgentEvents] = useState<AgentEvent[]>([]);
   const [agentActionRequests, setAgentActionRequests] = useState<AgentActionRequest[]>([]);
   const [agentPlans, setAgentPlans] = useState<AgentPlan[]>([]);
+  const [agentCycles, setAgentCycles] = useState<AgentCycleRecord[]>([]);
   const [agentTasks, setAgentTasks] = useState<AgentTask[]>([]);
   const [applicationPlans, setApplicationPlans] = useState<ApplicationPlan[]>([]);
   const [automationStatus, setAutomationStatus] = useState<AgentAutomationDiagnostics | null>(null);
@@ -217,6 +230,7 @@ export default function App() {
   const [runningCommand, setRunningCommand] = useState(false);
   const [savingReviewSnapshot, setSavingReviewSnapshot] = useState(false);
   const [planningToday, setPlanningToday] = useState(false);
+  const [runningAgentCycle, setRunningAgentCycle] = useState(false);
 
   async function refresh(nextStatus = status) {
     setError("");
@@ -307,6 +321,11 @@ export default function App() {
     setAgentPlans(data);
   }
 
+  async function refreshAgentCycles() {
+    const data = await listAgentCycles();
+    setAgentCycles(data);
+  }
+
   async function refreshChat() {
     const [status, messages] = await Promise.all([getAgentChatStatus(), listAgentChatMessages()]);
     setChatStatus(status);
@@ -320,10 +339,10 @@ export default function App() {
     try {
       const result = await checkAgentChatModel();
       setChatHealthcheck(result);
-      setNotice(result.status === "ok" ? "Model healthcheck passed." : result.message);
+      setNotice(result.status === "ok" ? t("notice.modelCheckPassed") : result.message);
       await refreshChat();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not check model");
+      setError(err instanceof Error ? err.message : t("error.checkModel"));
     } finally {
       setCheckingModel(false);
     }
@@ -344,8 +363,34 @@ export default function App() {
     setAutomationStatus(data);
   }
 
+  async function refreshLLMConfig() {
+    const data = await getAgentChatConfig();
+    setLLMConfig(data);
+    setLLMDraft({ provider: data.provider, apiKey: "", baseURL: data.base_url, model: data.model });
+  }
+
+  async function handleSaveLLMConfig(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSavingLLM(true);
+    try {
+      const update: Record<string, string> = {};
+      if (llmDraft.provider) update.provider = llmDraft.provider;
+      if (llmDraft.apiKey) update.api_key = llmDraft.apiKey;
+      if (llmDraft.baseURL) update.base_url = llmDraft.baseURL;
+      if (llmDraft.model) update.model = llmDraft.model;
+      const saved = await updateAgentChatConfig(update);
+      setLLMConfig(saved);
+      setLLMDraft({ provider: saved.provider, apiKey: "", baseURL: saved.base_url, model: saved.model });
+      setNotice(t("model.noticeSaved"));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("model.errorSave"));
+    } finally {
+      setSavingLLM(false);
+    }
+  }
+
   useEffect(() => {
-    Promise.all([refresh(), refreshSources(), refreshSourceCandidates(), refreshSourceOperations(), refreshCompanies(), refreshRuns(), refreshSettings(), refreshProfile(), refreshBriefing(), refreshAgentState(), refreshDutyReport(), refreshAgentReview(), refreshAgentReviewHistory(), refreshAgentEvents(), refreshAgentActionRequests(), refreshAgentPlans(), refreshTasks(), refreshApplicationPlans(), refreshAutomationStatus(), refreshChat()])
+    Promise.all([refresh(), refreshSources(), refreshSourceCandidates(), refreshSourceOperations(), refreshCompanies(), refreshRuns(), refreshSettings(), refreshProfile(), refreshBriefing(), refreshAgentState(), refreshDutyReport(), refreshAgentReview(), refreshAgentReviewHistory(), refreshAgentEvents(), refreshAgentActionRequests(), refreshAgentPlans(), refreshAgentCycles(), refreshTasks(), refreshApplicationPlans(), refreshAutomationStatus(), refreshChat(), refreshLLMConfig()])
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
@@ -395,42 +440,42 @@ export default function App() {
   const readinessItems = [
     {
       id: "company_scope",
-      label: "Company scope",
-      detail: companies.length > 0 ? `${enabledCompanies} enabled companies` : "No company pool yet",
+      label: t("companyScope.label"),
+      detail: companies.length > 0 ? t("companyScope.detailHas", { count: enabledCompanies }) : t("companyScope.detailEmpty"),
       done: companies.length > 0 && enabledCompanies > 0,
-      actionLabel: companies.length > 0 ? "Manage" : "Add companies",
+      actionLabel: companies.length > 0 ? t("companyScope.actionManage") : t("companyScope.actionAdd"),
       action: () => setActiveView("companies"),
     },
     {
       id: "preferences",
-      label: "Preferences",
-      detail: `${settings.target_cities.join(", ")} / ${settings.target_directions.length} directions`,
+      label: t("preferences.label"),
+      detail: `${settings.target_cities.join(", ")} / ${settings.target_directions.length} ${t("settings.directions")}`,
       done: settings.target_cities.length > 0 && settings.target_directions.length > 0,
-      actionLabel: "Edit",
+      actionLabel: t("preferences.actionEdit"),
       action: () => setActiveView("settings"),
     },
     {
       id: "candidate_profile",
-      label: "Candidate profile",
-      detail: `${profile.skills.length} skills / ${profile.preferred_companies.length} preferred companies`,
+      label: t("candidateProfile.label"),
+      detail: `${profile.skills.length} ${t("profile.skills")} / ${profile.preferred_companies.length} ${t("profile.preferredCompanies")}`,
       done: profile.skills.length > 0 && profile.target_directions.length > 0,
-      actionLabel: "Profile",
+      actionLabel: t("candidateProfile.actionProfile"),
       action: () => setActiveView("profile"),
     },
     {
       id: "crawl_history",
-      label: "Crawl history",
-      detail: runs.length > 0 ? `${runs.length} recorded runs` : "No crawl run yet",
+      label: t("crawlHistory.label"),
+      detail: runs.length > 0 ? t("crawlHistory.detailHas", { count: runs.length }) : t("crawlHistory.detailEmpty"),
       done: runs.length > 0,
-      actionLabel: runs.length > 0 ? "View runs" : "Run crawl",
+      actionLabel: runs.length > 0 ? t("crawlHistory.actionViewRuns") : t("crawlHistory.actionRunCrawl"),
       action: runs.length > 0 ? () => setActiveView("runs") : handleRunCrawl,
     },
     {
       id: "feishu",
-      label: "Feishu",
-      detail: settings.feishu_configured ? "Webhook configured" : "Webhook not configured",
+      label: t("feishu.label"),
+      detail: settings.feishu_configured ? t("feishu.configured") : t("feishu.notConfigured"),
       done: settings.feishu_configured,
-      actionLabel: "Settings",
+      actionLabel: t("feishu.actionSettings"),
       action: () => setActiveView("settings"),
     },
   ];
@@ -455,7 +500,7 @@ export default function App() {
         setActiveView("opportunities");
         setScoreView("all");
         await handleStatusFilter("manual_check");
-        setNotice("Showing jobs that need manual review.");
+        setNotice(t("notice.manualReview"));
         return;
       case "review_low_confidence":
         setActiveView("opportunities");
@@ -463,7 +508,7 @@ export default function App() {
         setDirection("all");
         setScoreView("low_confidence");
         await refresh("manual_check");
-        setNotice("Showing low-confidence pages that need a human decision.");
+        setNotice(t("notice.lowConfidence"));
         return;
       case "cleanup_landing_pages":
         await handleCleanupLandingPages();
@@ -478,7 +523,7 @@ export default function App() {
         return;
       case "follow_up_application":
         setActiveView("applications");
-        setNotice("Opened application follow-up workspace.");
+        setNotice(t("notice.openedFollowUp"));
         return;
       case "discover_sources":
         setActiveView("companies");
@@ -490,17 +535,17 @@ export default function App() {
         setDirection("all");
         setScoreView("strong");
         await refresh("all");
-        setNotice("Showing strong matches from the agent briefing.");
+        setNotice(t("notice.strongMatches"));
         return;
       case "inspect_failed_sources":
         setActiveView("runs");
         if (runs.length > 0) {
           await selectRun(runs[0].id);
-          setNotice("Opened the latest crawl run. Check source errors below.");
+          setNotice(t("notice.openedLatestRun"));
         }
         return;
       default:
-        setNotice("The agent will keep monitoring your pipeline.");
+        setNotice(t("notice.monitoring"));
     }
   }
 
@@ -510,7 +555,7 @@ export default function App() {
     try {
       const summary = await runCrawl();
       setLastRun(summary);
-      setNotice(`Crawl finished. Created ${summary.jobs_created} jobs and cleaned ${summary.landing_pages_ignored} landing pages.`);
+      setNotice(t("notice.crawlFinished", { created: summary.jobs_created, cleaned: summary.landing_pages_ignored }));
       await refresh();
       await refreshRuns();
       await refreshBriefing();
@@ -521,7 +566,7 @@ export default function App() {
       await refreshTasks();
       await refreshAgentState();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Run failed");
+      setError(err instanceof Error ? err.message : t("error.runFailed"));
     } finally {
       setRunning(false);
     }
@@ -531,7 +576,7 @@ export default function App() {
     event.preventDefault();
     const value = importURLValue.trim();
     if (!value) {
-      setError("Paste a recruitment URL first.");
+      setError(t("error.pasteUrl"));
       return;
     }
     setImporting(true);
@@ -542,10 +587,10 @@ export default function App() {
       setImportURLValue("");
       setNotice(
         result.duplicate
-          ? "This link was already tracked. Existing job is shown in the list."
+          ? t("notice.duplicateLink")
           : result.manual_only
-            ? "Saved for manual check because the page could not be fully read."
-            : "Imported and scored the link.",
+            ? t("notice.manualOnly")
+            : t("notice.imported"),
       );
       await refresh();
       await refreshBriefing();
@@ -556,7 +601,7 @@ export default function App() {
       await refreshTasks();
       await refreshAgentState();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Import failed");
+      setError(err instanceof Error ? err.message : t("error.importFailed"));
     } finally {
       setImporting(false);
     }
@@ -570,8 +615,8 @@ export default function App() {
       const result = await cleanupLandingPages();
       setNotice(
         result.ignored > 0
-          ? `Moved ${result.ignored} recruitment landing pages to ignored.`
-          : "No recruitment landing pages needed cleanup.",
+          ? t("notice.cleanupMoved", { count: result.ignored })
+        : t("notice.cleanupNone"),
       );
       await refresh();
       await refreshBriefing();
@@ -582,7 +627,7 @@ export default function App() {
       await refreshTasks();
       await refreshAgentState();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Cleanup failed");
+      setError(err instanceof Error ? err.message : t("error.cleanupFailed"));
     } finally {
       setCleaningLandingPages(false);
     }
@@ -592,7 +637,7 @@ export default function App() {
     event.preventDefault();
     const value = sourceURLValue.trim();
     if (!value) {
-      setError("Paste a source URL first.");
+      setError(t("error.pasteSourceUrl"));
       return;
     }
     setAddingSource(true);
@@ -601,7 +646,7 @@ export default function App() {
     try {
       await createSource(value);
       setSourceURLValue("");
-      setNotice("Source added. It will be used by the next crawl run.");
+      setNotice(t("notice.sourceAdded"));
       await refreshSources();
       await refreshSourceOperations();
       await refreshCompanies();
@@ -611,7 +656,7 @@ export default function App() {
       await refreshAgentReviewHistory();
       await refreshAgentEvents();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not add source");
+      setError(err instanceof Error ? err.message : t("error.addSource"));
     } finally {
       setAddingSource(false);
     }
@@ -652,8 +697,8 @@ export default function App() {
       const result = await seedRecommendedSources();
       setNotice(
         result.created > 0
-          ? `Added ${result.created} recommended sources.`
-          : "Recommended sources were already added.",
+          ? t("notice.sourcesAdded", { count: result.created })
+      : t("notice.sourcesAlreadyAdded"),
       );
       await refreshSources();
       await refreshSourceOperations();
@@ -666,7 +711,7 @@ export default function App() {
       await refreshTasks();
       await refreshAgentState();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not add recommended sources");
+      setError(err instanceof Error ? err.message : t("error.addRecommended"));
     } finally {
       setSeedingSources(false);
     }
@@ -678,14 +723,14 @@ export default function App() {
     setNotice("");
     try {
       const result = await runSourceDiscovery(settings.target_cities, settings.target_directions);
-      setNotice(`Source discovery finished. Proposed ${result.created} new candidates and skipped ${result.duplicated} duplicates.`);
+      setNotice(t("notice.discoveryFinished", { created: result.created, duplicated: result.duplicated }));
       await refreshSourceCandidates();
       await refreshSourceOperations();
       await refreshAgentEvents();
       await refreshAgentReview();
       await refreshAgentReviewHistory();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not discover source candidates");
+      setError(err instanceof Error ? err.message : t("error.discoverSources"));
     } finally {
       setDiscoveringSources(false);
     }
@@ -696,7 +741,7 @@ export default function App() {
     setNotice("");
     try {
       await acceptSourceCandidate(candidate.id);
-      setNotice(`${candidate.name} accepted into active sources.`);
+      setNotice(t("notice.candidateAccepted", { name: candidate.name }));
       await refreshSourceCandidates();
       await refreshSources();
       await refreshSourceOperations();
@@ -707,7 +752,7 @@ export default function App() {
       await refreshAgentReviewHistory();
       await refreshAgentEvents();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not accept source candidate");
+      setError(err instanceof Error ? err.message : t("error.acceptCandidate"));
     }
   }
 
@@ -716,12 +761,12 @@ export default function App() {
     setNotice("");
     try {
       await rejectSourceCandidate(candidate.id);
-      setNotice(`${candidate.name} rejected.`);
+      setNotice(t("notice.candidateRejected", { name: candidate.name }));
       await refreshSourceCandidates();
       await refreshSourceOperations();
       await refreshAgentEvents();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not reject source candidate");
+      setError(err instanceof Error ? err.message : t("error.rejectCandidate"));
     }
   }
 
@@ -731,13 +776,13 @@ export default function App() {
     setNotice("");
     try {
       const validated = await validateSourceCandidate(candidate.id);
-      setNotice(`${candidate.name} checked: ${validated.validation_status}.`);
+      setNotice(t("notice.candidateValidated", { name: candidate.name, status: validated.validation_status }));
       await refreshSourceCandidates();
       await refreshSourceOperations();
       await refreshAgentEvents();
       await refreshAgentState();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not validate source candidate");
+      setError(err instanceof Error ? err.message : t("error.validateCandidate"));
     } finally {
       setValidatingSourceCandidateId(null);
     }
@@ -751,7 +796,7 @@ export default function App() {
       const result = await runRecommendedCrawl();
       setLastRun(result.summary);
       setNotice(
-        `Recommended crawl finished. Added ${result.sources.created} sources, created ${result.summary.jobs_created} jobs, and cleaned ${result.summary.landing_pages_ignored} landing pages.`,
+        t("notice.recommendedCrawlFinished", { sources: result.sources.created, jobs: result.summary.jobs_created, cleaned: result.summary.landing_pages_ignored }),
       );
       await refreshSources();
       await refreshCompanies();
@@ -765,7 +810,7 @@ export default function App() {
       await refreshTasks();
       await refreshAgentState();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Recommended crawl failed");
+      setError(err instanceof Error ? err.message : t("error.recommendedCrawl"));
     } finally {
       setRecommendedRunning(false);
     }
@@ -793,7 +838,7 @@ export default function App() {
       const nextSettings = normalizeSettings(saved);
       setSettings(nextSettings);
       setSettingsDraft(settingsToDraft(nextSettings));
-      setNotice("Settings saved. Future crawl and scoring steps can use these preferences.");
+      setNotice(t("notice.settingsSaved"));
       await refreshDutyReport();
       await refreshAgentReview();
       await refreshAgentReviewHistory();
@@ -801,7 +846,7 @@ export default function App() {
       await refreshAgentState();
       await refreshAutomationStatus();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save settings");
+      setError(err instanceof Error ? err.message : t("error.saveSettings"));
     } finally {
       setSavingSettings(false);
     }
@@ -827,13 +872,13 @@ export default function App() {
       const nextProfile = normalizeProfile(saved);
       setProfile(nextProfile);
       setProfileDraft(profileToDraft(nextProfile));
-      setNotice("Candidate profile saved. Job detail fit signals will use it immediately.");
+      setNotice(t("notice.profileSaved"));
       if (selectedJobDetail) {
         await handleOpenJobDetail(selectedJobDetail.job.id);
       }
       await refreshAgentEvents();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save candidate profile");
+      setError(err instanceof Error ? err.message : t("error.saveProfile"));
     } finally {
       setSavingProfile(false);
     }
@@ -845,11 +890,11 @@ export default function App() {
     setNotice("");
     try {
       await sendFeishuTest();
-      setNotice("Feishu test notification sent.");
+      setNotice(t("notice.feishuTestSent"));
       await refreshSettings();
       await refreshAutomationStatus();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not send Feishu test notification");
+      setError(err instanceof Error ? err.message : t("error.sendFeishuTest"));
     } finally {
       setTestingFeishu(false);
     }
@@ -861,14 +906,14 @@ export default function App() {
     setNotice("");
     try {
       await sendFeishuReport();
-      setNotice("Feishu duty report sent.");
+      setNotice(t("notice.feishuReportSent"));
       await refreshAgentEvents();
       await refreshDutyReport();
       await refreshAgentReview();
       await refreshAgentReviewHistory();
       await refreshAutomationStatus();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not send Feishu duty report");
+      setError(err instanceof Error ? err.message : t("error.sendFeishuReport"));
     } finally {
       setSendingFeishuReport(false);
     }
@@ -880,7 +925,7 @@ export default function App() {
     setNotice("");
     try {
       await runAutomationDutyReport();
-      setNotice("Automatic duty report sent.");
+      setNotice(t("notice.autoReportSent"));
       await refreshSettings();
       await refreshDutyReport();
       await refreshAgentReview();
@@ -889,7 +934,7 @@ export default function App() {
       await refreshAgentState();
       await refreshAutomationStatus();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not run automatic duty report");
+      setError(err instanceof Error ? err.message : t("error.runAutoReport"));
     } finally {
       setSendingFeishuReport(false);
     }
@@ -902,7 +947,7 @@ export default function App() {
     try {
       const tasks = await refreshAgentTasks();
       setAgentTasks(tasks);
-      setNotice("Daily tasks refreshed from the current recruiting pipeline.");
+      setNotice(t("notice.tasksRefreshed"));
       await refreshApplicationPlans();
       await refreshDutyReport();
       await refreshAgentReview();
@@ -910,7 +955,7 @@ export default function App() {
       await refreshAgentEvents();
       await refreshAgentState();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not refresh daily tasks");
+      setError(err instanceof Error ? err.message : t("error.refreshTasks"));
     } finally {
       setRefreshingTasks(false);
     }
@@ -929,9 +974,9 @@ export default function App() {
       await refreshAgentReviewHistory();
       await refreshAgentEvents();
       await refreshAgentState();
-      setNotice(`Application workspace synced with ${plans.length} plans.`);
+      setNotice(t("notice.plansSynced", { count: plans.length }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not sync application plans");
+      setError(err instanceof Error ? err.message : t("error.syncPlans"));
     } finally {
       setSyncingApplications(false);
     }
@@ -947,9 +992,9 @@ export default function App() {
       await refreshDutyReport();
       await refreshAgentEvents();
       await refreshAgentState();
-      setNotice(`Application plan updated to ${status}.`);
+      setNotice(t("notice.planStatusUpdated", { status }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not update application plan");
+      setError(err instanceof Error ? err.message : t("error.updatePlan"));
     }
   }
 
@@ -963,28 +1008,28 @@ export default function App() {
       await refreshDutyReport();
       await refreshAgentEvents();
       await refreshAgentState();
-      setNotice("Application plan metadata saved.");
+      setNotice(t("notice.planMetadataSaved"));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not update application plan");
+      setError(err instanceof Error ? err.message : t("error.updatePlan"));
     }
   }
 
   async function handleTaskDone(task: AgentTask) {
     await updateAgentTaskStatus(task.id, "done", { completion_reason: "Completed from dashboard" });
-    setNotice("Task completed.");
+    setNotice(t("notice.taskCompleted"));
     await refreshAfterTaskMutation();
   }
 
   async function handleTaskSnooze(task: AgentTask) {
     const snoozedUntil = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
     await updateAgentTaskStatus(task.id, "snoozed", { snoozed_until: snoozedUntil });
-    setNotice("Task snoozed for 24 hours.");
+    setNotice(t("notice.taskSnoozed"));
     await refreshAfterTaskMutation();
   }
 
   async function handleTaskIgnore(task: AgentTask) {
     await updateAgentTaskStatus(task.id, "done", { completion_reason: "Ignored from dashboard" });
-    setNotice("Task ignored.");
+    setNotice(t("notice.taskIgnored"));
     await refreshAfterTaskMutation();
   }
 
@@ -1002,7 +1047,7 @@ export default function App() {
     event.preventDefault();
     const value = commandText.trim();
     if (!value) {
-      setError("Type a command for the agent first.");
+      setError(t("error.typeCommand"));
       return;
     }
     setRunningCommand(true);
@@ -1012,7 +1057,7 @@ export default function App() {
       const result = await runAgentCommand(value);
       setCommandResult(result);
       setCommandText("");
-      setNotice(result.summary || "Command processed.");
+      setNotice(result.summary || t("notice.commandProcessed"));
       await refreshSettings();
       await refresh();
       await refreshSources();
@@ -1027,7 +1072,7 @@ export default function App() {
       await refreshAgentState();
       await refreshAutomationStatus();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not run command");
+      setError(err instanceof Error ? err.message : t("error.runCommand"));
     } finally {
       setRunningCommand(false);
     }
@@ -1059,7 +1104,7 @@ export default function App() {
       await refreshAgentPlans();
       await refreshAgentEvents();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not talk to the agent");
+      setError(err instanceof Error ? err.message : t("error.talkToAgent"));
     } finally {
       setChatSending(false);
     }
@@ -1077,7 +1122,7 @@ export default function App() {
       const detail = await getJobDetail(id);
       setSelectedJobDetail(detail);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not load job detail");
+      setError(err instanceof Error ? err.message : t("error.loadJobDetail"));
     } finally {
       setLoadingJobDetail(false);
     }
@@ -1088,7 +1133,7 @@ export default function App() {
     await refresh();
     await handleOpenJobDetail(job.id);
     await refreshAgentEvents();
-    setNotice("Job notes saved.");
+    setNotice(t("notice.jobNotesSaved"));
   }
 
   async function handleSaveReviewSnapshot() {
@@ -1100,9 +1145,9 @@ export default function App() {
       await refreshAgentReview();
       await refreshAgentReviewHistory();
       await refreshAgentEvents();
-      setNotice("Review snapshot saved for trend comparison.");
+      setNotice(t("notice.snapshotSaved"));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save review snapshot");
+      setError(err instanceof Error ? err.message : t("error.saveSnapshot"));
     } finally {
       setSavingReviewSnapshot(false);
     }
@@ -1117,9 +1162,9 @@ export default function App() {
       await refreshAgentPlans();
       await refreshAgentActionRequests();
       await refreshAgentEvents();
-      setNotice(`Today's work plan created with ${plan.steps.length} steps.`);
+      setNotice(t("notice.planCreated", { count: plan.steps.length }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not create today's work plan");
+      setError(err instanceof Error ? err.message : t("error.createPlan"));
     } finally {
       setPlanningToday(false);
     }
@@ -1135,9 +1180,9 @@ export default function App() {
       setMemoryMatches(matches);
       await refreshAgentState();
       await refreshAgentEvents();
-      setNotice(`Semantic memory rebuilt: ${result.created} indexed, ${result.skipped} skipped.`);
+      setNotice(t("notice.memoryRebuilt", { created: result.created, skipped: result.skipped }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not rebuild semantic memory");
+      setError(err instanceof Error ? err.message : t("error.rebuildMemory"));
     } finally {
       setMemoryBusy(false);
     }
@@ -1155,7 +1200,7 @@ export default function App() {
     try {
       setMemoryMatches(await searchSemanticMemory(query));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not search semantic memory");
+      setError(err instanceof Error ? err.message : t("error.searchMemory"));
     } finally {
       setMemoryBusy(false);
     }
@@ -1168,9 +1213,9 @@ export default function App() {
       await updateAgentActionRequest(request.id, "approved");
       await handleApprovedActionNavigation(request.action_type);
       await refreshAfterAgentActionExecution();
-      setNotice(`Agent action approved and executed: ${formatActionLabel(request.action_type)}.`);
+      setNotice(t("notice.actionApproved", { action: formatActionLabel(request.action_type, t) }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not approve agent action");
+      setError(err instanceof Error ? err.message : t("error.approveAction"));
     }
   }
 
@@ -1216,11 +1261,27 @@ export default function App() {
       refreshAgentEvents(),
       refreshAgentActionRequests(),
       refreshAgentPlans(),
+      refreshAgentCycles(),
       refreshTasks(),
       refreshApplicationPlans(),
       refreshAutomationStatus(),
       refreshAgentState(),
     ]);
+  }
+
+  async function handleRunAgentCycle() {
+    setRunningAgentCycle(true);
+    setError("");
+    setNotice("");
+    try {
+      const result = await runAgentCycle();
+      await Promise.all([refreshAgentCycles(), refreshAgentActionRequests(), refreshAgentPlans(), refreshAgentEvents(), refreshAgentState()]);
+      setNotice(`Agent cycle completed. ${result.action_requests_created} approval requests created.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not run agent cycle");
+    } finally {
+      setRunningAgentCycle(false);
+    }
   }
 
   async function handleDismissActionRequest(request: AgentActionRequest) {
@@ -1231,9 +1292,9 @@ export default function App() {
       await refreshAgentActionRequests();
       await refreshAgentPlans();
       await refreshAgentEvents();
-      setNotice(`Agent action dismissed: ${formatActionLabel(request.action_type)}.`);
+      setNotice(t("notice.actionDismissed", { action: formatActionLabel(request.action_type, t) }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not dismiss agent action");
+      setError(err instanceof Error ? err.message : t("error.dismissAction"));
     }
   }
 
@@ -1257,18 +1318,23 @@ export default function App() {
     <main className="app-shell">
       <header className="topbar">
         <div>
-          <h1>Job Hunter Agent</h1>
-          <p>Local autumn recruitment radar for Shenzhen-focused tech roles.</p>
+          <h1>{t("app.title")}</h1>
+          <p>{t("app.subtitle")}</p>
         </div>
-        <button className="primary-button" onClick={handleRunCrawl} disabled={running}>
-          {running ? "Running..." : "Run Crawl"}
-        </button>
+        <div className="topbar-actions">
+          <button className="lang-toggle" onClick={toggleLang} aria-label="Switch language">
+            {t("lang.toggle")}
+          </button>
+          <button className="primary-button" onClick={handleRunCrawl} disabled={running}>
+            {running ? t("action.running") : t("action.runCrawl")}
+          </button>
+        </div>
       </header>
 
-      <nav className="view-nav" aria-label="Primary views">
-        {appViews.map((view) => (
-          <button key={view.id} className={activeView === view.id ? "active-view" : ""} onClick={() => setActiveView(view.id)}>
-            {view.label}
+      <nav className="view-nav" aria-label={t("app.primaryViews")}>
+        {appViewIds.map((viewId) => (
+          <button key={viewId} className={activeView === viewId ? "active-view" : ""} onClick={() => setActiveView(viewId)}>
+            {t(appViewLabelKeys[viewId])}
           </button>
         ))}
       </nav>
@@ -1280,10 +1346,10 @@ export default function App() {
         <section className="dashboard-workbench">
           <div className="dashboard-main">
             <section className="summary-grid">
-              <Metric label="Tracked jobs" value={jobs.length} />
-              <Metric label="Strong matches" value={strongMatches} />
-              <Metric label="Enabled companies" value={enabledCompanies} />
-              <Metric label="Next runs" value={settings.crawl_schedule.join(" / ")} />
+              <Metric label={t("metric.trackedJobs")} value={jobs.length} />
+              <Metric label={t("metric.strongMatches")} value={strongMatches} />
+              <Metric label={t("metric.enabledCompanies")} value={enabledCompanies} />
+              <Metric label={t("metric.nextRuns")} value={settings.crawl_schedule.join(" / ")} />
             </section>
 
             <ProductReadinessPanel items={readinessItems} busy={running || seedingSources || recommendedRunning} />
@@ -1296,6 +1362,8 @@ export default function App() {
               onDismiss={handleDismissActionRequest}
               busy={running || recommendedRunning}
             />
+
+            <AgentCyclesPanel cycles={agentCycles} onRunCycle={handleRunAgentCycle} busy={runningAgentCycle} />
 
             {agentReview && (
               <AgentReviewPanel
@@ -1336,11 +1404,11 @@ export default function App() {
 
             {lastRun && (
               <section className="run-strip">
-                <span>Created {lastRun.jobs_created}</span>
-                <span>Duplicated {lastRun.jobs_duplicated}</span>
-                <span>Failed sources {lastRun.sources_failed}</span>
-                <span>Manual check {lastRun.manual_check_count}</span>
-                <span>Cleaned {lastRun.landing_pages_ignored}</span>
+                <span>{t("run.created", { count: lastRun.jobs_created })}</span>
+                <span>{t("run.duplicated", { count: lastRun.jobs_duplicated })}</span>
+                <span>{t("run.failedSources", { count: lastRun.sources_failed })}</span>
+                <span>{t("run.manualCheck", { count: lastRun.manual_check_count })}</span>
+                <span>{t("run.cleaned", { count: lastRun.landing_pages_ignored })}</span>
               </section>
             )}
           </div>
@@ -1368,27 +1436,27 @@ export default function App() {
           <section className="panel">
             <div className="panel-heading">
               <div>
-                <h2>Semantic Memory</h2>
-                <p>Vectorized local memory for jobs, preferences, and agent retrieval.</p>
+                <h2>{t("panel.semanticMemory")}</h2>
+                <p>{t("panel.semanticMemoryDesc")}</p>
               </div>
               <button className="secondary-button" onClick={handleRebuildSemanticMemory} disabled={memoryBusy}>
-                {memoryBusy ? "Indexing..." : "Rebuild Index"}
+                {memoryBusy ? t("action.indexing") : t("action.rebuildIndex")}
               </button>
             </div>
             <div className="summary-grid compact-grid">
-              <Metric label="Memory items" value={agentState?.memory.semantic_total_items ?? 0} />
-              <Metric label="Job memories" value={agentState?.memory.semantic_job_items ?? 0} />
-              <Metric label="Provider" value={agentState?.memory.semantic_provider || "local_hash"} />
-              <Metric label="Dimension" value={agentState?.memory.semantic_dimension || 64} />
+              <Metric label={t("metric.memoryItems")} value={agentState?.memory.semantic_total_items ?? 0} />
+              <Metric label={t("metric.jobMemories")} value={agentState?.memory.semantic_job_items ?? 0} />
+              <Metric label={t("metric.provider")} value={agentState?.memory.semantic_provider || "local_hash"} />
+              <Metric label={t("metric.dimension")} value={agentState?.memory.semantic_dimension || 64} />
             </div>
             <form className="memory-search" onSubmit={handleSearchSemanticMemory}>
               <input
                 value={memoryQuery}
                 onChange={(event) => setMemoryQuery(event.target.value)}
-                placeholder="Search by intent, e.g. Go backend AI application Shenzhen"
+                placeholder={t("placeholder.searchMemory")}
               />
               <button type="submit" disabled={memoryBusy}>
-                Search
+                {t("action.search")}
               </button>
             </form>
           </section>
@@ -1396,12 +1464,12 @@ export default function App() {
           <section className="panel">
             <div className="panel-heading">
               <div>
-                <h2>Retrieved Memories</h2>
-                <p>{memoryMatches.length} semantic matches</p>
+                <h2>{t("panel.retrievedMemories")}</h2>
+                <p>{t("panel.semanticMatches", { count: memoryMatches.length })}</p>
               </div>
             </div>
             <div className="memory-results">
-              {memoryMatches.length === 0 && <p className="empty-state">No semantic matches yet. Rebuild the index, then search by intent.</p>}
+              {memoryMatches.length === 0 && <p className="empty-state">{t("empty.noMemory")}</p>}
               {memoryMatches.map((match) => (
                 <article className="memory-result" key={`${match.kind}-${match.reference_id}`}>
                   <div className="memory-result-main">
@@ -1419,7 +1487,7 @@ export default function App() {
                   </div>
                   {match.kind === "job" && (
                     <button className="ghost-button" onClick={() => handleOpenJobDetail(match.reference_id)}>
-                      Open
+                      {t("action.open")}
                     </button>
                   )}
                 </article>
@@ -1435,66 +1503,66 @@ export default function App() {
             <input
               value={importURLValue}
               onChange={(event) => setImportURLValue(event.target.value)}
-              placeholder="Paste a recruitment URL"
-              aria-label="Recruitment URL"
+              placeholder={t("placeholder.pasteUrl")}
+              aria-label={t("placeholder.pasteUrl")}
             />
             <button type="submit" disabled={importing}>
-              {importing ? "Importing..." : "Import URL"}
+              {importing ? t("action.importing") : t("action.importURL")}
             </button>
             <button type="button" className="secondary-action" onClick={handleCleanupLandingPages} disabled={cleaningLandingPages}>
-              {cleaningLandingPages ? "Cleaning..." : "Clean landing pages"}
+              {cleaningLandingPages ? t("action.cleaning") : t("action.cleanLandingPages")}
             </button>
           </form>
 
           <section className="workspace">
         <aside className="filters">
-          <h2>Filters</h2>
+          <h2>{t("panel.filters")}</h2>
           <label>
-            Status
+            {t("column.status")}
             <select value={status} onChange={(event) => handleStatusFilter(event.target.value as JobStatus | "all")}>
-              {Object.entries(statusLabels).map(([value, label]) => (
+              {(Object.entries(statusLabelKeys) as [string, TranslationKey][]).map(([value, key]) => (
                 <option key={value} value={value}>
-                  {label}
+                  {t(key)}
                 </option>
               ))}
             </select>
           </label>
           <label>
-            Direction
+            {t("settings.directions")}
             <select value={direction} onChange={(event) => setDirection(event.target.value)}>
               {directionOptions.map((value) => (
                 <option key={value} value={value}>
-                  {value === "all" ? "All" : value.replace("_", " ")}
+                  {value === "all" ? t("direction.all") : value.replace("_", " ")}
                 </option>
               ))}
             </select>
           </label>
           <label>
-            Score
+            {t("column.score")}
             <select value={scoreView} onChange={(event) => setScoreView(event.target.value as "all" | "strong" | "low_confidence")}>
-              <option value="all">All</option>
-              <option value="strong">Strong matches</option>
-              <option value="low_confidence">Low confidence</option>
+              <option value="all">{t("status.all")}</option>
+              <option value="strong">{t("metric.strongMatches")}</option>
+              <option value="low_confidence">{t("fitVerdict.manualCheck")}</option>
             </select>
           </label>
         </aside>
 
         <section className="job-panel">
           <div className="panel-header">
-            <h2>Opportunities</h2>
-            {loading && <span>Loading...</span>}
+            <h2>{t("view.opportunities")}</h2>
+            {loading && <span>{t("action.running")}</span>}
           </div>
           <div className="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>Score</th>
-                  <th>Company</th>
-                  <th>Role</th>
-                  <th>City</th>
-                  <th>Tags</th>
-                  <th>Status</th>
-                  <th>Actions</th>
+                  <th>{t("column.score")}</th>
+                  <th>{t("column.company")}</th>
+                  <th>{t("column.role")}</th>
+                  <th>{t("column.city")}</th>
+                  <th>{t("column.tags")}</th>
+                  <th>{t("column.status")}</th>
+                  <th>{t("column.actions")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1513,7 +1581,7 @@ export default function App() {
                         <small>{job.recommend_reasons.slice(0, 2).join(" / ") || "No reasons yet"}</small>
                       </div>
                     </td>
-                    <td>{job.city || "Unknown"}</td>
+                    <td>{job.city || t("health.unknown")}</td>
                     <td>
                       <div className="tags">
                         {job.direction_tags.map((tag) => (
@@ -1521,15 +1589,15 @@ export default function App() {
                         ))}
                       </div>
                     </td>
-                    <td>{statusLabels[job.status]}</td>
+                    <td>{t(statusLabelKeys[job.status])}</td>
                     <td>
                       <div className="row-actions">
                         <button onClick={() => handleOpenJobDetail(job.id)} disabled={loadingJobDetail}>
-                          Details
+                          {t("action.details")}
                         </button>
-                        <button onClick={() => setJobStatus(job.id, "interested")}>Interested</button>
-                        <button onClick={() => setJobStatus(job.id, "applied")}>Applied</button>
-                        <button onClick={() => setJobStatus(job.id, "ignored")}>Ignore</button>
+                        <button onClick={() => setJobStatus(job.id, "interested")}>{t("action.interested")}</button>
+                        <button onClick={() => setJobStatus(job.id, "applied")}>{t("action.applied")}</button>
+                        <button onClick={() => setJobStatus(job.id, "ignored")}>{t("action.ignore")}</button>
                       </div>
                     </td>
                   </tr>
@@ -1537,7 +1605,7 @@ export default function App() {
                 {!loading && visibleJobs.length === 0 && (
                   <tr>
                     <td colSpan={7} className="empty-state">
-                      No jobs yet. Run a crawl to create the first collection record.
+                      {t("empty.noJobs")}
                     </td>
                   </tr>
                 )}
@@ -1583,21 +1651,21 @@ export default function App() {
       {activeView === "companies" && (
       <section className="sources-panel">
         <div className="panel-header">
-          <h2>Companies</h2>
-          <span>{enabledCompanies} enabled / {companies.length} total</span>
+          <h2>{t("panel.companies")}</h2>
+          <span>{t("label.enabledCompanies", { enabled: enabledCompanies, total: companies.length })}</span>
         </div>
         {sourceOperations && <SourceOperationsPanel summary={sourceOperations} onAction={handleAgentAction} busy={discoveringSources || recommendedRunning} />}
         <div className="company-toolbar">
           <input
             value={companyQuery}
             onChange={(event) => setCompanyQuery(event.target.value)}
-            placeholder="Search company or source URL"
-            aria-label="Search companies"
+            placeholder={t("placeholder.searchCompany")}
+            aria-label={t("placeholder.searchCompany")}
           />
           <select value={companyCategoryFilter} onChange={(event) => setCompanyCategoryFilter(event.target.value)}>
             {companyCategories.map((category) => (
               <option key={category} value={category}>
-                {categoryLabels[category] || category}
+                {categoryLabelKeys[category] ? t(categoryLabelKeys[category]) : category}
               </option>
             ))}
           </select>
@@ -1608,28 +1676,28 @@ export default function App() {
               <div>
                 <strong>{company.name}</strong>
                 <div className="source-meta">
-                  <span>{categoryLabels[company.category] || company.category || "General"}</span>
-                  <span>{company.source_count} sources</span>
-                  {company.broken_count > 0 && <span>{company.broken_count} broken</span>}
-                  {company.warning_count > 0 && <span>{company.warning_count} warning</span>}
+                  <span>{categoryLabelKeys[company.category] ? t(categoryLabelKeys[company.category]) : company.category || t("category.general")}</span>
+                  <span>{t("label.companySources", { count: company.source_count })}</span>
+                  {company.broken_count > 0 && <span>{t("label.companyBroken", { count: company.broken_count })}</span>}
+                  {company.warning_count > 0 && <span>{t("label.companyWarning", { count: company.warning_count })}</span>}
                 </div>
               </div>
               <button className={company.enabled ? "toggle-on" : "toggle-off"} onClick={() => toggleCompany(company)}>
-                {company.enabled ? "Enabled" : "Disabled"}
+                {company.enabled ? t("action.enabled") : t("action.disabled")}
               </button>
             </div>
           ))}
-          {visibleCompanies.length === 0 && <div className="empty-source">No companies match the current filters.</div>}
+          {visibleCompanies.length === 0 && <div className="empty-source">{t("empty.noCompanies")}</div>}
         </div>
         <div className="source-actions">
           <button type="button" onClick={handleSeedRecommendedSources} disabled={seedingSources || recommendedRunning}>
-            {seedingSources ? "Adding..." : "Add Recommended"}
+            {seedingSources ? t("action.adding") : t("action.addRecommended")}
           </button>
           <button type="button" onClick={handleRunSourceDiscovery} disabled={discoveringSources || recommendedRunning}>
-            {discoveringSources ? "Discovering..." : "Discover Sources"}
+            {discoveringSources ? t("action.discovering") : t("action.discoverSources")}
           </button>
           <button type="button" className="strong-action" onClick={handleRecommendedCrawl} disabled={recommendedRunning || seedingSources}>
-            {recommendedRunning ? "Running..." : "Add & Crawl"}
+            {recommendedRunning ? t("action.running") : t("action.addCrawl")}
           </button>
         </div>
         <SourceCandidatesPanel
@@ -1644,11 +1712,11 @@ export default function App() {
           <input
             value={sourceURLValue}
             onChange={(event) => setSourceURLValue(event.target.value)}
-            placeholder="Add a public recruitment source URL"
-            aria-label="Source URL"
+            placeholder={t("placeholder.addSourceUrl")}
+            aria-label={t("placeholder.addSourceUrl")}
           />
           <button type="submit" disabled={addingSource}>
-            {addingSource ? "Adding..." : "Add Source"}
+            {addingSource ? t("action.adding") : t("action.addSource")}
           </button>
         </form>
         <div className="source-list">
@@ -1657,27 +1725,27 @@ export default function App() {
               <div>
                 <strong>{source.name}</strong>
                 <div className="source-meta">
-                  <span>{categoryLabels[source.category] || source.category || "General"}</span>
-                  <span>{source.parser_type || "generic"}</span>
+                  <span>{categoryLabelKeys[source.category] ? t(categoryLabelKeys[source.category]) : source.category || t("category.general")}</span>
+                  <span>{source.parser_type || t("label.generic")}</span>
                 </div>
                 <a href={source.url} target="_blank" rel="noreferrer">
                   {source.url}
                 </a>
                 <div className="source-health">
                   <span className={`health-badge health-${source.health_status || "unknown"}`}>
-                    {sourceHealthLabels[source.health_status] || source.health_status || "Unknown"}
+                    {sourceHealthLabelKeys[source.health_status] ? t(sourceHealthLabelKeys[source.health_status]) : source.health_status || t("health.unknown")}
                   </span>
-                  <span>{source.health_reason || "Waiting for first crawl"}</span>
-                  <span>found {source.last_found_count ?? 0}</span>
-                  {source.consecutive_failures > 0 && <span>failures {source.consecutive_failures}</span>}
+                  <span>{source.health_reason || t("notice.waitingFirstCrawl")}</span>
+                  <span>{t("run.found")} {source.last_found_count ?? 0}</span>
+                  {source.consecutive_failures > 0 && <span>{t("run.failedSources", { count: source.consecutive_failures })}</span>}
                 </div>
               </div>
               <button className={source.enabled ? "toggle-on" : "toggle-off"} onClick={() => toggleSource(source)}>
-                {source.enabled ? "Enabled" : "Disabled"}
+                {source.enabled ? t("action.enabled") : t("action.disabled")}
               </button>
             </div>
           ))}
-          {visibleSources.length === 0 && <div className="empty-source">No source entries match the current filters.</div>}
+          {visibleSources.length === 0 && <div className="empty-source">{t("empty.noSources")}</div>}
         </div>
       </section>
       )}
@@ -1685,56 +1753,56 @@ export default function App() {
       {activeView === "settings" && (
       <section className="settings-panel">
         <div className="panel-header">
-          <h2>Settings</h2>
-          <span>{settings.feishu_configured ? "Feishu ready" : "Feishu not configured"}</span>
+          <h2>{t("panel.settings")}</h2>
+          <span>{settings.feishu_configured ? t("feishu.configured") : t("feishu.notConfigured")}</span>
         </div>
         {automationStatus && (
           <div className={automationStatus.ready_for_automatic_report ? "automation-diagnostic ready" : "automation-diagnostic"}>
             <div>
-              <strong>{automationStatus.ready_for_automatic_report ? "Automatic report ready" : "Automatic report needs setup"}</strong>
+              <strong>{automationStatus.ready_for_automatic_report ? t("label.dutyReportEnabled") : t("label.dutyReportDisabled")}</strong>
               <span>{automationStatus.reason}</span>
             </div>
             <div className="automation-diagnostic-grid">
-              <span>Scheduler {automationStatus.scheduler_expected ? "expected" : "not expected"}</span>
-              <span>Webhook {automationStatus.webhook_configured ? "configured" : "missing"}</span>
-              <span>Duty report {automationStatus.duty_report_enabled ? "enabled" : "disabled"}</span>
+              <span>{automationStatus.scheduler_expected ? t("label.schedulerExpected") : t("label.schedulerNotExpected")}</span>
+              <span>{automationStatus.webhook_configured ? t("label.webhookConfigured") : t("label.webhookMissing")}</span>
+              <span>{automationStatus.duty_report_enabled ? t("label.dutyReportEnabled") : t("label.dutyReportDisabled")}</span>
               <span>{automationStatus.time_zone} / {automationStatus.duty_report_time}</span>
-              <span>Next {formatDateTime(automationStatus.next_duty_report_at)}</span>
-              <span>{automationStatus.last_duty_report_sent_at ? `Last ${formatDateTime(automationStatus.last_duty_report_sent_at)}` : "No automatic report sent yet"}</span>
+              <span>{t("label.notScheduled")} {formatDateTime(automationStatus.next_duty_report_at)}</span>
+              <span>{automationStatus.last_duty_report_sent_at ? formatDateTime(automationStatus.last_duty_report_sent_at) : t("notice.noAutoReport")}</span>
             </div>
           </div>
         )}
         <form className="settings-grid" onSubmit={handleSaveSettings}>
           <label>
-            Target cities
+            {t("settings.targetCities")}
             <textarea
               value={settingsDraft.target_cities}
               onChange={(event) => setSettingsDraft((current) => ({ ...current, target_cities: event.target.value }))}
             />
           </label>
           <label>
-            Directions
+            {t("settings.directions")}
             <textarea
               value={settingsDraft.target_directions}
               onChange={(event) => setSettingsDraft((current) => ({ ...current, target_directions: event.target.value }))}
             />
           </label>
           <label>
-            Excluded keywords
+            {t("settings.excludedKeywords")}
             <textarea
               value={settingsDraft.excluded_keywords}
               onChange={(event) => setSettingsDraft((current) => ({ ...current, excluded_keywords: event.target.value }))}
             />
           </label>
           <label>
-            Crawl schedule
+            {t("settings.crawlSchedule")}
             <textarea
               value={settingsDraft.crawl_schedule}
               onChange={(event) => setSettingsDraft((current) => ({ ...current, crawl_schedule: event.target.value }))}
             />
           </label>
           <label>
-            Time zone
+            {t("settings.timeZone")}
             <input
               value={settingsDraft.time_zone}
               onChange={(event) => setSettingsDraft((current) => ({ ...current, time_zone: event.target.value }))}
@@ -1742,7 +1810,7 @@ export default function App() {
             />
           </label>
           <label className="settings-wide">
-            Feishu bot webhook
+            {t("settings.feishuWebhook")}
             <input
               value={settingsDraft.feishu_webhook_url}
               onChange={(event) => setSettingsDraft((current) => ({ ...current, feishu_webhook_url: event.target.value }))}
@@ -1755,7 +1823,7 @@ export default function App() {
               checked={settingsDraft.auto_duty_report_enabled}
               onChange={(event) => setSettingsDraft((current) => ({ ...current, auto_duty_report_enabled: event.target.checked }))}
             />
-            Automatic duty report
+            {t("settings.autoDutyReport")}
           </label>
           <label className="settings-toggle">
             <input
@@ -1763,10 +1831,10 @@ export default function App() {
               checked={settingsDraft.auto_source_discovery_enabled}
               onChange={(event) => setSettingsDraft((current) => ({ ...current, auto_source_discovery_enabled: event.target.checked }))}
             />
-            Automatic source discovery
+            {t("settings.autoSourceDiscovery")}
           </label>
           <label>
-            Duty report time
+            {t("settings.dutyReportTime")}
             <input
               value={settingsDraft.duty_report_time}
               onChange={(event) => setSettingsDraft((current) => ({ ...current, duty_report_time: event.target.value }))}
@@ -1774,7 +1842,7 @@ export default function App() {
             />
           </label>
           <label>
-            Discovery interval hours
+            {t("settings.discoveryInterval")}
             <input
               type="number"
               min="1"
@@ -1783,7 +1851,7 @@ export default function App() {
             />
           </label>
           <label>
-            Task SLA hours
+            {t("settings.taskSlaHours")}
             <input
               type="number"
               min="1"
@@ -1792,10 +1860,60 @@ export default function App() {
             />
           </label>
           <button type="submit" disabled={savingSettings}>
-            {savingSettings ? "Saving..." : "Save Settings"}
+            {savingSettings ? t("action.saving") : t("action.saveSettings")}
           </button>
           <button type="button" className="secondary-settings-action" onClick={handleSendFeishuTest} disabled={testingFeishu || !settings.feishu_configured}>
-            {testingFeishu ? "Sending..." : "Send Feishu Test"}
+            {testingFeishu ? t("action.sending") : t("action.sendFeishuTest")}
+          </button>
+        </form>
+
+        <form className="settings-grid model-config-form" onSubmit={handleSaveLLMConfig}>
+          <div className="model-config-header">
+            <strong>{t("model.title")}</strong>
+            {llmConfig && (
+              <span className={llmConfig.has_api_key ? "api-key-set" : "api-key-not-set"}>
+                {llmConfig.has_api_key ? t("model.apiKeySet") : t("model.apiKeyNotSet")}
+              </span>
+            )}
+          </div>
+          <label>
+            {t("model.provider")}
+            <select
+              value={llmDraft.provider}
+              onChange={(event) => setLLMDraft((current) => ({ ...current, provider: event.target.value }))}
+            >
+              <option value="deepseek">{t("model.deepseek")}</option>
+              <option value="openai_compatible">{t("model.openai")}</option>
+            </select>
+          </label>
+          <label>
+            {t("model.model")}
+            <input
+              value={llmDraft.model}
+              onChange={(event) => setLLMDraft((current) => ({ ...current, model: event.target.value }))}
+              placeholder={t("model.placeholderModel")}
+            />
+          </label>
+          <label className="settings-wide">
+            {t("model.baseUrl")}
+            <input
+              value={llmDraft.baseURL}
+              onChange={(event) => setLLMDraft((current) => ({ ...current, baseURL: event.target.value }))}
+              placeholder={t("model.placeholderBaseUrl")}
+            />
+          </label>
+          <label className="settings-wide">
+            {t("model.apiKey")}
+            <input
+              type="password"
+              value={llmDraft.apiKey}
+              onChange={(event) => setLLMDraft((current) => ({ ...current, apiKey: event.target.value }))}
+              placeholder={t("model.placeholderApiKey")}
+            />
+            <small>{t("model.apiKeyHint")}</small>
+          </label>
+          <button type="submit" disabled={savingLLM}>
+            {savingLLM ? t("model.saving") : t("model.save")}
           </button>
         </form>
       </section>
@@ -1804,8 +1922,8 @@ export default function App() {
       {activeView === "runs" && (
       <section className="runs-panel">
         <div className="panel-header">
-          <h2>Crawl Runs</h2>
-          <span>{runs.length} recorded</span>
+          <h2>{t("panel.crawlRuns")}</h2>
+          <span>{t("run.recorded", { count: runs.length })}</span>
         </div>
         <div className="runs-layout">
           <div className="run-list">
@@ -1820,11 +1938,11 @@ export default function App() {
                   <small>{new Date(run.started_at).toLocaleString()}</small>
                 </span>
                 <span className="run-counts">
-                  +{run.jobs_created} / dup {run.jobs_duplicated} / fail {run.sources_failed}
+                  +{run.jobs_created} / {t("run.dup")} {run.jobs_duplicated} / {t("run.filtered")} {run.sources_failed}
                 </span>
               </button>
             ))}
-            {runs.length === 0 && <div className="empty-source">No crawl runs yet.</div>}
+            {runs.length === 0 && <div className="empty-source">{t("run.noRuns")}</div>}
           </div>
           <div className="run-detail">
             {runSources.map((source) => (
@@ -1840,15 +1958,15 @@ export default function App() {
                 </div>
                 <div className="run-source-metrics">
                   <span>{source.status}</span>
-                  <span>found {source.jobs_found}</span>
-                  <span>new {source.jobs_created}</span>
-                  <span>dup {source.jobs_duplicated}</span>
-                  <span>filtered {source.jobs_filtered}</span>
-                  <span>manual {source.manual_check_count}</span>
+                  <span>{t("run.found")} {source.jobs_found}</span>
+                  <span>{t("run.new")} {source.jobs_created}</span>
+                  <span>{t("run.dup")} {source.jobs_duplicated}</span>
+                  <span>{t("run.filtered")} {source.jobs_filtered}</span>
+                  <span>{t("run.manual")} {source.manual_check_count}</span>
                 </div>
               </div>
             ))}
-            {selectedRunId !== null && runSources.length === 0 && <div className="empty-source">No source results for this run.</div>}
+            {selectedRunId !== null && runSources.length === 0 && <div className="empty-source">{t("run.noSourceResults")}</div>}
           </div>
         </div>
       </section>
@@ -1888,53 +2006,54 @@ function ProfilePanel({
   onDraftChange: React.Dispatch<React.SetStateAction<CandidateProfileDraft>>;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void | Promise<void>;
 }) {
+  const { t } = useLang();
   return (
     <section className="profile-panel">
       <div className="panel-header">
         <div>
-          <h2>Candidate Profile</h2>
-          <span>Updated {formatDateTime(profile.updated_at)}</span>
+          <h2>{t("panel.candidateProfile")}</h2>
+          <span>{formatDateTime(profile.updated_at)}</span>
         </div>
       </div>
       <form className="profile-grid" onSubmit={onSubmit}>
         <label>
-          Target cities
+          {t("profile.targetCities")}
           <textarea value={draft.target_cities} onChange={(event) => onDraftChange((current) => ({ ...current, target_cities: event.target.value }))} />
         </label>
         <label>
-          Target directions
+          {t("profile.targetDirections")}
           <textarea value={draft.target_directions} onChange={(event) => onDraftChange((current) => ({ ...current, target_directions: event.target.value }))} />
         </label>
         <label>
-          Skills
+          {t("profile.skills")}
           <textarea value={draft.skills} onChange={(event) => onDraftChange((current) => ({ ...current, skills: event.target.value }))} />
         </label>
         <label>
-          Preferred companies
+          {t("profile.preferredCompanies")}
           <textarea value={draft.preferred_companies} onChange={(event) => onDraftChange((current) => ({ ...current, preferred_companies: event.target.value }))} />
         </label>
         <label>
-          Education
-          <input value={draft.education} onChange={(event) => onDraftChange((current) => ({ ...current, education: event.target.value }))} placeholder="Bachelor / Master / Other" />
+          {t("profile.education")}
+          <input value={draft.education} onChange={(event) => onDraftChange((current) => ({ ...current, education: event.target.value }))} placeholder={t("placeholder.education")} />
         </label>
         <label>
-          Graduation year
-          <input value={draft.graduation_year} onChange={(event) => onDraftChange((current) => ({ ...current, graduation_year: event.target.value }))} placeholder="2027" />
+          {t("profile.graduationYear")}
+          <input value={draft.graduation_year} onChange={(event) => onDraftChange((current) => ({ ...current, graduation_year: event.target.value }))} placeholder={t("placeholder.graduationYear")} />
         </label>
         <label>
-          Internship preference
+          {t("profile.blockedKeywords")}
           <input value={draft.internship_preference} onChange={(event) => onDraftChange((current) => ({ ...current, internship_preference: event.target.value }))} />
         </label>
         <label>
-          Blocked keywords
+          {t("profile.blockedKeywords")}
           <textarea value={draft.blocked_keywords} onChange={(event) => onDraftChange((current) => ({ ...current, blocked_keywords: event.target.value }))} />
         </label>
         <label className="profile-wide">
-          Notes
-          <textarea value={draft.notes} onChange={(event) => onDraftChange((current) => ({ ...current, notes: event.target.value }))} placeholder="Preferred roles, teams, and deal breakers." />
+          {t("profile.notes")}
+          <textarea value={draft.notes} onChange={(event) => onDraftChange((current) => ({ ...current, notes: event.target.value }))} placeholder={t("placeholder.profileNotes")} />
         </label>
         <button type="submit" disabled={saving}>
-          {saving ? "Saving..." : "Save Profile"}
+          {saving ? t("action.saving") : t("action.saveProfile")}
         </button>
       </form>
     </section>
@@ -1958,23 +2077,24 @@ function ApplicationWorkspace({
   onUpdate: (plan: ApplicationPlan, update: Partial<ApplicationPlan>) => void | Promise<void>;
   onOpenJob: (id: number) => void | Promise<void>;
 }) {
+  const { t } = useLang();
   const jobsByID = new Map(jobs.map((job) => [job.id, job]));
   const activePlans = plans.filter((plan) => plan.status !== "applied" && plan.status !== "paused");
   const columns = [
-    { status: "prepare", label: "Prepare" },
-    { status: "ready", label: "Ready" },
-    { status: "applied", label: "Applied" },
-    { status: "paused", label: "Paused" },
+    { status: "prepare", label: t("kanban.prepare") },
+    { status: "ready", label: t("kanban.ready") },
+    { status: "applied", label: t("kanban.applied") },
+    { status: "paused", label: t("kanban.paused") },
   ];
   return (
     <section className="applications-panel">
       <div className="panel-header">
         <div>
-          <h2>Application Workspace</h2>
-          <span>{activePlans.length} active / {plans.length} total</span>
+          <h2>{t("panel.applicationWorkspace")}</h2>
+          <span>{t("label.activePlans", { active: activePlans.length, total: plans.length })}</span>
         </div>
         <button type="button" onClick={onSync} disabled={syncing}>
-          {syncing ? "Syncing..." : "Sync Plans"}
+          {syncing ? t("action.syncing") : t("action.syncPlans")}
         </button>
       </div>
       <div className="application-board">
@@ -1999,7 +2119,7 @@ function ApplicationWorkspace({
             </div>
           );
         })}
-        {plans.length === 0 && <div className="empty-source">No application plans yet. Mark strong jobs as Interested, then sync plans.</div>}
+        {plans.length === 0 && <div className="empty-source">{t("empty.noApplicationPlans")}</div>}
       </div>
     </section>
   );
@@ -2018,6 +2138,7 @@ function ApplicationPlanCard({
   onUpdate: (plan: ApplicationPlan, update: Partial<ApplicationPlan>) => void | Promise<void>;
   onOpenJob: (id: number) => void | Promise<void>;
 }) {
+  const { t } = useLang();
   const [resumeVersion, setResumeVersion] = useState(plan.resume_version || "default");
   const [draftNotes, setDraftNotes] = useState(plan.draft_notes || "");
   const [followUpDate, setFollowUpDate] = useState(plan.follow_up_date || "");
@@ -2031,25 +2152,25 @@ function ApplicationPlanCard({
   return (
     <div className={`application-card application-${plan.status}`}>
       <div className="candidate-title">
-        <strong>{job ? `${job.company} / ${job.title}` : `Job #${plan.job_id}`}</strong>
+        <strong>{job ? `${job.company} / ${job.title}` : `#${plan.job_id}`}</strong>
         <b>{plan.priority}</b>
       </div>
       <div className="source-meta">
-        <span>{plan.target_apply_date || "No target date"}</span>
+        <span>{plan.target_apply_date || t("job.noTargetDate")}</span>
         {job?.city && <span>{job.city}</span>}
       </div>
-      <p>{plan.next_action || "No next action yet."}</p>
+      <p>{plan.next_action || t("job.noNextAction")}</p>
       <div className="application-edit-grid">
         <label>
-          Resume
+          {t("profile.resume")}
           <input value={resumeVersion} onChange={(event) => setResumeVersion(event.target.value)} />
         </label>
         <label>
-          Follow-up
-          <input value={followUpDate} onChange={(event) => setFollowUpDate(event.target.value)} placeholder="YYYY-MM-DD" />
+          {t("profile.followUp")}
+          <input value={followUpDate} onChange={(event) => setFollowUpDate(event.target.value)} placeholder={t("placeholder.followUpDate")} />
         </label>
         <label className="application-edit-wide">
-          Draft notes
+          {t("profile.draftNotes")}
           <textarea value={draftNotes} onChange={(event) => setDraftNotes(event.target.value)} />
         </label>
       </div>
@@ -2060,24 +2181,24 @@ function ApplicationPlanCard({
       </div>
       <div className="candidate-actions">
         <button type="button" onClick={() => onOpenJob(plan.job_id)}>
-          Details
+          {t("action.details")}
         </button>
         <button type="button" onClick={() => onUpdate(plan, { resume_version: resumeVersion, draft_notes: draftNotes, follow_up_date: followUpDate })}>
-          Save
+          {t("action.save")}
         </button>
         {plan.status !== "ready" && (
           <button type="button" onClick={() => onStatus(plan, "ready")}>
-            Ready
+            {t("action.ready")}
           </button>
         )}
         {plan.status !== "applied" && (
           <button type="button" onClick={() => onStatus(plan, "applied")}>
-            Applied
+            {t("action.applied")}
           </button>
         )}
         {plan.status !== "paused" && (
           <button type="button" onClick={() => onStatus(plan, "paused")}>
-            Pause
+            {t("action.pause")}
           </button>
         )}
       </div>
@@ -2099,6 +2220,7 @@ function JobDetailPanel({
   onStatus: (id: number, status: JobStatus) => void | Promise<void>;
   onSaveNotes: (job: Job, notes: string) => void | Promise<void>;
 }) {
+  const { t } = useLang();
   const [notes, setNotes] = useState(detail.job.notes || "");
 
   useEffect(() => {
@@ -2110,84 +2232,84 @@ function JobDetailPanel({
       <div className="panel-header">
         <div>
           <h2>{detail.job.company} / {detail.job.title}</h2>
-          <span>{detail.job.city || "Unknown city"} / {formatFitVerdict(detail.fit.verdict)}</span>
+          <span>{detail.job.city || t("job.unknownCity")} / {formatFitVerdict(detail.fit.verdict, t)}</span>
         </div>
         <button type="button" className="secondary-detail-action" onClick={onClose}>
-          Close
+          {t("action.close")}
         </button>
       </div>
       <div className="job-detail-grid">
         <div className="fit-card">
-          <span>Profile fit</span>
+          <span>{t("job.profileFit")}</span>
           <strong>{detail.fit.score}</strong>
           <small>{detail.suggested_action.reason}</small>
           <div className="job-detail-actions">
             <button type="button" onClick={() => onStatus(detail.job.id, "interested")} disabled={busy}>
-              Interested
+              {t("action.interested")}
             </button>
             <button type="button" onClick={() => onStatus(detail.job.id, "applied")} disabled={busy}>
-              Applied
+              {t("action.applied")}
             </button>
             <button type="button" onClick={() => onStatus(detail.job.id, "ignored")} disabled={busy}>
-              Ignore
+              {t("action.ignore")}
             </button>
           </div>
         </div>
         <div className="detail-column">
-          <h3>Why It Fits</h3>
+          <h3>{t("job.whyItFits")}</h3>
           {[...detail.fit.profile_signals, ...detail.fit.strengths].slice(0, 8).map((item) => (
             <span className="detail-pill" key={item}>{item}</span>
           ))}
-          {detail.fit.profile_signals.length === 0 && detail.fit.strengths.length === 0 && <div className="empty-source">No fit signals yet.</div>}
+          {detail.fit.profile_signals.length === 0 && detail.fit.strengths.length === 0 && <div className="empty-source">{t("empty.noFitSignals")}</div>}
         </div>
         <div className="detail-column">
-          <h3>Risks</h3>
+          <h3>{t("job.risks")}</h3>
           {detail.fit.risks.slice(0, 8).map((item) => (
             <span className="risk-pill" key={item}>{item}</span>
           ))}
-          {detail.fit.risks.length === 0 && <div className="empty-source">No obvious risk signals.</div>}
+          {detail.fit.risks.length === 0 && <div className="empty-source">{t("empty.noRisks")}</div>}
         </div>
         <div className="detail-column">
-          <h3>Application Plan</h3>
+          <h3>{t("job.applicationPlan")}</h3>
           {detail.application_plan ? (
             <>
               <span className="detail-pill">{detail.application_plan.status}</span>
-              <span className="detail-pill">{detail.application_plan.target_apply_date || "No target date"}</span>
+              <span className="detail-pill">{detail.application_plan.target_apply_date || t("job.noTargetDate")}</span>
               <small>{detail.application_plan.next_action}</small>
               {detail.application_plan.checklist.slice(0, 4).map((item) => (
                 <span className="detail-pill" key={item}>{item}</span>
               ))}
             </>
           ) : (
-            <div className="empty-source">Mark this job as Interested and refresh tasks to create a plan.</div>
+            <div className="empty-source">{t("empty.noPlanHint")}</div>
           )}
         </div>
       </div>
       <div className="job-detail-bottom">
         <form className="notes-box" onSubmit={(event) => { event.preventDefault(); onSaveNotes(detail.job, notes); }}>
           <label>
-            Decision notes
+            {t("job.decisionNotes")}
             <textarea value={notes} onChange={(event) => setNotes(event.target.value)} />
           </label>
           <button type="submit" disabled={busy}>
-            Save Notes
+            {t("action.saveNotes")}
           </button>
         </form>
         <div className="decision-timeline">
-          <h3>Decision History</h3>
+          <h3>{t("job.decisionHistory")}</h3>
           {detail.decisions.map((decision) => (
             <div className="decision-row" key={decision.id}>
-              <strong>{formatDecisionAction(decision)}</strong>
+              <strong>{formatDecisionAction(decision, t)}</strong>
               <span>{decision.notes || decision.reason || `${decision.from_status || "unknown"} -> ${decision.to_status || "unknown"}`}</span>
-              <time>{formatDateTime(decision.created_at)}</time>
+              <time>{formatDateTime(decision.created_at, t)}</time>
             </div>
           ))}
-          {detail.decisions.length === 0 && <div className="empty-source">No decision history yet.</div>}
+          {detail.decisions.length === 0 && <div className="empty-source">{t("empty.noDecisionHistory")}</div>}
         </div>
       </div>
       <div className="detail-links">
-        {detail.job.apply_url && <a href={detail.job.apply_url} target="_blank" rel="noreferrer">Apply URL</a>}
-        {detail.job.source_url && <a href={detail.job.source_url} target="_blank" rel="noreferrer">Source URL</a>}
+        {detail.job.apply_url && <a href={detail.job.apply_url} target="_blank" rel="noreferrer">{t("job.applyUrl")}</a>}
+        {detail.job.source_url && <a href={detail.job.source_url} target="_blank" rel="noreferrer">{t("job.sourceUrl")}</a>}
       </div>
     </section>
   );
@@ -2202,25 +2324,26 @@ function AgentBriefingPanel({
   onAction: (action: string) => void | Promise<void>;
   busy: boolean;
 }) {
+  const { t } = useLang();
   return (
     <section className={`agent-briefing agent-${briefing.tone}`}>
       <div>
-        <div className="agent-kicker">Agent Briefing</div>
+        <div className="agent-kicker">{t("panel.agentBriefing")}</div>
         <h2>{briefing.headline}</h2>
         <div className="agent-highlights">
           {briefing.highlights.length > 0 ? (
             briefing.highlights.map((highlight) => <span key={highlight}>{highlight}</span>)
           ) : (
-            <span>Waiting for the next crawl signal.</span>
+            <span>{t("empty.waitingCrawl")}</span>
           )}
         </div>
       </div>
       <div className="agent-metrics">
-        <Metric label="Strong" value={briefing.metrics.strong_matches} />
-        <Metric label="Manual" value={briefing.metrics.manual_check_jobs} />
-        <Metric label="Low conf" value={briefing.metrics.low_confidence_jobs} />
-        <Metric label="Sources" value={briefing.metrics.enabled_sources} />
-        <Metric label="Broken" value={briefing.metrics.broken_sources} />
+        <Metric label={t("dutyReport.strong")} value={briefing.metrics.strong_matches} />
+        <Metric label={t("dutyReport.manual")} value={briefing.metrics.manual_check_jobs} />
+        <Metric label={t("dutyReport.lowConf")} value={briefing.metrics.low_confidence_jobs} />
+        <Metric label={t("dutyReport.sources")} value={briefing.metrics.enabled_sources} />
+        <Metric label={t("dutyReport.broken")} value={briefing.metrics.broken_sources} />
       </div>
       <div className="agent-actions">
         {briefing.next_actions.map((action) => (
@@ -2228,7 +2351,7 @@ function AgentBriefingPanel({
             <strong>{action.label}</strong>
             <span>{action.reason}</span>
             <button type="button" onClick={() => onAction(action.action)} disabled={busy}>
-              Do it
+              {t("action.doIt")}
             </button>
           </div>
         ))}
@@ -2252,13 +2375,14 @@ function AgentDutyReportPanel({
   sendingFeishu: boolean;
   feishuReady: boolean;
 }) {
+  const { t } = useLang();
   const topDecision = report.needs_decision.slice(0, 3);
   const sourceIssues = report.source_issues.slice(0, 3);
   return (
     <section className={`duty-report duty-${report.tone}`}>
       <div className="panel-header">
         <div>
-          <h2>Today's Work</h2>
+          <h2>{t("panel.todaysWork")}</h2>
           <span>{report.headline}</span>
         </div>
         <div className="duty-actions">
@@ -2266,13 +2390,13 @@ function AgentDutyReportPanel({
             {report.next_best_action.label}
           </button>
           <button type="button" className="secondary-duty-action" onClick={onSendFeishu} disabled={sendingFeishu || !feishuReady}>
-            {sendingFeishu ? "Sending..." : "Send to Feishu"}
+            {sendingFeishu ? t("action.sending") : t("action.sendToFeishu")}
           </button>
         </div>
       </div>
       <div className="duty-grid">
         <div className="duty-column">
-          <h3>Queue</h3>
+          <h3>{t("dutyReport.queue")}</h3>
           {report.todays_work.map((item) => (
             <div className="duty-item" key={item.kind}>
               <div>
@@ -2282,40 +2406,40 @@ function AgentDutyReportPanel({
               <b>{item.count}</b>
             </div>
           ))}
-          {report.todays_work.length === 0 && <div className="empty-source">No active work queued.</div>}
+          {report.todays_work.length === 0 && <div className="empty-source">{t("empty.noActiveWork")}</div>}
         </div>
         <div className="duty-column">
-          <h3>Needs Your Decision</h3>
+          <h3>{t("dutyReport.needsDecision")}</h3>
           {topDecision.map((item) => (
             <div className="decision-item" key={`${item.job_id}-${item.job_title}`}>
               <strong>{item.company} / {item.job_title}</strong>
-              <span>{item.city} / score {item.score}</span>
+              <span>{item.city} / {t("label.score")} {item.score}</span>
               <small>{item.reason}</small>
             </div>
           ))}
-          {topDecision.length === 0 && <div className="empty-source">No manual decisions waiting.</div>}
+          {topDecision.length === 0 && <div className="empty-source">{t("empty.noManualDecisions")}</div>}
         </div>
         <div className="duty-column">
-          <h3>Source Issues</h3>
+          <h3>{t("dutyReport.sourceIssues")}</h3>
           {sourceIssues.map((issue) => (
             <div className={`source-issue issue-${issue.status}`} key={issue.source_id || issue.url}>
               <strong>{issue.name}</strong>
-              <span>{sourceHealthLabels[issue.status] || issue.status} / {issue.reason}</span>
-              <small>found {issue.last_found_count} / failures {issue.consecutive_failures}</small>
+              <span>{sourceHealthLabelKeys[issue.status] ? t(sourceHealthLabelKeys[issue.status]) : issue.status} / {issue.reason}</span>
+              <small>{t("run.found")} {issue.last_found_count} / {t("run.failedSources", { count: issue.consecutive_failures })}</small>
             </div>
           ))}
-          {sourceIssues.length === 0 && <div className="empty-source">Sources look stable.</div>}
+          {sourceIssues.length === 0 && <div className="empty-source">{t("empty.sourcesStable")}</div>}
         </div>
       </div>
       <div className="duty-summary">
-        <span>{report.summary.new_jobs} new</span>
-        <span>{report.summary.strong_matches} strong</span>
-        <span>{report.summary.manual_check} manual</span>
-        <span>{report.summary.source_issues} source issues</span>
-        <span>{report.summary.open_tasks} open tasks</span>
-        <span>{report.summary.stale_tasks} stale</span>
-        <span>{report.summary.escalated_tasks} escalated</span>
-        <span>{report.summary.done_tasks} done</span>
+        <span>{report.summary.new_jobs} {t("run.new")}</span>
+        <span>{report.summary.strong_matches} {t("dutyReport.strong")}</span>
+        <span>{report.summary.manual_check} {t("dutyReport.manual")}</span>
+        <span>{report.summary.source_issues} {t("metric.sourceIssues")}</span>
+        <span>{report.summary.open_tasks} {t("tasks.open")}</span>
+        <span>{report.summary.stale_tasks} {t("tasks.stale")}</span>
+        <span>{report.summary.escalated_tasks} {t("tasks.escalated")}</span>
+        <span>{report.summary.done_tasks} {t("tasks.done")}</span>
       </div>
       {report.trend_summary && <div className="duty-trend">{report.trend_summary}</div>}
     </section>
@@ -2337,6 +2461,7 @@ function AgentReviewPanel({
   busy: boolean;
   savingSnapshot: boolean;
 }) {
+  const { t } = useLang();
   const topFindings = review.findings.slice(0, 4);
   const decisions = review.decisions.slice(0, 2);
   const recentSnapshots = history?.snapshots.slice(0, 3) || [];
@@ -2352,29 +2477,29 @@ function AgentReviewPanel({
           <p>{review.focus.detail}</p>
         </div>
         <button type="button" onClick={() => onAction(review.focus.action)} disabled={busy}>
-          Take Action
+          {t("action.takeAction")}
         </button>
         <button className="secondary-review-action" type="button" onClick={onSaveSnapshot} disabled={busy || savingSnapshot}>
-          {savingSnapshot ? "Saving..." : "Save Snapshot"}
+          {savingSnapshot ? t("action.saving") : t("action.saveSnapshot")}
         </button>
       </div>
       <div className="review-trend">
         <div>
-          <strong>Trend Review</strong>
-          <span>{history?.summary || "No trend memory yet. Save a snapshot after meaningful changes."}</span>
+          <strong>{t("dutyReport.trendReview")}</strong>
+          <span>{history?.summary || t("empty.noTrendMemory")}</span>
         </div>
         <div className="trend-metrics">
-          <TrendMetric label="Jobs" value={history?.delta.tracked_jobs || 0} />
-          <TrendMetric label="Strong" value={history?.delta.strong_matches || 0} />
-          <TrendMetric label="Manual" value={history?.delta.manual_decisions || 0} />
-          <TrendMetric label="Sources" value={history?.delta.source_issues || 0} inverse />
-          <TrendMetric label="Tasks" value={history?.delta.open_tasks || 0} inverse />
-          <TrendMetric label="Applied" value={history?.delta.applied_jobs || 0} />
+          <TrendMetric label={t("metric.jobs")} value={history?.delta.tracked_jobs || 0} />
+          <TrendMetric label={t("metric.strong")} value={history?.delta.strong_matches || 0} />
+          <TrendMetric label={t("dutyReport.manual")} value={history?.delta.manual_decisions || 0} />
+          <TrendMetric label={t("dutyReport.sources")} value={history?.delta.source_issues || 0} inverse />
+          <TrendMetric label={t("metric.tasks")} value={history?.delta.open_tasks || 0} inverse />
+          <TrendMetric label={t("metric.applied")} value={history?.delta.applied_jobs || 0} />
         </div>
       </div>
       <div className="review-body">
         <div className="review-column">
-          <h3>Findings</h3>
+          <h3>{t("dutyReport.findings")}</h3>
           {topFindings.map((finding) => (
             <div className={`review-finding finding-${finding.level}`} key={`${finding.kind}-${finding.title}`}>
               <div>
@@ -2386,29 +2511,29 @@ function AgentReviewPanel({
           ))}
         </div>
         <div className="review-column">
-          <h3>Needs Decision</h3>
+          <h3>{t("dutyReport.needsDecisionShort")}</h3>
           {decisions.map((decision) => (
             <div className="review-decision" key={decision.question}>
               <strong>{decision.question}</strong>
               <span>{decision.context}</span>
               <button type="button" onClick={() => onAction(decision.action)} disabled={busy}>
-                Decide
+                {t("action.decide")}
               </button>
             </div>
           ))}
-          {decisions.length === 0 && <div className="empty-source">No decision is blocking me right now.</div>}
+          {decisions.length === 0 && <div className="empty-source">{t("empty.noBlockingDecision")}</div>}
         </div>
         <div className="review-column">
-          <h3>Recent Memory</h3>
+          <h3>{t("dutyReport.recentMemory")}</h3>
           {recentSnapshots.map((snapshot) => (
             <div className="review-memory" key={snapshot.id}>
               <strong>{snapshot.health_label} / {snapshot.focus_title}</strong>
-              <span>{snapshot.trigger_type} / {formatDateTime(snapshot.captured_at)}</span>
-              <small>{snapshot.stats.strong_matches} strong / {snapshot.stats.source_issues} source issues / {snapshot.stats.open_tasks} tasks</small>
+              <span>{snapshot.trigger_type} / {formatDateTime(snapshot.captured_at, t)}</span>
+              <small>{snapshot.stats.strong_matches} {t("dutyReport.strong")} / {snapshot.stats.source_issues} {t("metric.sourceIssues")} / {snapshot.stats.open_tasks} {t("metric.tasks")}</small>
             </div>
           ))}
-          {recentSnapshots.length === 0 && <div className="empty-source">No saved snapshots yet.</div>}
-          <h3 className="review-next-heading">Next Steps</h3>
+          {recentSnapshots.length === 0 && <div className="empty-source">{t("empty.noSnapshots")}</div>}
+          <h3 className="review-next-heading">{t("dutyReport.nextSteps")}</h3>
           {review.next_steps.map((step) => (
             <button className="review-step" type="button" key={`${step.action}-${step.label}`} onClick={() => onAction(step.action)} disabled={busy}>
               <strong>{step.label}</strong>
@@ -2436,13 +2561,14 @@ function SourceCandidatesPanel({
   busy: boolean;
   validatingId: number | null;
 }) {
+  const { t } = useLang();
   const pending = candidates.filter((candidate) => candidate.status === "pending");
   const recent = candidates.filter((candidate) => candidate.status !== "pending").slice(0, 4);
   return (
     <section className="candidate-panel">
       <div className="panel-header">
-        <h2>Source Discovery</h2>
-        <span>{pending.length} pending / {candidates.length} total</span>
+        <h2>{t("panel.sourceDiscovery")}</h2>
+        <span>{pending.length} {t("label.pending")} / {candidates.length} {t("status.all").toLowerCase()}</span>
       </div>
       <div className="candidate-list">
         {pending.slice(0, 8).map((candidate) => (
@@ -2453,8 +2579,8 @@ function SourceCandidatesPanel({
                 <b>{candidate.confidence}</b>
               </div>
               <div className="source-meta">
-                <span>{categoryLabels[candidate.category] || candidate.category}</span>
-                <span>{candidate.parser_type || "generic"}</span>
+                <span>{categoryLabelKeys[candidate.category] ? t(categoryLabelKeys[candidate.category]) : candidate.category}</span>
+                <span>{candidate.parser_type || t("label.generic")}</span>
                 <span>{candidate.validation_status}</span>
               </div>
               <a href={candidate.url} target="_blank" rel="noreferrer">
@@ -2465,18 +2591,18 @@ function SourceCandidatesPanel({
             </div>
             <div className="candidate-actions">
               <button type="button" onClick={() => onValidate(candidate)} disabled={busy || validatingId === candidate.id}>
-                {validatingId === candidate.id ? "Checking..." : "Validate"}
+                {validatingId === candidate.id ? t("action.checking") : t("action.validate")}
               </button>
               <button type="button" onClick={() => onAccept(candidate)} disabled={busy}>
-                Accept
+                {t("action.accept")}
               </button>
               <button type="button" onClick={() => onReject(candidate)} disabled={busy}>
-                Reject
+                {t("action.reject")}
               </button>
             </div>
           </div>
         ))}
-        {pending.length === 0 && <div className="empty-source">No pending candidates. Run discovery to let the agent propose new entrances.</div>}
+        {pending.length === 0 && <div className="empty-source">{t("sourceDiscovery.noPending")}</div>}
       </div>
       {recent.length > 0 && (
         <div className="candidate-history">
@@ -2498,39 +2624,40 @@ function SourceOperationsPanel({
   onAction: (action: string) => void | Promise<void>;
   busy: boolean;
 }) {
+  const { t } = useLang();
   return (
     <section className="source-ops-panel">
       <div className="source-ops-metrics">
-        <Metric label="Sources" value={`${summary.enabled_sources}/${summary.total_sources}`} />
-        <Metric label="Healthy" value={summary.healthy_sources} />
-        <Metric label="Unhealthy" value={summary.warning_sources + summary.broken_sources} />
-        <Metric label="Candidates" value={summary.pending_candidates} />
+        <Metric label={t("dutyReport.sources")} value={`${summary.enabled_sources}/${summary.total_sources}`} />
+        <Metric label={t("metric.healthy")} value={summary.healthy_sources} />
+        <Metric label={t("metric.unhealthy")} value={summary.warning_sources + summary.broken_sources} />
+        <Metric label={t("metric.candidates")} value={summary.pending_candidates} />
       </div>
       <div className="source-ops-body">
         <div>
-          <h3>Needs Attention</h3>
+          <h3>{t("sourceDiscovery.needsAttention")}</h3>
           {summary.needs_attention.slice(0, 4).map((source) => (
             <div className="source-ops-row" key={source.id}>
               <strong>{source.name}</strong>
-              <span>{source.status} / {source.reason || "No reason recorded"}</span>
+              <span>{source.status} / {source.reason || t("label.noReasonRecorded")}</span>
             </div>
           ))}
-          {summary.needs_attention.length === 0 && <span className="source-ops-empty">No unhealthy source right now.</span>}
+          {summary.needs_attention.length === 0 && <span className="source-ops-empty">{t("sourceDiscovery.noUnhealthy")}</span>}
         </div>
         <div>
-          <h3>Promote Candidates</h3>
+          <h3>{t("sourceDiscovery.promoteCandidates")}</h3>
           {summary.recommended_promotes.slice(0, 4).map((candidate) => (
             <div className="source-ops-row" key={candidate.id}>
               <strong>{candidate.name}</strong>
-              <span>{candidate.validation_status} / confidence {candidate.confidence}</span>
+              <span>{candidate.validation_status} / {t("label.confidence")} {candidate.confidence}</span>
             </div>
           ))}
-          {summary.recommended_promotes.length === 0 && <span className="source-ops-empty">No high-confidence candidate waiting.</span>}
+          {summary.recommended_promotes.length === 0 && <span className="source-ops-empty">{t("sourceDiscovery.noHighConfidence")}</span>}
         </div>
         <div className="source-ops-actions">
           {summary.actions.map((action) => (
             <button type="button" key={`${action.type}-${action.target}`} onClick={() => onAction(action.type)} disabled={busy}>
-              {formatActionLabel(action.type)}
+              {formatActionLabel(action.type, t)}
             </button>
           ))}
         </div>
@@ -2550,11 +2677,12 @@ function TrendMetric({ label, value, inverse = false }: { label: string; value: 
 }
 
 function AgentActivityLog({ events }: { events: AgentEvent[] }) {
+  const { t } = useLang();
   return (
     <section className="activity-panel">
       <div className="panel-header">
-        <h2>Activity Log</h2>
-        <span>{events.length} recent</span>
+        <h2>{t("panel.activityLog")}</h2>
+        <span>{t("run.recorded", { count: events.length })}</span>
       </div>
       <div className="activity-list">
         {events.map((event) => (
@@ -2566,7 +2694,7 @@ function AgentActivityLog({ events }: { events: AgentEvent[] }) {
             <time>{new Date(event.created_at).toLocaleString()}</time>
           </div>
         ))}
-        {events.length === 0 && <div className="empty-source">No agent activity recorded yet.</div>}
+        {events.length === 0 && <div className="empty-source">{t("empty.noActivity")}</div>}
       </div>
     </section>
   );
@@ -2591,6 +2719,7 @@ function AgentTasksPanel({
   refreshing: boolean;
   busy: boolean;
 }) {
+  const { t } = useLang();
   const openTasks = tasks.filter((task) => task.status !== "done");
   const doneTasks = tasks.length - openTasks.length;
   const staleTasks = tasks.filter((task) => task.status === "stale").length;
@@ -2598,13 +2727,13 @@ function AgentTasksPanel({
   return (
     <section className="tasks-panel">
       <div className="panel-header">
-        <h2>Daily Tasks</h2>
-        <span>{openTasks.length} open / {staleTasks} stale / {escalatedTasks} escalated / {doneTasks} done</span>
+        <h2>{t("panel.dailyTasks")}</h2>
+        <span>{t("tasks.active", { open: openTasks.length, stale: staleTasks, escalated: escalatedTasks, done: doneTasks })}</span>
       </div>
       <div className="tasks-toolbar">
-        <span>{tasks.length > 0 ? `Work date ${tasks[0].task_date}` : "No task queue generated yet"}</span>
+        <span>{tasks.length > 0 ? `${t("label.workDate")} ${tasks[0].task_date}` : t("label.noTaskQueue")}</span>
         <button type="button" onClick={onRefresh} disabled={refreshing || busy}>
-          {refreshing ? "Refreshing..." : "Refresh Tasks"}
+          {refreshing ? t("action.refreshing") : t("action.refreshTasks")}
         </button>
       </div>
       <div className="task-list">
@@ -2616,33 +2745,33 @@ function AgentTasksPanel({
               <div>
                 <div className="task-title-line">
                   <strong>{task.title}</strong>
-                  <b className={`task-status status-${task.status}`}>{formatTaskStatus(task.status)}</b>
+                  <b className={`task-status status-${task.status}`}>{formatTaskStatus(task.status, t)}</b>
                 </div>
                 <span>{task.detail}</span>
-                {task.snoozed_until && <small>Snoozed until {formatDateTime(task.snoozed_until)}</small>}
-                {task.escalated_at && <small>Escalated at {formatDateTime(task.escalated_at)}</small>}
+                {task.snoozed_until && <small>{t("label.snoozedUntil")} {formatDateTime(task.snoozed_until, t)}</small>}
+                {task.escalated_at && <small>{t("label.escalatedAt")} {formatDateTime(task.escalated_at, t)}</small>}
                 {task.completion_reason && <small>{task.completion_reason}</small>}
               </div>
               <div className="task-actions">
                 {task.action && (
                   <button type="button" onClick={() => onAction(task.action)} disabled={busy}>
-                    Open
+                    {t("action.open")}
                   </button>
                 )}
                 <button type="button" onClick={() => onSnooze(task)} disabled={busy || isDone || isSnoozed}>
-                  {isSnoozed ? "Snoozed" : "Snooze"}
+                  {isSnoozed ? t("action.snoozed") : t("action.snooze")}
                 </button>
                 <button type="button" onClick={() => onComplete(task)} disabled={busy || isDone}>
-                  {isDone ? "Done" : "Complete"}
+                  {isDone ? t("action.done") : t("action.complete")}
                 </button>
                 <button type="button" onClick={() => onIgnore(task)} disabled={busy || isDone}>
-                  Ignore
+                  {t("action.ignore")}
                 </button>
               </div>
             </div>
           );
         })}
-        {tasks.length === 0 && <div className="empty-source">Refresh tasks after setting companies and running a crawl.</div>}
+        {tasks.length === 0 && <div className="empty-source">{t("tasks.refreshHint")}</div>}
       </div>
     </section>
   );
@@ -2675,6 +2804,7 @@ function AgentEmployeeSidebar({
   onCommandTextChange: (value: string) => void;
   onRunCommand: (event: React.FormEvent<HTMLFormElement>) => void | Promise<void>;
 }) {
+  const { t } = useLang();
   const topGaps = state.gaps.slice(0, 3);
   return (
     <aside className={`employee-sidebar employee-${state.mode}`}>
@@ -2694,15 +2824,15 @@ function AgentEmployeeSidebar({
 
       <form className="command-center" onSubmit={onRunCommand}>
         <label>
-          Command Center
+          {t("label.commandCenter")}
           <textarea
             value={commandText}
             onChange={(event) => onCommandTextChange(event.target.value)}
-            placeholder="Only Shenzhen Go backend, refresh tasks"
+            placeholder={t("placeholder.command")}
           />
         </label>
         <button type="submit" disabled={runningCommand}>
-          {runningCommand ? "Working..." : "Run Command"}
+          {runningCommand ? t("action.working") : t("action.runCommand")}
         </button>
         {commandResult && (
           <div className="command-result">
@@ -2717,65 +2847,76 @@ function AgentEmployeeSidebar({
       </form>
 
       <div className="employee-focus">
-        <span>Current Focus</span>
+        <span>{t("sidebar.currentFocus")}</span>
         <strong>{state.focus}</strong>
       </div>
 
       <div className="employee-memory">
-        <span>Memory</span>
-        <strong>{state.memory.last_focus_title || "No review memory yet"}</strong>
+        <span>{t("sidebar.memory")}</span>
+        <strong>{state.memory.last_focus_title || t("sidebar.noReviewMemory")}</strong>
         <small>{state.memory.trend_summary}</small>
         <small>
-          {state.memory.last_review_at ? `Last review ${formatDateTime(state.memory.last_review_at)}` : "Snapshot after a meaningful run to build memory"}
-          {state.memory.recent_action_count > 0 ? ` / ${state.memory.recent_action_count} recent actions` : ""}
+          {state.memory.last_review_at ? `${t("label.lastSent")} ${formatDateTime(state.memory.last_review_at, t)}` : t("plans.snapshotHint")}
+          {state.memory.recent_action_count > 0 ? ` / ${state.memory.recent_action_count}` : ""}
         </small>
+      </div>
+
+      <div className="employee-cycle-summary">
+        <span>Latest Agent Cycle</span>
+        <strong>{state.cycle.summary || "No cycle recorded yet"}</strong>
+        <small>{state.cycle.last_cycle_at ? formatDateTime(state.cycle.last_cycle_at, t) : "Run a crawl or cycle to create the first trace"}</small>
+        <div className="employee-cycle-metrics">
+          <Metric label="Readiness" value={state.cycle.readiness_score || 0} />
+          <Metric label="Agents" value={state.cycle.trace_count || 0} />
+          <Metric label="Actions" value={state.cycle.action_count || 0} />
+        </div>
       </div>
 
       <div className="employee-score">
         <div>
-          <span>Digital employee maturity</span>
+          <span>{t("sidebar.maturity")}</span>
           <strong>{state.maturity_score}</strong>
         </div>
-        <div className="score-track" aria-label="Digital employee maturity">
+        <div className="score-track" aria-label={t("sidebar.maturity")}>
           <span style={{ width: `${state.maturity_score}%` }} />
         </div>
       </div>
 
       <div className="employee-workload">
-        <Metric label="Open tasks" value={state.workload.open_tasks} />
-        <Metric label="Plans" value={state.workload.active_plans} />
-        <Metric label="Approvals" value={state.workload.pending_approvals} />
-        <Metric label="Strong" value={state.workload.strong_matches} />
-        <Metric label="Decisions" value={state.workload.manual_decisions} />
-        <Metric label="Source issues" value={state.workload.source_issues} />
+        <Metric label={t("metric.openTasks")} value={state.workload.open_tasks} />
+        <Metric label={t("metric.plans")} value={state.workload.active_plans} />
+        <Metric label={t("metric.approvals")} value={state.workload.pending_approvals} />
+        <Metric label={t("metric.strong")} value={state.workload.strong_matches} />
+        <Metric label={t("metric.decisions")} value={state.workload.manual_decisions} />
+        <Metric label={t("metric.sourceIssues")} value={state.workload.source_issues} />
       </div>
 
       <div className="employee-actions">
         <button type="button" onClick={onRefreshTasks} disabled={refreshingTasks}>
-          {refreshingTasks ? "Refreshing..." : "Refresh Work Queue"}
+          {refreshingTasks ? t("action.refreshing") : t("action.refreshWorkQueue")}
         </button>
         <button type="button" onClick={onSendFeishu} disabled={sendingFeishu || !feishuReady}>
-          {sendingFeishu ? "Sending..." : "Send Duty Report"}
+          {sendingFeishu ? t("action.sending") : t("action.sendDutyReport")}
         </button>
         <button type="button" onClick={onRunAutomationDutyReport} disabled={sendingFeishu || !feishuReady || !state.automation.duty_report_enabled}>
-          Run Auto Report
+          {t("action.runAutoReport")}
         </button>
       </div>
 
       <section className="employee-section">
-        <h3>Automation</h3>
+        <h3>{t("sidebar.automation")}</h3>
         <div className="automation-panel">
           <div>
-            <strong>{state.automation.duty_report_enabled ? "Duty report armed" : "Duty report paused"}</strong>
-            <span>Next {formatDateTime(state.automation.next_duty_report_at)} / SLA {state.automation.task_sla_hours}h</span>
+            <strong>{state.automation.duty_report_enabled ? t("label.dutyReportArmed") : t("label.dutyReportPaused")}</strong>
+            <span>{t("label.next")} {formatDateTime(state.automation.next_duty_report_at, t)} / {t("label.sla")} {state.automation.task_sla_hours}h</span>
           </div>
           <div>
-            <strong>{state.automation.source_discovery_enabled ? "Source discovery armed" : "Source discovery paused"}</strong>
-            <span>Next {formatDateTime(state.automation.next_source_discovery_due_at)} / every {state.automation.source_discovery_interval_hours}h</span>
+            <strong>{state.automation.source_discovery_enabled ? t("label.sourceDiscoveryArmed") : t("label.sourceDiscoveryPaused")}</strong>
+            <span>{t("label.next")} {formatDateTime(state.automation.next_source_discovery_due_at, t)} / {t("label.every")} {state.automation.source_discovery_interval_hours}h</span>
           </div>
           <div>
-            <strong>{state.automation.stale_task_count} stale tasks</strong>
-            <span>{state.automation.last_report_sent_at ? `Last sent ${formatDateTime(state.automation.last_report_sent_at)}` : "No automatic report sent yet"}</span>
+            <strong>{t("label.staleTasks", { count: state.automation.stale_task_count })}</strong>
+            <span>{state.automation.last_report_sent_at ? `${t("label.lastSent")} ${formatDateTime(state.automation.last_report_sent_at, t)}` : t("notice.noAutoReport")}</span>
           </div>
         </div>
         {state.automation.stale_tasks.length > 0 && (
@@ -2783,7 +2924,7 @@ function AgentEmployeeSidebar({
             {state.automation.stale_tasks.slice(0, 3).map((task) => (
               <div className="stale-task" key={task.id}>
                 <strong>{task.title}</strong>
-                <span>{task.age_hours}h pending / {task.detail}</span>
+                <span>{task.age_hours}h {t("label.pending")} / {task.detail}</span>
               </div>
             ))}
           </div>
@@ -2791,7 +2932,7 @@ function AgentEmployeeSidebar({
       </section>
 
       <section className="employee-section">
-        <h3>Capabilities</h3>
+        <h3>{t("sidebar.capabilities")}</h3>
         <div className="capability-list">
           {state.capabilities.map((item) => (
             <div className="capability-row" key={item.key}>
@@ -2809,7 +2950,7 @@ function AgentEmployeeSidebar({
       </section>
 
       <section className="employee-section">
-        <h3>Mainstream Gaps</h3>
+        <h3>{t("sidebar.gaps")}</h3>
         <div className="gap-list">
           {topGaps.map((gap) => (
             <div className="gap-item" key={gap.key}>
@@ -2821,7 +2962,7 @@ function AgentEmployeeSidebar({
       </section>
 
       <section className="employee-section">
-        <h3>Operating Cycle</h3>
+        <h3>{t("sidebar.operatingCycle")}</h3>
         <div className="cycle-list">
           {state.operating_cycle.map((moment) => (
             <div className="cycle-row" key={`${moment.time}-${moment.title}`}>
@@ -2868,54 +3009,55 @@ function GlobalEmployeeChat({
   actions: AgentCommandResult["actions"];
   onAction: (action: string) => void | Promise<void>;
 }) {
-  const modeLabel = status?.configured ? `${formatProviderLabel(status.provider)}: ${status.model}` : "Local rules";
+  const { t } = useLang();
+  const modeLabel = status?.configured ? `${formatProviderLabel(status.provider, t)}: ${status.model}` : t("chat.localRules");
   return (
-    <aside className={open ? "global-employee open" : "global-employee"} aria-label="Digital employee chat">
-      <button type="button" className="employee-fab" onClick={onToggle} aria-label="Toggle digital employee chat">
+    <aside className={open ? "global-employee open" : "global-employee"} aria-label={t("chat.digitalEmployee")}>
+      <button type="button" className="employee-fab" onClick={onToggle} aria-label={t("chat.toggle")}>
         <DigitalEmployee3D active={open} thinking={sending} />
-        <span className="employee-fab-status">{sending ? "Analyzing" : status?.configured ? "Model online" : "Local online"}</span>
-        <strong>Qiu Zhao</strong>
+        <span className="employee-fab-status">{sending ? t("chat.analyzing") : status?.configured ? t("chat.modelOnline") : t("chat.localOnline")}</span>
+        <strong>{state?.profile.name || t("chat.agentName")}</strong>
       </button>
       {open && (
         <section className="employee-chat-card">
           <div className="employee-chat-header">
             <div>
-              <strong>{state?.profile.name || "Job Hunter Agent"}</strong>
+              <strong>{state?.profile.name || t("chat.agentName")}</strong>
               <span>{modeLabel} / {activeView}</span>
             </div>
-            <button type="button" onClick={onCheckModel} disabled={checkingModel} aria-label="Check model connection">
-              {checkingModel ? "Checking" : "Check model"}
+            <button type="button" onClick={onCheckModel} disabled={checkingModel} aria-label={t("chat.checkModel")}>
+              {checkingModel ? t("action.checking") : t("action.checkModel")}
             </button>
-            <button type="button" onClick={onToggle} aria-label="Close chat">
-              Close
+            <button type="button" onClick={onToggle} aria-label={t("chat.close")}>
+              {t("action.close")}
             </button>
           </div>
           {healthcheck && (
             <div className={`model-health model-${healthcheck.status}`}>
-              <strong>{formatExecutionStatus(healthcheck.status)}</strong>
+              <strong>{formatExecutionStatus(healthcheck.status, t)}</strong>
               <span>{healthcheck.message}</span>
-              <small>{formatProviderLabel(healthcheck.provider)} / {healthcheck.model || "no model"} / {healthcheck.base_url}</small>
+              <small>{formatProviderLabel(healthcheck.provider, t)} / {healthcheck.model || t("chat.noModel")} / {healthcheck.base_url}</small>
             </div>
           )}
           <div className="employee-chat-messages">
             {messages.map((message) => (
               <div className={`chat-message chat-${message.role}`} key={message.id}>
-                <span>{message.role === "assistant" ? state?.profile.name || "Agent" : "You"}</span>
+                <span>{message.role === "assistant" ? state?.profile.name || t("chat.agent") : t("chat.you")}</span>
                 <p>{message.content}</p>
-                <small>{message.source} / {formatDateTime(message.created_at)}</small>
+                <small>{message.source} / {formatDateTime(message.created_at, t)}</small>
               </div>
             ))}
             {messages.length === 0 && (
               <div className="chat-empty">
-                <strong>I am here.</strong>
-                <span>Ask me what to apply for today, why a role fits, or tell me to refresh tasks.</span>
+                <strong>{t("chat.iAmHere")}</strong>
+                <span>{t("chat.welcome")}</span>
               </div>
             )}
             {actions.length > 0 && (
               <div className="chat-actions">
                 {actions.map((action) => (
                   <button type="button" key={`${action.type}-${action.target}`} onClick={() => onAction(action.type)}>
-                    {formatActionLabel(action.type)}
+                    {formatActionLabel(action.type, t)}
                   </button>
                 ))}
               </div>
@@ -2925,11 +3067,11 @@ function GlobalEmployeeChat({
             <input
               value={text}
               onChange={(event) => onTextChange(event.target.value)}
-              placeholder="Ask: which roles are worth applying today?"
-              aria-label="Message the digital employee"
+              placeholder={t("placeholder.chatInput")}
+              aria-label={t("placeholder.chatInput")}
             />
             <button type="submit" disabled={sending || text.trim() === ""}>
-              {sending ? "Sending..." : "Send"}
+              {sending ? t("action.sending") : t("action.send")}
             </button>
           </form>
         </section>
@@ -2952,12 +3094,13 @@ function ProductReadinessPanel({
   }>;
   busy: boolean;
 }) {
+  const { t } = useLang();
   const complete = items.filter((item) => item.done).length;
   return (
     <section className="readiness-panel">
       <div className="panel-header">
-        <h2>Product Readiness</h2>
-        <span>{complete} / {items.length} ready</span>
+        <h2>{t("panel.productReadiness")}</h2>
+        <span>{t("readiness.complete", { done: complete, total: items.length })}</span>
       </div>
       <div className="readiness-grid">
         {items.map((item) => (
@@ -2987,38 +3130,96 @@ function AgentActionRequestsPanel({
   onDismiss: (request: AgentActionRequest) => void | Promise<void>;
   busy: boolean;
 }) {
+  const { t } = useLang();
   return (
     <section className="action-requests-panel">
       <div className="panel-header">
         <div>
-          <h2>Suggested Actions</h2>
-          <span>{requests.length} pending decisions</span>
+          <h2>{t("panel.suggestedActions")}</h2>
+          <span>{t("actions.pending", { count: requests.length })}</span>
         </div>
       </div>
       <div className="action-request-list">
         {requests.slice(0, 6).map((request) => (
           <div className="action-request-row" key={request.id}>
             <div>
-              <strong>{formatActionLabel(request.action_type)}</strong>
-              <span>{request.detail || request.target || "Agent suggested a safe workflow action."}</span>
+              <strong>{formatActionLabel(request.action_type, t)}</strong>
+              <span>{request.detail || request.target || t("actions.agentSuggested")}</span>
               {request.execution_status && request.execution_status !== "not_run" && (
                 <small className={`execution-receipt receipt-${request.execution_status}`}>
-                  {formatExecutionStatus(request.execution_status)}: {request.execution_message || "No execution detail recorded."}
+                  {formatExecutionStatus(request.execution_status, t)}: {request.execution_message || t("actions.noExecutionDetail")}
                 </small>
               )}
-              <small>{request.source} / {formatDateTime(request.created_at)}</small>
+              <small>{request.source} / {formatDateTime(request.created_at, t)}</small>
             </div>
             <div className="action-request-actions">
               <button type="button" onClick={() => onApprove(request)} disabled={busy}>
-                Approve
+                {t("action.approve")}
               </button>
               <button type="button" onClick={() => onDismiss(request)} disabled={busy}>
-                Ignore
+                {t("action.ignore")}
               </button>
             </div>
           </div>
         ))}
-        {requests.length === 0 && <div className="empty-source">No suggested actions waiting for approval.</div>}
+        {requests.length === 0 && <div className="empty-source">{t("notice.noSuggestedActions")}</div>}
+      </div>
+    </section>
+  );
+}
+
+function AgentCyclesPanel({
+  cycles,
+  onRunCycle,
+  busy,
+}: {
+  cycles: AgentCycleRecord[];
+  onRunCycle: () => void | Promise<void>;
+  busy: boolean;
+}) {
+  const latest = cycles[0];
+  const visibleCycles = cycles.slice(0, 4);
+  return (
+    <section className="agent-cycles-panel">
+      <div className="panel-header">
+        <div>
+          <h2>Agent Cycles</h2>
+          <span>{latest ? `${latest.readiness_score} readiness / ${latest.actions.length} proposed actions` : "No cycle recorded yet"}</span>
+        </div>
+        <button type="button" onClick={onRunCycle} disabled={busy}>
+          {busy ? "Running..." : "Run cycle"}
+        </button>
+      </div>
+      <div className="agent-cycle-list">
+        {visibleCycles.map((cycle) => (
+          <article className="agent-cycle-card" key={cycle.id}>
+            <div className="agent-cycle-head">
+              <div>
+                <strong>{cycle.summary || "Multi-agent recruiting cycle"}</strong>
+                <span>{cycle.orchestrator_provider} / {cycle.orchestrator_pattern}</span>
+              </div>
+              <b>{cycle.readiness_score}</b>
+            </div>
+            <div className="agent-trace-grid">
+              {cycle.trace.map((trace) => (
+                <div className="agent-trace-item" key={`${cycle.id}-${trace.agent_key}`}>
+                  <strong>{formatAgentKey(trace.agent_key)}</strong>
+                  <span>{trace.observation}</span>
+                  <small>{trace.decision}</small>
+                </div>
+              ))}
+            </div>
+            {cycle.actions.length > 0 && (
+              <div className="agent-cycle-actions">
+                {cycle.actions.map((action) => (
+                  <span key={`${cycle.id}-${action.type}-${action.target}`}>{formatActionLabel(action.type)}</span>
+                ))}
+              </div>
+            )}
+            <footer>{formatDateTime(cycle.generated_at)}</footer>
+          </article>
+        ))}
+        {visibleCycles.length === 0 && <div className="empty-source">Run a cycle to let the employee inspect sources, jobs, memory, and plans.</div>}
       </div>
     </section>
   );
@@ -3033,16 +3234,17 @@ function AgentWorkPlansPanel({
   onCreateTodayPlan: () => void | Promise<void>;
   busy: boolean;
 }) {
+  const { t } = useLang();
   const visiblePlans = plans.slice(0, 4);
   return (
     <section className="agent-plans-panel">
       <div className="panel-header">
         <div>
-          <h2>Work Plans</h2>
-          <span>{plans.length} recent plans</span>
+          <h2>{t("panel.workPlans")}</h2>
+          <span>{t("plans.recent", { count: plans.length })}</span>
         </div>
         <button type="button" onClick={onCreateTodayPlan} disabled={busy}>
-          {busy ? "Planning..." : "Plan Today"}
+          {busy ? t("action.planning") : t("action.planToday")}
         </button>
       </div>
       <div className="agent-plan-list">
@@ -3050,30 +3252,30 @@ function AgentWorkPlansPanel({
           <article className="agent-plan-card" key={plan.id}>
             <div className="agent-plan-head">
               <div>
-                <strong>{plan.goal || "Agent planned a recruiting workflow"}</strong>
-                <span>{plan.summary || "Waiting for the next work step."}</span>
+                <strong>{plan.goal || t("plan.goalFallback")}</strong>
+                <span>{plan.summary || t("plan.summaryFallback")}</span>
               </div>
-              <small className={`plan-status status-${plan.status}`}>{formatPlanStatus(plan.status)}</small>
+              <small className={`plan-status status-${plan.status}`}>{formatPlanStatus(plan.status, t)}</small>
             </div>
             <div className="agent-plan-steps">
               {(plan.steps || []).map((step) => (
                 <div className={`agent-plan-step step-${step.status}`} key={`${plan.id}-${step.order}-${step.action_type}`}>
                   <span>{step.order}</span>
                   <div>
-                    <strong>{formatActionLabel(step.action_type)}</strong>
-                    <small>{step.detail || step.target || "No detail recorded."}</small>
+                    <strong>{formatActionLabel(step.action_type, t)}</strong>
+                    <small>{step.detail || step.target || t("label.noDetailRecorded")}</small>
                     {step.message && <small className="step-message">{step.message}</small>}
                   </div>
                 </div>
               ))}
             </div>
             <footer>
-              <span>{plan.needs_approval ? "Approval required" : "No approval needed"}</span>
-              <span>{formatDateTime(plan.created_at)}</span>
+              <span>{plan.needs_approval ? t("actions.approvalRequired") : t("actions.noApprovalNeeded")}</span>
+              <span>{formatDateTime(plan.created_at, t)}</span>
             </footer>
           </article>
         ))}
-        {visiblePlans.length === 0 && <div className="empty-source">No work plans yet. Ask the employee to plan or run a recruiting workflow.</div>}
+        {visiblePlans.length === 0 && <div className="empty-source">{t("plans.noPlans")}</div>}
       </div>
     </section>
   );
@@ -3168,9 +3370,9 @@ function parseSettingsList(value: string) {
     });
 }
 
-function formatDateTime(value: string) {
+function formatDateTime(value: string, t?: (key: TranslationKey) => string) {
   if (!value) {
-    return "not scheduled";
+    return t ? t("label.notScheduled") : "not scheduled";
   }
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -3179,53 +3381,68 @@ function formatDateTime(value: string) {
   return date.toLocaleString();
 }
 
-function formatTaskStatus(status: string) {
-  const labels: Record<string, string> = {
-    open: "Open",
-    stale: "Stale",
-    escalated: "Escalated",
-    snoozed: "Snoozed",
-    done: "Done",
-  };
-  return labels[status] || status;
+const taskStatusLabelKeys: Record<string, TranslationKey> = {
+  open: "taskStatus.open",
+  stale: "taskStatus.stale",
+  escalated: "taskStatus.escalated",
+  snoozed: "taskStatus.snoozed",
+  done: "taskStatus.done",
+};
+
+function formatTaskStatus(status: string, t?: (key: TranslationKey) => string) {
+  if (t && taskStatusLabelKeys[status]) return t(taskStatusLabelKeys[status]);
+  return status;
 }
 
-function formatPlanStatus(status: string) {
-  const labels: Record<string, string> = {
-    draft: "Draft",
-    waiting_approval: "Waiting approval",
-    executing: "Executing",
-    done: "Done",
-    failed: "Failed",
-  };
-  return labels[status] || status;
+const planStatusLabelKeys: Record<string, TranslationKey> = {
+  draft: "planStatus.draft",
+  waiting_approval: "planStatus.waitingApproval",
+  executing: "planStatus.executing",
+  done: "planStatus.done",
+  failed: "planStatus.failed",
+};
+
+function formatPlanStatus(status: string, t?: (key: TranslationKey) => string) {
+  if (t && planStatusLabelKeys[status]) return t(planStatusLabelKeys[status]);
+  return status;
 }
 
-function formatActionLabel(action: string) {
-  const labels: Record<string, string> = {
-    add_recommended_and_crawl: "Add sources and crawl",
-    run_crawl: "Run crawl",
-    review_manual_check: "Review manual jobs",
-    review_low_confidence: "Review low confidence",
-    cleanup_landing_pages: "Clean landing pages",
-    refresh_tasks: "Refresh tasks",
-    discover_sources: "Discover sources",
-    review_strong_matches: "Review strong matches",
-    inspect_failed_sources: "Inspect sources",
-    sync_application_plans: "Sync application plans",
-    prepare_application: "Open applications",
-    follow_up_application: "Follow up applications",
-  };
-  return labels[action] || action.replace(/_/g, " ");
+const actionLabelKeys: Record<string, TranslationKey> = {
+  add_recommended_and_crawl: "actionLabel.addRecommendedAndCrawl",
+  run_crawl: "actionLabel.runCrawl",
+  review_manual_check: "actionLabel.reviewManualCheck",
+  review_low_confidence: "actionLabel.reviewLowConfidence",
+  cleanup_landing_pages: "actionLabel.cleanupLandingPages",
+  refresh_tasks: "actionLabel.refreshTasks",
+  discover_sources: "actionLabel.discoverSources",
+  review_strong_matches: "actionLabel.reviewStrongMatches",
+  inspect_failed_sources: "actionLabel.inspectSources",
+  sync_application_plans: "actionLabel.syncApplicationPlans",
+  prepare_application: "actionLabel.openApplications",
+  follow_up_application: "actionLabel.followUpApplications",
+};
+
+function formatActionLabel(action: string, t?: (key: TranslationKey) => string) {
+  if (t && actionLabelKeys[action]) return t(actionLabelKeys[action]);
+  return action.replace(/_/g, " ");
 }
 
-function formatExecutionStatus(status: string) {
-  const labels: Record<string, string> = {
-    succeeded: "Executed",
-    failed: "Failed",
-    not_run: "Not run",
-  };
-  return labels[status] || status.replace(/_/g, " ");
+function formatAgentKey(key: string) {
+  return key
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+const executionStatusLabelKeys: Record<string, TranslationKey> = {
+  succeeded: "executionStatus.succeeded",
+  failed: "executionStatus.failed",
+  not_run: "executionStatus.notRun",
+};
+
+function formatExecutionStatus(status: string, t?: (key: TranslationKey) => string) {
+  if (t && executionStatusLabelKeys[status]) return t(executionStatusLabelKeys[status]);
+  return status.replace(/_/g, " ");
 }
 
 function compactMemoryContent(value: string) {
@@ -3236,30 +3453,34 @@ function compactMemoryContent(value: string) {
   return `${normalized.slice(0, 220)}...`;
 }
 
-function formatProviderLabel(provider: string) {
-  const labels: Record<string, string> = {
-    deepseek: "DeepSeek",
-    openai_compatible: "OpenAI-compatible",
-  };
-  return labels[provider] || provider || "Local";
+const providerLabelKeys: Record<string, TranslationKey> = {
+  deepseek: "provider.deepseek",
+  openai_compatible: "provider.openaiCompatible",
+};
+
+function formatProviderLabel(provider: string, t?: (key: TranslationKey) => string) {
+  if (t && providerLabelKeys[provider]) return t(providerLabelKeys[provider]);
+  return provider || (t ? t("provider.local") : "Local");
 }
 
-function formatFitVerdict(verdict: string) {
-  const labels: Record<string, string> = {
-    strong_fit: "Strong fit",
-    worth_reviewing: "Worth reviewing",
-    manual_check: "Manual check",
-    low_priority: "Low priority",
-  };
-  return labels[verdict] || verdict;
+const fitVerdictLabelKeys: Record<string, TranslationKey> = {
+  strong_fit: "fitVerdict.strongFit",
+  worth_reviewing: "fitVerdict.worthReviewing",
+  manual_check: "fitVerdict.manualCheck",
+  low_priority: "fitVerdict.lowPriority",
+};
+
+function formatFitVerdict(verdict: string, t?: (key: TranslationKey) => string) {
+  if (t && fitVerdictLabelKeys[verdict]) return t(fitVerdictLabelKeys[verdict]);
+  return verdict;
 }
 
-function formatDecisionAction(decision: { action: string; from_status: string; to_status: string }) {
+function formatDecisionAction(decision: { action: string; from_status: string; to_status: string }, t?: (key: TranslationKey) => string) {
   if (decision.action === "status_changed") {
     return `${decision.from_status || "unknown"} -> ${decision.to_status || "unknown"}`;
   }
   if (decision.action === "notes_updated") {
-    return "Notes updated";
+    return t ? t("label.notesUpdated") : "Notes updated";
   }
   return decision.action.replace("_", " ");
 }

@@ -8,8 +8,10 @@ import type {
   AgentChatResponse,
   AgentChatStatus,
   AgentCommandResult,
+  AgentCycleRecord,
   AgentDutyReport,
   AgentEvent,
+  MultiAgentCycleResult,
   AgentReview,
   AgentReviewHistory,
   AgentReviewSnapshot,
@@ -25,6 +27,8 @@ import type {
   JobRun,
   JobRunSource,
   JobStatus,
+  LLMConfig,
+  LLMConfigUpdate,
   RecommendedCrawlResponse,
   RunSummary,
   SeedSourcesResult,
@@ -98,6 +102,15 @@ export async function listAgentPlans(status = ""): Promise<AgentPlan[]> {
   return Array.isArray(plans) ? plans : [];
 }
 
+export async function listAgentCycles(limit = 8): Promise<AgentCycleRecord[]> {
+  const cycles = await request<AgentCycleRecord[] | null>(`/api/agent/cycles?limit=${limit}`);
+  return Array.isArray(cycles) ? cycles : [];
+}
+
+export async function runAgentCycle(): Promise<MultiAgentCycleResult> {
+  return request<MultiAgentCycleResult>("/api/agent/cycles/run", { method: "POST" });
+}
+
 export async function createTodayAgentPlan(): Promise<AgentPlan> {
   return request<AgentPlan>("/api/agent/plans/today", { method: "POST" });
 }
@@ -116,6 +129,17 @@ export async function getAgentChatStatus(): Promise<AgentChatStatus> {
 export async function checkAgentChatModel(): Promise<AgentChatHealthcheck> {
   return request<AgentChatHealthcheck>("/api/agent/chat/healthcheck", {
     method: "POST",
+  });
+}
+
+export async function getAgentChatConfig(): Promise<LLMConfig> {
+  return request<LLMConfig>("/api/agent/chat/config");
+}
+
+export async function updateAgentChatConfig(update: LLMConfigUpdate): Promise<LLMConfig> {
+  return request<LLMConfig>("/api/agent/chat/config", {
+    method: "PATCH",
+    body: JSON.stringify(update),
   });
 }
 

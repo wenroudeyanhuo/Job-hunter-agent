@@ -31,3 +31,13 @@ func TestLoadReadsDeepSeekModelConfig(t *testing.T) {
 		t.Fatalf("expected deepseek base URL, got %#v", cfg)
 	}
 }
+
+func TestLoadReadsAgentOrchestrator(t *testing.T) {
+	t.Setenv("AGENT_ORCHESTRATOR", "eino_graph")
+
+	cfg := Load()
+
+	if cfg.AgentOrchestrator != "eino_graph" {
+		t.Fatalf("expected eino graph orchestrator, got %#v", cfg)
+	}
+}

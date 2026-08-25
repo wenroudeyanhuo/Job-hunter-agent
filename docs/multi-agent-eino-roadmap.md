@@ -13,6 +13,30 @@ The backend now defines four specialized agents in `backend/internal/jobs/multi_
 
 The current runner is deterministic. This keeps local development predictable while the role contracts, actions, and guardrails stabilize.
 
+The runtime now exposes a `RecruitingOrchestrator` interface. The default orchestrator is deterministic, while manual Agent Cycles can be model-enhanced with DeepSeek/OpenAI-compatible insights. The interface is the stable replacement point for a future Eino Graph runner.
+
+An optional Eino Graph adapter is present behind the Go build tag `eino` in `backend/internal/jobs/eino_graph_orchestrator.go`. It maps the current specialist flow into typed Eino Graph lambda nodes:
+
+`START -> init_cycle -> source_scout -> job_analyst -> memory_keeper -> planner -> finalize_cycle -> END`
+
+It is not part of the default build because the Eino module may not be available in every local/open-source environment. When dependency download is available, install Eino and run the tagged tests:
+
+```powershell
+cd backend
+go get github.com/cloudwego/eino@latest
+go test -tags eino ./internal/jobs -run TestEinoRecruitingOrchestratorRunsGraph
+```
+
+To run the backend through the Eino Graph orchestration path:
+
+```powershell
+cd backend
+$env:AGENT_ORCHESTRATOR="eino_graph"
+go run -tags eino ./cmd/server
+```
+
+Without the `eino` build tag, `AGENT_ORCHESTRATOR=eino_graph` safely falls back to the deterministic orchestrator so normal local and open-source builds continue to work.
+
 ## Agent Cycle History
 
 Each multi-agent run can now be persisted as an `agent_cycle`:
@@ -23,6 +47,10 @@ Each multi-agent run can now be persisted as an `agent_cycle`:
 - `orchestrator_provider` and `orchestrator_pattern` record which orchestration boundary produced the run.
 
 This gives the product a real operating log: scheduled runs, manual runs, Feishu briefings, and future Eino executions can all point to the same cycle record instead of producing disconnected temporary output.
+
+Cycle generation is now part of the work loop. Manual crawls, recommended crawls, and duty-report workflows can trigger a follow-up cycle automatically, store the specialist trace, and create safe approval requests for the next step.
+
+Feishu duty reports can include the latest cycle, including readiness score, orchestrator provider, specialist decisions, and approval-gated action types.
 
 ## Eino Boundary
 
@@ -38,8 +66,8 @@ The orchestration metadata is marked as `eino_ready` because the role contracts 
 Recommended first Eino migration:
 
 1. Keep the existing deterministic `RunRecruitingAgentCycle` as the fallback runner.
-2. Add an `EinoRecruitingOrchestrator` behind the same input/output structs.
-3. Start with a preset sequential graph:
+2. Enable the optional `EinoRecruitingOrchestrator` behind the existing `RecruitingOrchestrator` interface.
+3. Start with the preset sequential graph:
    `SourceScout -> JobAnalyst -> MemoryKeeper -> Planner`.
 4. Add interrupts around action execution so approvals continue to happen in the current action-request queue.
 5. Move to Agent-as-Tool only after the deterministic graph is stable and model-backed delegation is useful.

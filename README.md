@@ -23,6 +23,8 @@ Early MVP. The current version provides a Go backend foundation, SQLite persiste
 - Daily agent task queue generated from recommended jobs, manual decisions, source issues, and crawl history.
 - Digital employee sidebar with an agent profile, avatar, maturity score, capability map, operating cycle, and mainstream capability gaps.
 - Multi-agent recruiting runtime with Source Scout, Job Analyst, Memory Keeper, and Planner roles, plus an Eino-ready orchestration boundary.
+- Agent Cycle history that records each multi-agent run, and automatic cycle review after crawl/report workflows so the employee can propose approval-gated next actions.
+- Recruiting orchestrator interface with deterministic fallback and model-enhanced cycle insights for DeepSeek/OpenAI-compatible configurations.
 - Command Center for rule-based natural-language workflow commands such as changing target cities/directions, refreshing tasks, running a crawl, and sending Feishu reports.
 - Global digital employee chat with a persistent 3D avatar, local rule fallback, saved chat history, recent-conversation model context, optional OpenAI-compatible or DeepSeek model mode, and safe whitelisted action suggestions.
 - Local semantic memory with deterministic hash embeddings, automatic job-memory sync, a rebuildable memory index, semantic search API, and retrieved memories injected into local/model chat context.
@@ -33,6 +35,7 @@ Early MVP. The current version provides a Go backend foundation, SQLite persiste
 - Automatic duty report controls with configurable report time, scheduler tick, task SLA, stale-task detection, escalation, snooze, completion reasons, and last-sent tracking.
 - Automatic source discovery controls with a configurable interval so the assistant can keep expanding the source pool over time.
 - Feishu webhook summaries after crawl runs when a webhook is configured in Settings or `FEISHU_WEBHOOK_URL`.
+- Feishu duty reports can include the latest Agent Cycle summary, specialist decisions, and pending approval action types.
 
 ## What It Does
 
@@ -47,10 +50,12 @@ Early MVP. The current version provides a Go backend foundation, SQLite persiste
 - Shows what the assistant can already do, where it is weaker than mainstream digital employees, and which capability should be improved next.
 - Accepts simple workflow commands from the digital employee sidebar. Current parsing is deterministic and transparent, not LLM-based.
 - Keeps a global chat assistant available across pages. Without a model key it answers with local recruiting context; with model settings it calls an OpenAI-compatible chat-completions endpoint with recent conversation history, parses safe JSON action suggestions, filters unsafe actions, persists safe suggestions for review, and falls back locally if the model fails.
+- Uses the configured DeepSeek/OpenAI-compatible model to enhance manual Agent Cycles with specialist insights when available, while keeping deterministic local orchestration as fallback.
 - Builds a local semantic memory index from tracked jobs so the assistant can retrieve opportunities by intent instead of exact keywords only. The default provider is `local_hash` for zero-config local development; the storage boundary is intentionally small enough to replace later with DeepSeek embeddings, pgvector, Qdrant, or another vector backend.
 - Discovers, validates, and summarizes source candidates so the crawl pool does not stay fixed forever.
 - Tracks stale or escalated daily tasks, supports snoozing or closing work items with reasons, and can send an automatic duty report when enabled and the configured report time is reached.
 - Supports manual crawl runs and scheduled runs at 09:00, 12:00, and 18:00.
+- Runs a multi-agent review after completed crawl/report workflows, then stores the trace and creates safe approval requests for the next step.
 - Can send Feishu incoming webhook notifications.
 
 ## What It Does Not Do
@@ -94,6 +99,7 @@ APP_DB_PATH=data/job-hunter-agent.db
 FEISHU_WEBHOOK_URL=
 DISABLE_SCHEDULER=0
 SOURCE_URLS=
+AGENT_ORCHESTRATOR=deterministic
 LLM_PROVIDER=
 LLM_API_KEY=
 LLM_BASE_URL=https://api.openai.com/v1
@@ -105,6 +111,8 @@ DEEPSEEK_MODEL=deepseek-chat
 `SOURCE_URLS` can contain comma-separated or newline-separated public recruitment URLs. Manual and scheduled crawl runs import these URLs, score them, deduplicate them, and store them in the local database.
 
 `FEISHU_WEBHOOK_URL` is optional. Open-source users can also open the dashboard, go to Settings, paste their own Feishu incoming bot webhook URL, save it, and send a test notification. A saved dashboard webhook takes priority over the environment variable and does not require restarting the backend.
+
+`AGENT_ORCHESTRATOR` defaults to `deterministic`. To run the optional Eino Graph orchestration path, install Eino, set `AGENT_ORCHESTRATOR=eino_graph`, and start the backend with the Go build tag: `go run -tags eino ./cmd/server`.
 
 `LLM_PROVIDER`, `LLM_API_KEY`, `LLM_BASE_URL`, and `LLM_MODEL` are optional. If they are not configured, the global digital employee chat uses local rule-based replies. If they are configured, the backend calls an OpenAI-compatible `/chat/completions` endpoint and falls back to local replies on failure. `OPENAI_API_KEY`, `OPENAI_BASE_URL`, and `OPENAI_MODEL` are also accepted.
 
@@ -176,6 +184,7 @@ Vercel is a good fit for the static frontend only. This project currently uses a
 - Scheduler: must remain enabled for automatic crawls, automatic source discovery, stale-task escalation, and automatic Feishu duty reports.
 - SQLite: works well for local-first usage. For hosted multi-user usage, plan a Postgres migration before exposing it publicly.
 - Vercel: suitable for the frontend, but not enough for the current full product because Vercel serverless functions do not provide a simple always-on scheduler plus persistent local SQLite disk.
+- Open-source setup: see [docs/open-source-setup.md](docs/open-source-setup.md) for local, Docker Compose, Feishu, and DeepSeek configuration.
 
 ### First Run Checklist
 
@@ -198,9 +207,10 @@ After the backend and frontend are running:
 15. Open Details from an opportunity to review fit signals, application plan, risks, suggested action, notes, and decision history.
 16. Use the global digital employee chat in the lower-right corner to ask what to do next or why a role fits.
 17. Review Suggested Actions on the Dashboard and approve or ignore what the agent proposes.
-18. Review the Companies source operations summary for broken sources, pending candidates, and high-confidence promotions.
-19. Use Snooze, Complete, or Ignore in Daily Tasks to keep the assistant's work queue accurate.
-20. Use Send to Feishu from the duty report when you want the assistant to push the current task queue and summary to your bot.
+18. Review Agent Cycles on the Dashboard to see which specialist agent observed what after the latest workflow.
+19. Review the Companies source operations summary for broken sources, pending candidates, and high-confidence promotions.
+20. Use Snooze, Complete, or Ignore in Daily Tasks to keep the assistant's work queue accurate.
+21. Use Send to Feishu from the duty report when you want the assistant to push the current task queue and summary to your bot.
 
 ## Local Data
 

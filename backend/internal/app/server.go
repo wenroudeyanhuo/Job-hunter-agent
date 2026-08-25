@@ -47,18 +47,27 @@ func NewApplication(cfg config.Config) (*Application, error) {
 	}
 	collectors := []crawl.Collector{crawl.SeedCollector{}, crawl.NewDBSourceCollector(repo, nil)}
 	baseRunner := crawl.NewRunner(repo, collectors)
-	runner := newNotifyingRunner(baseRunner, repo, cfg.FeishuWebhookURL)
-	automation := newAutomationRunner(repo, cfg.FeishuWebhookURL)
-	handler := httpapi.NewRouter(&httpapi.Handlers{
+	orchestrator := jobs.NewConfiguredRecruitingOrchestrator(context.Background(), cfg.AgentOrchestrator)
+	runner := newNotifyingRunner(baseRunner, repo, cfg.FeishuWebhookURL, orchestrator)
+	automation := newAutomationRunner(repo, cfg.FeishuWebhookURL, orchestrator)
+
+	envLLM := jobs.LLMConfig{
+		Provider: cfg.LLMProvider,
+		APIKey:   cfg.LLMAPIKey,
+		BaseURL:  cfg.LLMBaseURL,
+		Model:    cfg.LLMModel,
+	}
+	storedLLM, err := repo.GetLLMConfig(context.Background())
+	if err == nil && (storedLLM.Model != "" || storedLLM.APIKey != "") {
+		envLLM = storedLLM
+	}
+	handlers := &httpapi.Handlers{
 		Repo:             repo,
 		Runner:           runner,
 		FeishuWebhookURL: cfg.FeishuWebhookURL,
-		LLM: jobs.LLMConfig{
-			Provider: cfg.LLMProvider,
-			APIKey:   cfg.LLMAPIKey,
-			BaseURL:  cfg.LLMBaseURL,
-			Model:    cfg.LLMModel,
-		},
-	})
+		LLM:              &envLLM,
+		Orchestrator:     orchestrator,
+	}
+	handler := httpapi.NewRouter(handlers)
 	return &Application{Handler: handler, DB: conn, Runner: runner, Automation: automation}, nil
 }

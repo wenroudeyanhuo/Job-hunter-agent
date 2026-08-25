@@ -56,7 +56,7 @@ func TestAutomationRunnerSendsDueDutyReportOnce(t *testing.T) {
 		t.Fatalf("seed job: %v", err)
 	}
 
-	runner := newAutomationRunner(repo, "")
+	runner := newAutomationRunner(repo, "", nil)
 	now := time.Date(2026, 7, 21, 18, 1, 0, 0, time.UTC)
 	sent, err := runner.Tick(context.Background(), now)
 	if err != nil {
@@ -67,6 +67,13 @@ func TestAutomationRunnerSendsDueDutyReportOnce(t *testing.T) {
 	}
 	if !strings.Contains(text, "Job Hunter Agent duty report") {
 		t.Fatalf("expected duty report text, got %q", text)
+	}
+	cycles, err := repo.ListAgentCycles(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("list cycles: %v", err)
+	}
+	if len(cycles) == 0 {
+		t.Fatal("expected automation duty report to record an agent cycle")
 	}
 
 	sent, err = runner.Tick(context.Background(), now.Add(10*time.Minute))
@@ -91,7 +98,7 @@ func TestAutomationRunnerDiscoversSourcesWhenDue(t *testing.T) {
 		t.Fatalf("save settings: %v", err)
 	}
 
-	runner := newAutomationRunner(repo, "")
+	runner := newAutomationRunner(repo, "", nil)
 	ran, err := runner.Tick(context.Background(), time.Date(2026, 7, 21, 9, 0, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatalf("tick: %v", err)
@@ -138,7 +145,7 @@ func TestAutomationRunnerCreatesDailyWorkPlanOnce(t *testing.T) {
 		t.Fatalf("seed source: %v", err)
 	}
 
-	runner := newAutomationRunner(repo, "")
+	runner := newAutomationRunner(repo, "", nil)
 	now := time.Date(2026, 8, 13, 9, 1, 0, 0, time.UTC)
 	ran, err := runner.Tick(context.Background(), now)
 	if err != nil {

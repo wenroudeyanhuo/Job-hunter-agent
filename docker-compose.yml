@@ -7,9 +7,14 @@ services:
       APP_DB_PATH: /data/job-hunter-agent.db
       FEISHU_WEBHOOK_URL: ${FEISHU_WEBHOOK_URL:-}
       SOURCE_URLS: ${SOURCE_URLS:-}
+      LLM_PROVIDER: ${LLM_PROVIDER:-}
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_BASE_URL: ${LLM_BASE_URL:-https://api.openai.com/v1}
       LLM_MODEL: ${LLM_MODEL:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-chat}
+      DISABLE_SCHEDULER: ${DISABLE_SCHEDULER:-0}
+      AGENT_ORCHESTRATOR: ${AGENT_ORCHESTRATOR:-deterministic}
     volumes:
       - job-hunter-data:/data
     ports:

@@ -60,6 +60,26 @@ func TestRepositoryDiscoversAndAcceptsSourceCandidates(t *testing.T) {
 	}
 }
 
+func TestSourceDiscoveryBuildsBroaderPlatformCandidates(t *testing.T) {
+	candidates := BuildSourceDiscoveryCandidates(SourceDiscoveryInput{
+		TargetCities:     []string{"Shenzhen"},
+		TargetDirections: []string{"go"},
+	})
+
+	if !hasCandidateName(candidates, "Liepin search") || !hasCandidateName(candidates, "Maimai search") || !hasCandidateName(candidates, "GitHub topic search") {
+		t.Fatalf("expected broader platform discovery candidates, got %#v", candidates)
+	}
+}
+
+func hasCandidateName(candidates []sourceCandidateInput, prefix string) bool {
+	for _, candidate := range candidates {
+		if strings.HasPrefix(candidate.Name, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 func TestRepositoryRejectsSourceCandidate(t *testing.T) {
 	ctx := context.Background()
 	conn, err := db.Open(":memory:")

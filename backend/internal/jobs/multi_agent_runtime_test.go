@@ -50,6 +50,71 @@ func TestRunRecruitingAgentCycleProducesTraceAndActions(t *testing.T) {
 	}
 }
 
+func TestDefaultRecruitingOrchestratorRunsDeterministicFallback(t *testing.T) {
+	cycle := DefaultRecruitingOrchestrator().Run(MultiAgentCycleInput{
+		Sources: []Source{{Name: "Tencent Careers", Enabled: true, HealthStatus: SourceHealthBroken}},
+	})
+
+	if cycle.Team.Orchestrator.Provider != MultiAgentOrchestratorEinoReady {
+		t.Fatalf("expected fallback orchestrator to preserve Eino-ready boundary, got %#v", cycle.Team.Orchestrator)
+	}
+	if len(cycle.Trace) != 4 {
+		t.Fatalf("expected deterministic trace, got %#v", cycle.Trace)
+	}
+}
+
+func TestApplyModelAgentInsightsAnnotatesCycleAndFiltersActions(t *testing.T) {
+	cycle := RunRecruitingAgentCycle(MultiAgentCycleInput{
+		Jobs: []domain.Job{{Company: "Tencent", Title: "Go Backend Engineer", City: "Shenzhen", MatchScore: 90, Status: domain.StatusNew}},
+	})
+
+	enhanced := ApplyModelAgentInsights(cycle, []ModelAgentInsight{
+		{
+			AgentKey: MultiAgentJobAnalyst,
+			Decision: "Model says Tencent backend should be reviewed today.",
+			Actions: []AgentCommandAction{
+				{Type: "review_strong_matches", Target: "opportunities", Detail: "Review Tencent backend first."},
+				{Type: "auto_apply_resume", Target: "external", Detail: "Unsafe action"},
+			},
+		},
+	})
+
+	if enhanced.Team.Orchestrator.Provider != MultiAgentOrchestratorModelEnhanced {
+		t.Fatalf("expected model-enhanced provider, got %#v", enhanced.Team.Orchestrator)
+	}
+	if !multiAgentHasAction(enhanced.Actions, "review_strong_matches") {
+		t.Fatalf("expected safe model action to be kept, got %#v", enhanced.Actions)
+	}
+	if multiAgentHasAction(enhanced.Actions, "auto_apply_resume") {
+		t.Fatalf("expected unsafe model action to be filtered, got %#v", enhanced.Actions)
+	}
+	if enhanced.Trace[1].Decision != "Model says Tencent backend should be reviewed today." {
+		t.Fatalf("expected model decision to annotate matching trace, got %#v", enhanced.Trace[1])
+	}
+}
+
+func TestParseModelAgentInsightsAcceptsStructuredJSON(t *testing.T) {
+	insights := ParseModelAgentInsights(`{
+		"insights": [
+			{
+				"agent_key": "job_analyst",
+				"decision": "Review Tencent first.",
+				"actions": [
+					{"type":"review_strong_matches","target":"opportunities","detail":"Review high score jobs."},
+					{"type":"auto_apply_resume","target":"external","detail":"Unsafe"}
+				]
+			}
+		]
+	}`)
+
+	if len(insights) != 1 {
+		t.Fatalf("expected one insight, got %#v", insights)
+	}
+	if insights[0].AgentKey != MultiAgentJobAnalyst || len(insights[0].Actions) != 1 {
+		t.Fatalf("expected parsed and filtered insight, got %#v", insights[0])
+	}
+}
+
 func multiAgentHasAction(actions []AgentCommandAction, actionType string) bool {
 	for _, action := range actions {
 		if action.Type == actionType {

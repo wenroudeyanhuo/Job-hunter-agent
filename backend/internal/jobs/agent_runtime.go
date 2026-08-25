@@ -23,9 +23,11 @@ type AgentPlanResult struct {
 }
 
 type MultiAgentCycleRequest struct {
-	Input                MultiAgentCycleInput `json:"input"`
-	Source               string               `json:"source"`
-	RecordActionRequests bool                 `json:"record_action_requests"`
+	Input                MultiAgentCycleInput   `json:"input"`
+	Source               string                 `json:"source"`
+	RecordActionRequests bool                   `json:"record_action_requests"`
+	ModelInsights        []ModelAgentInsight    `json:"model_insights"`
+	Orchestrator         RecruitingOrchestrator `json:"-"`
 }
 
 type MultiAgentCycleResult struct {
@@ -41,7 +43,12 @@ func (r *AgentRuntime) RunMultiAgentCycle(ctx context.Context, request MultiAgen
 	if r == nil || r.repo == nil {
 		return MultiAgentCycleResult{}, nil
 	}
-	cycle := RunRecruitingAgentCycle(request.Input)
+	orchestrator := request.Orchestrator
+	if orchestrator == nil {
+		orchestrator = DefaultRecruitingOrchestrator()
+	}
+	cycle := orchestrator.Run(request.Input)
+	cycle = ApplyModelAgentInsights(cycle, request.ModelInsights)
 	record, err := r.repo.RecordAgentCycle(ctx, cycle)
 	if err != nil {
 		return MultiAgentCycleResult{}, err

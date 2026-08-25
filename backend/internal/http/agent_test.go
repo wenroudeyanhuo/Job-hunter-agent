@@ -183,6 +183,74 @@ func TestCreateTodayAgentPlanAPI(t *testing.T) {
 	}
 }
 
+func TestRunAndListAgentCyclesAPI(t *testing.T) {
+	repo, handler := testRouter(t, nil)
+	if _, err := repo.CreateJob(t.Context(), domain.Job{
+		Company:    "ByteDance",
+		Title:      "AI Application Engineer",
+		City:       "Shenzhen",
+		MatchScore: 92,
+		Status:     domain.StatusNew,
+	}); err != nil {
+		t.Fatalf("seed job: %v", err)
+	}
+	if _, err := repo.CreateSource(t.Context(), jobs.SourceInput{
+		Name:       "ByteDance Campus",
+		URL:        "https://jobs.bytedance.com/campus/",
+		Enabled:    true,
+		ParserType: "generic",
+	}); err != nil {
+		t.Fatalf("seed source: %v", err)
+	}
+	if err := repo.UpdateSourceHealthByURL(t.Context(), "https://jobs.bytedance.com/campus/", jobs.SourceHealthInput{
+		Status:  jobs.SourceHealthBroken,
+		Reason:  "HTTP 502",
+		Success: false,
+	}); err != nil {
+		t.Fatalf("mark source broken: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/agent/cycles/run", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var result jobs.MultiAgentCycleResult
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatalf("decode cycle result: %v", err)
+	}
+	if result.Cycle.ID == 0 || len(result.Cycle.Trace) != 4 {
+		t.Fatalf("expected recorded cycle with trace, got %#v", result.Cycle)
+	}
+	if result.ActionRequestsCreated == 0 {
+		t.Fatalf("expected action requests from cycle, got %#v", result)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/agent/cycles", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var cycles []jobs.AgentCycleRecord
+	if err := json.Unmarshal(rec.Body.Bytes(), &cycles); err != nil {
+		t.Fatalf("decode cycles: %v", err)
+	}
+	if len(cycles) != 1 || cycles[0].ID != result.Cycle.ID {
+		t.Fatalf("expected listed cycle, got %#v", cycles)
+	}
+	requests, err := repo.ListAgentActionRequests(t.Context(), jobs.AgentActionRequestStatusPending)
+	if err != nil {
+		t.Fatalf("list action requests: %v", err)
+	}
+	if len(requests) != result.ActionRequestsCreated {
+		t.Fatalf("expected persisted action requests, got result=%#v requests=%#v", result, requests)
+	}
+}
+
 func TestAgentReviewSnapshotAndHistoryAPI(t *testing.T) {
 	repo, handler := testRouter(t, nil)
 	if _, err := repo.CreateJob(t.Context(), domain.Job{
@@ -507,6 +575,38 @@ func TestAgentStateAPIIncludesMemoryFromReviewSnapshots(t *testing.T) {
 	}
 	if !strings.Contains(response.Memory.TrendSummary, "strong matches +1") {
 		t.Fatalf("expected trend summary in memory, got %q", response.Memory.TrendSummary)
+	}
+}
+
+func TestAgentStateAPIIncludesLatestAgentCycle(t *testing.T) {
+	repo, handler := testRouter(t, nil)
+	if _, err := repo.RecordAgentCycle(t.Context(), jobs.RunRecruitingAgentCycle(jobs.MultiAgentCycleInput{
+		Jobs: []domain.Job{
+			{Company: "Tencent", Title: "Go Backend Engineer", City: "Shenzhen", MatchScore: 88, Status: domain.StatusNew},
+		},
+		Sources: []jobs.Source{
+			{Name: "Tencent Careers", Enabled: true, HealthStatus: jobs.SourceHealthHealthy},
+		},
+		Now: time.Now().UTC(),
+	})); err != nil {
+		t.Fatalf("record cycle: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/agent/state", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var response jobs.AgentState
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode state: %v", err)
+	}
+	if response.Cycle.LastCycleAt == nil || response.Cycle.ReadinessScore == 0 || response.Cycle.TraceCount != 4 {
+		t.Fatalf("expected latest cycle in state, got %#v", response.Cycle)
+	}
+	if !containsCapability(response.Capabilities, "multi_agent_cycle") {
+		t.Fatalf("expected multi-agent capability, got %#v", response.Capabilities)
 	}
 }
 

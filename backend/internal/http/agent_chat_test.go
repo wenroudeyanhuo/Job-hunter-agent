@@ -83,7 +83,7 @@ func TestAgentChatAPIParsesModelSuggestedActions(t *testing.T) {
 	repo := jobs.NewRepository(conn)
 	handler := NewRouter(&Handlers{
 		Repo: repo,
-		LLM:  jobs.LLMConfig{APIKey: "test-key", BaseURL: model.URL, Model: "test-model"},
+		LLM:  &jobs.LLMConfig{APIKey: "test-key", BaseURL: model.URL, Model: "test-model"},
 	})
 
 	body := bytes.NewBufferString(`{"message":"帮我准备投递","active_view":"applications"}`)
@@ -140,7 +140,7 @@ func TestAgentChatModelPromptIncludesRecommendedJobs(t *testing.T) {
 	}
 	handler := NewRouter(&Handlers{
 		Repo: repo,
-		LLM:  jobs.LLMConfig{APIKey: "test-key", BaseURL: model.URL, Model: "test-model"},
+		LLM:  &jobs.LLMConfig{APIKey: "test-key", BaseURL: model.URL, Model: "test-model"},
 	})
 
 	body := bytes.NewBufferString(`{"message":"今天最值得看什么岗位？","active_view":"opportunities"}`)
@@ -193,7 +193,7 @@ func TestAgentChatModelReceivesRecentConversationHistory(t *testing.T) {
 	}
 	handler := NewRouter(&Handlers{
 		Repo: repo,
-		LLM:  jobs.LLMConfig{APIKey: "test-key", BaseURL: model.URL, Model: "test-model"},
+		LLM:  &jobs.LLMConfig{APIKey: "test-key", BaseURL: model.URL, Model: "test-model"},
 	})
 
 	body := bytes.NewBufferString(`{"message":"那算法岗位呢？","active_view":"opportunities"}`)
@@ -236,7 +236,7 @@ func TestAgentChatHealthcheckCallsConfiguredModel(t *testing.T) {
 	}
 	handler := NewRouter(&Handlers{
 		Repo: jobs.NewRepository(conn),
-		LLM:  jobs.LLMConfig{Provider: "deepseek", APIKey: "test-key", BaseURL: model.URL, Model: "deepseek-chat"},
+		LLM:  &jobs.LLMConfig{Provider: "deepseek", APIKey: "test-key", BaseURL: model.URL, Model: "deepseek-chat"},
 	})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/agent/chat/healthcheck", nil)

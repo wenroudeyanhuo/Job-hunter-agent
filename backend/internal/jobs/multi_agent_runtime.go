@@ -1,6 +1,7 @@
 package jobs
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -14,8 +15,23 @@ const (
 	MultiAgentMemoryKeeper = "memory_keeper"
 	MultiAgentPlanner      = "planner"
 
-	MultiAgentOrchestratorEinoReady = "eino_ready"
+	MultiAgentOrchestratorEinoReady     = "eino_ready"
+	MultiAgentOrchestratorModelEnhanced = "model_enhanced"
 )
+
+type RecruitingOrchestrator interface {
+	Run(input MultiAgentCycleInput) MultiAgentCycle
+}
+
+type deterministicRecruitingOrchestrator struct{}
+
+func DefaultRecruitingOrchestrator() RecruitingOrchestrator {
+	return deterministicRecruitingOrchestrator{}
+}
+
+func (deterministicRecruitingOrchestrator) Run(input MultiAgentCycleInput) MultiAgentCycle {
+	return RunRecruitingAgentCycle(input)
+}
 
 type MultiAgentTeam struct {
 	Orchestrator MultiAgentOrchestrator `json:"orchestrator"`
@@ -63,6 +79,36 @@ type MultiAgentTrace struct {
 	Observation string               `json:"observation"`
 	Decision    string               `json:"decision"`
 	Actions     []AgentCommandAction `json:"actions"`
+}
+
+type ModelAgentInsight struct {
+	AgentKey string               `json:"agent_key"`
+	Decision string               `json:"decision"`
+	Actions  []AgentCommandAction `json:"actions"`
+}
+
+func ParseModelAgentInsights(raw string) []ModelAgentInsight {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	var payload struct {
+		Insights []ModelAgentInsight `json:"insights"`
+	}
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		return nil
+	}
+	out := make([]ModelAgentInsight, 0, len(payload.Insights))
+	for _, insight := range payload.Insights {
+		insight.AgentKey = strings.TrimSpace(insight.AgentKey)
+		insight.Decision = strings.TrimSpace(insight.Decision)
+		if insight.AgentKey == "" || insight.Decision == "" {
+			continue
+		}
+		insight.Actions = safeAgentActions(insight.Actions)
+		out = append(out, insight)
+	}
+	return out
 }
 
 func BuildRecruitingAgentTeam() MultiAgentTeam {
@@ -135,6 +181,52 @@ func RunRecruitingAgentCycle(input MultiAgentCycleInput) MultiAgentCycle {
 	cycle.ReadinessScore = multiAgentReadinessScore(input, cycle.Actions)
 	cycle.Summary = buildMultiAgentCycleSummary(input, cycle)
 	return cycle
+}
+
+func ApplyModelAgentInsights(cycle MultiAgentCycle, insights []ModelAgentInsight) MultiAgentCycle {
+	if len(insights) == 0 {
+		return cycle
+	}
+	cycle.Team.Orchestrator.Provider = MultiAgentOrchestratorModelEnhanced
+	cycle.Team.Orchestrator.NextStep = "Model insights enhanced specialist decisions; deterministic fallback remains available."
+	for _, insight := range insights {
+		agentKey := strings.TrimSpace(insight.AgentKey)
+		for index := range cycle.Trace {
+			if cycle.Trace[index].AgentKey != agentKey {
+				continue
+			}
+			if strings.TrimSpace(insight.Decision) != "" {
+				cycle.Trace[index].Decision = strings.TrimSpace(insight.Decision)
+			}
+			safeActions := safeAgentActions(insight.Actions)
+			cycle.Trace[index].Actions = appendUniqueAgentActions(cycle.Trace[index].Actions, safeActions...)
+			cycle.Actions = appendUniqueAgentActions(cycle.Actions, safeActions...)
+		}
+	}
+	cycle.ReadinessScore = cycle.ReadinessScore - 2
+	if cycle.ReadinessScore < 0 {
+		cycle.ReadinessScore = 0
+	}
+	cycle.Summary = cycle.Summary + " Model insights were applied to specialist decisions."
+	return cycle
+}
+
+func safeAgentActions(actions []AgentCommandAction) []AgentCommandAction {
+	out := make([]AgentCommandAction, 0, len(actions))
+	for _, action := range actions {
+		allowed, ok := allowedModelActionTypes[strings.TrimSpace(action.Type)]
+		if !ok {
+			continue
+		}
+		if strings.TrimSpace(action.Target) != "" {
+			allowed.Target = strings.TrimSpace(action.Target)
+		}
+		if strings.TrimSpace(action.Detail) != "" {
+			allowed.Detail = strings.TrimSpace(action.Detail)
+		}
+		out = append(out, allowed)
+	}
+	return out
 }
 
 func runSourceScoutAgent(input MultiAgentCycleInput) MultiAgentTrace {
