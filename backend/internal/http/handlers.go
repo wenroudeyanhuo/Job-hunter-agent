@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -28,7 +29,9 @@ type Handlers struct {
 	Repo             *jobs.Repository
 	Runner           CrawlRunner
 	FeishuWebhookURL string
-	LLM              jobs.LLMConfig
+	LLM              *jobs.LLMConfig
+	LLMMu            sync.RWMutex
+	Orchestrator     jobs.RecruitingOrchestrator
 }
 
 func (h *Handlers) GetAgentBriefing(c *gin.Context) {
@@ -117,7 +120,7 @@ func (h *Handlers) RunAgentCommand(c *gin.Context) {
 				respondError(c, http.StatusInternalServerError, err)
 				return
 			}
-			if err := notify.SendFeishuWebhook(c.Request.Context(), webhookURL, notify.BuildFeishuDutyReport(report)); err != nil {
+			if err := notify.SendFeishuWebhook(c.Request.Context(), webhookURL, notify.BuildFeishuDutyReportWithCycle(report, h.latestAgentCycle(c.Request.Context()))); err != nil {
 				respondError(c, http.StatusBadGateway, err)
 				return
 			}
@@ -132,12 +135,67 @@ func (h *Handlers) RunAgentCommand(c *gin.Context) {
 	c.JSON(http.StatusOK, plan.Result)
 }
 
+func (h *Handlers) currentLLM() jobs.LLMConfig {
+	h.LLMMu.RLock()
+	defer h.LLMMu.RUnlock()
+	if h.LLM == nil {
+		return jobs.LLMConfig{}
+	}
+	return *h.LLM
+}
+
 func (h *Handlers) GetAgentChatStatus(c *gin.Context) {
-	c.JSON(http.StatusOK, jobs.BuildAgentChatStatus(h.LLM))
+	c.JSON(http.StatusOK, jobs.BuildAgentChatStatus(h.currentLLM()))
+}
+
+func (h *Handlers) GetAgentChatConfig(c *gin.Context) {
+	llm := h.currentLLM()
+	c.JSON(http.StatusOK, gin.H{
+		"provider":    llm.Provider,
+		"base_url":    llm.BaseURL,
+		"model":       llm.Model,
+		"has_api_key": llm.APIKey != "",
+	})
+}
+
+func (h *Handlers) UpdateAgentChatConfig(c *gin.Context) {
+	var req jobs.LLMConfigUpdate
+	if err := c.BindJSON(&req); err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
+	llm := h.currentLLM()
+	if req.Provider != "" {
+		llm.Provider = req.Provider
+	}
+	if req.APIKey != "" {
+		llm.APIKey = req.APIKey
+	}
+	if req.BaseURL != "" {
+		llm.BaseURL = req.BaseURL
+	}
+	if req.Model != "" {
+		llm.Model = req.Model
+	}
+	saved, err := h.Repo.SaveLLMConfig(c.Request.Context(), llm)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	h.LLMMu.Lock()
+	*h.LLM = saved
+	h.LLMMu.Unlock()
+	c.JSON(http.StatusOK, gin.H{
+		"provider":    saved.Provider,
+		"base_url":    saved.BaseURL,
+		"model":       saved.Model,
+		"has_api_key": saved.APIKey != "",
+	})
 }
 
 func (h *Handlers) CheckAgentChatModel(c *gin.Context) {
-	status := jobs.BuildAgentChatStatus(h.LLM)
+	llm := h.currentLLM()
+	status := jobs.BuildAgentChatStatus(llm)
 	response := jobs.AgentChatHealthcheck{
 		Status:     "skipped",
 		Provider:   status.Provider,
@@ -238,6 +296,61 @@ func (h *Handlers) CreateTodayAgentPlan(c *gin.Context) {
 	c.JSON(http.StatusCreated, result.Plan)
 }
 
+func (h *Handlers) ListAgentCycles(c *gin.Context) {
+	cycles, err := h.Repo.ListAgentCycles(c.Request.Context(), parseIntQuery(c, "limit", 10))
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, cycles)
+}
+
+func (h *Handlers) RunAgentCycle(c *gin.Context) {
+	input, err := h.buildMultiAgentCycleInput(c.Request.Context())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	insights := h.modelAgentInsights(c.Request.Context(), input)
+	result, err := jobs.NewAgentRuntime(h.Repo).RunMultiAgentCycle(c.Request.Context(), jobs.MultiAgentCycleRequest{
+		Input:                input,
+		Source:               "manual_cycle",
+		RecordActionRequests: true,
+		ModelInsights:        insights,
+		Orchestrator:         h.effectiveOrchestrator(),
+	})
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	h.recordAgentEvent(c, jobs.AgentEventInput{
+		Type:    "multi_agent_cycle_completed",
+		Title:   "Completed multi-agent cycle",
+		Summary: result.Cycle.Summary,
+		Level:   "success",
+	})
+	c.JSON(http.StatusCreated, result)
+}
+
+func (h *Handlers) modelAgentInsights(ctx context.Context, input jobs.MultiAgentCycleInput) []jobs.ModelAgentInsight {
+	if !jobs.BuildAgentChatStatus(h.currentLLM()).Configured {
+		return nil
+	}
+	cycle := jobs.RunRecruitingAgentCycle(input)
+	prompt := fmt.Sprintf(`Return JSON only with this shape:
+{"insights":[{"agent_key":"source_scout|job_analyst|memory_keeper|planner","decision":"concise decision","actions":[{"type":"%s","target":"...","detail":"..."}]}]}
+You are improving a recruiting multi-agent cycle. Keep actions safe and approval-gated. Current summary: %s. Trace: %s.`,
+		jobs.ModelActionPromptList(), cycle.Summary, formatMultiAgentTrace(cycle.Trace))
+	raw, err := h.callModelChat(ctx, []map[string]string{
+		{"role": "system", "content": "You are a cautious recruiting agent orchestrator. Return strict JSON only."},
+		{"role": "user", "content": prompt},
+	}, 0.2)
+	if err != nil {
+		return nil
+	}
+	return jobs.ParseModelAgentInsights(raw)
+}
+
 func (h *Handlers) UpdateAgentActionRequest(c *gin.Context) {
 	id, ok := parseID(c)
 	if !ok {
@@ -289,6 +402,37 @@ func (h *Handlers) UpdateAgentActionRequest(c *gin.Context) {
 		Level:   "info",
 	})
 	c.JSON(http.StatusOK, request)
+}
+
+func (h *Handlers) buildMultiAgentCycleInput(ctx context.Context) (jobs.MultiAgentCycleInput, error) {
+	jobList, err := h.Repo.ListJobs(ctx, jobs.ListFilter{})
+	if err != nil {
+		return jobs.MultiAgentCycleInput{}, err
+	}
+	sources, err := h.Repo.ListSources(ctx, false)
+	if err != nil {
+		return jobs.MultiAgentCycleInput{}, err
+	}
+	tasks, err := h.Repo.ListAgentTasks(ctx, h.today(ctx))
+	if err != nil {
+		return jobs.MultiAgentCycleInput{}, err
+	}
+	plans, err := h.Repo.ListAgentPlans(ctx, "", 20)
+	if err != nil {
+		return jobs.MultiAgentCycleInput{}, err
+	}
+	memory, err := h.Repo.GetSemanticMemoryStats(ctx)
+	if err != nil {
+		return jobs.MultiAgentCycleInput{}, err
+	}
+	return jobs.MultiAgentCycleInput{
+		Jobs:    jobList,
+		Sources: sources,
+		Tasks:   tasks,
+		Plans:   plans,
+		Memory:  memory,
+		Now:     time.Now().UTC(),
+	}, nil
 }
 
 func (h *Handlers) executeApprovedAgentAction(c *gin.Context, request jobs.AgentActionRequest) (string, error) {
@@ -356,7 +500,7 @@ func (h *Handlers) executeApprovedAgentAction(c *gin.Context, request jobs.Agent
 		if err != nil {
 			return "", err
 		}
-		if err := notify.SendFeishuWebhook(ctx, webhookURL, notify.BuildFeishuDutyReport(report)); err != nil {
+		if err := notify.SendFeishuWebhook(ctx, webhookURL, notify.BuildFeishuDutyReportWithCycle(report, h.latestAgentCycle(ctx))); err != nil {
 			return "", err
 		}
 		message = "Sent the current duty report to Feishu."
@@ -433,7 +577,7 @@ func (h *Handlers) RunAgentChat(c *gin.Context) {
 		context.SemanticMatches = semanticMatches
 	}
 	reply := jobs.BuildLocalAgentChatReply(req.Message, context)
-	if jobs.BuildAgentChatStatus(h.LLM).Configured {
+	if jobs.BuildAgentChatStatus(h.currentLLM()).Configured {
 		if modelReply, err := h.runModelChat(c.Request.Context(), req.Message, context); err == nil && strings.TrimSpace(modelReply) != "" {
 			parsed := jobs.ParseModelActionReply(modelReply)
 			reply.Content = parsed.Content
@@ -494,7 +638,7 @@ func (h *Handlers) buildAgentChatContext(ctx context.Context, activeView string)
 	}
 	context := jobs.AgentChatContext{
 		ActiveView:     activeView,
-		ModelEnabled:   jobs.BuildAgentChatStatus(h.LLM).Configured,
+		ModelEnabled:   jobs.BuildAgentChatStatus(h.currentLLM()).Configured,
 		Memory:         jobs.BuildAgentMemory(snapshots, events),
 		RecentMessages: recentMessages,
 	}
@@ -571,7 +715,7 @@ func formatAgentChatHistory(history []jobs.AgentChatMessage) []map[string]string
 }
 
 func (h *Handlers) callModelChat(ctx context.Context, messages []map[string]string, temperature float64) (string, error) {
-	config := jobs.NormalizeLLMConfig(h.LLM)
+	config := jobs.NormalizeLLMConfig(h.currentLLM())
 	if config.APIKey == "" || config.Model == "" {
 		return "", fmt.Errorf("model is not configured")
 	}
@@ -649,6 +793,17 @@ func formatSemanticMemoryMatches(matches []jobs.SemanticMemoryMatch) string {
 	return strings.Join(parts, "; ")
 }
 
+func formatMultiAgentTrace(traces []jobs.MultiAgentTrace) string {
+	if len(traces) == 0 {
+		return "none"
+	}
+	parts := make([]string, 0, len(traces))
+	for _, trace := range traces {
+		parts = append(parts, fmt.Sprintf("%s observation=%s decision=%s", trace.AgentKey, trace.Observation, trace.Decision))
+	}
+	return strings.Join(parts, "; ")
+}
+
 func (h *Handlers) RunAutomationDutyReport(c *gin.Context) {
 	settings, err := h.Repo.GetSettings(c.Request.Context())
 	if err != nil {
@@ -673,7 +828,7 @@ func (h *Handlers) RunAutomationDutyReport(c *gin.Context) {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
-	if err := notify.SendFeishuWebhook(c.Request.Context(), webhookURL, notify.BuildFeishuDutyReport(report)); err != nil {
+	if err := notify.SendFeishuWebhook(c.Request.Context(), webhookURL, notify.BuildFeishuDutyReportWithCycle(report, h.latestAgentCycle(c.Request.Context()))); err != nil {
 		respondError(c, http.StatusBadGateway, err)
 		return
 	}
@@ -690,6 +845,7 @@ func (h *Handlers) RunAutomationDutyReport(c *gin.Context) {
 		Level:   "success",
 	})
 	h.snapshotAgentReview(c, "auto_duty_report_sent")
+	h.runAgentCycleAfterWork(c, "auto_duty_report_sent")
 	c.JSON(http.StatusOK, gin.H{"status": "sent", "sent_at": now})
 }
 
@@ -805,10 +961,14 @@ func (h *Handlers) buildAgentState(ctx context.Context) (jobs.AgentState, error)
 	if err != nil {
 		return jobs.AgentState{}, err
 	}
+	cycles, err := h.Repo.ListAgentCycles(ctx, 1)
+	if err != nil {
+		return jobs.AgentState{}, err
+	}
 	if strings.TrimSpace(settings.FeishuWebhookURL) == "" {
 		settings.FeishuWebhookURL = strings.TrimSpace(h.FeishuWebhookURL)
 	}
-	return jobs.BuildAgentStateWithSemanticMemory(jobList, sources, runs, tasks, settings, snapshots, events, plans, actionRequests, semanticStats), nil
+	return jobs.BuildAgentStateWithCycles(jobList, sources, runs, tasks, settings, snapshots, events, plans, actionRequests, semanticStats, cycles), nil
 }
 
 func (h *Handlers) ListAgentEvents(c *gin.Context) {
@@ -1172,6 +1332,7 @@ func (h *Handlers) RunCrawl(c *gin.Context) {
 	h.recordCrawlEvent(c, "crawl_completed", "Manual crawl completed", summary)
 	h.refreshAgentTasksAfterCrawl(c)
 	h.snapshotAgentReview(c, "crawl_completed")
+	h.runAgentCycleAfterWork(c, "crawl_completed")
 	c.JSON(http.StatusOK, summary)
 }
 
@@ -1195,6 +1356,7 @@ func (h *Handlers) RunRecommendedCrawl(c *gin.Context) {
 	h.recordCrawlEvent(c, "recommended_crawl_completed", "Recommended crawl completed", summary)
 	h.refreshAgentTasksAfterCrawl(c)
 	h.snapshotAgentReview(c, "recommended_crawl_completed")
+	h.runAgentCycleAfterWork(c, "recommended_crawl_completed")
 	c.JSON(http.StatusOK, gin.H{
 		"seeded":  seeded.Created,
 		"sources": seeded,
@@ -1529,7 +1691,7 @@ func (h *Handlers) SendFeishuReport(c *gin.Context) {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
-	if err := notify.SendFeishuWebhook(c.Request.Context(), webhookURL, notify.BuildFeishuDutyReport(report)); err != nil {
+	if err := notify.SendFeishuWebhook(c.Request.Context(), webhookURL, notify.BuildFeishuDutyReportWithCycle(report, h.latestAgentCycle(c.Request.Context()))); err != nil {
 		respondError(c, http.StatusBadGateway, err)
 		return
 	}
@@ -1540,6 +1702,7 @@ func (h *Handlers) SendFeishuReport(c *gin.Context) {
 		Level:   "success",
 	})
 	h.snapshotAgentReview(c, "feishu_report_sent")
+	h.runAgentCycleAfterWork(c, "feishu_report_sent")
 	c.JSON(http.StatusOK, gin.H{"status": "sent"})
 }
 
@@ -1579,6 +1742,14 @@ func (h *Handlers) effectiveFeishuWebhookURL(ctx context.Context) (string, error
 		return strings.TrimSpace(settings.FeishuWebhookURL), nil
 	}
 	return strings.TrimSpace(h.FeishuWebhookURL), nil
+}
+
+func (h *Handlers) latestAgentCycle(ctx context.Context) *jobs.AgentCycleRecord {
+	cycles, err := h.Repo.ListAgentCycles(ctx, 1)
+	if err != nil || len(cycles) == 0 {
+		return nil
+	}
+	return &cycles[0]
 }
 
 func parseID(c *gin.Context) (int64, bool) {
@@ -1640,6 +1811,37 @@ func (h *Handlers) snapshotAgentReview(c *gin.Context, triggerType string) {
 	if _, err := h.Repo.CreateAgentReviewSnapshot(c.Request.Context(), review, triggerType); err != nil {
 		_ = c.Error(err)
 	}
+}
+
+func (h *Handlers) runAgentCycleAfterWork(c *gin.Context, source string) {
+	input, err := h.buildMultiAgentCycleInput(c.Request.Context())
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+	result, err := jobs.NewAgentRuntime(h.Repo).RunMultiAgentCycle(c.Request.Context(), jobs.MultiAgentCycleRequest{
+		Input:                input,
+		Source:               source,
+		RecordActionRequests: true,
+		Orchestrator:         h.effectiveOrchestrator(),
+	})
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+	h.recordAgentEvent(c, jobs.AgentEventInput{
+		Type:    "multi_agent_cycle_completed",
+		Title:   "Completed multi-agent cycle",
+		Summary: result.Cycle.Summary,
+		Level:   "success",
+	})
+}
+
+func (h *Handlers) effectiveOrchestrator() jobs.RecruitingOrchestrator {
+	if h.Orchestrator != nil {
+		return h.Orchestrator
+	}
+	return jobs.DefaultRecruitingOrchestrator()
 }
 
 func sameStringSlice(left []string, right []string) bool {

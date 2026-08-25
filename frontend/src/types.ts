@@ -247,6 +247,7 @@ export interface AgentState {
   workload: AgentWorkload;
   automation: AgentAutomationState;
   memory: AgentMemory;
+  cycle: AgentCycleState;
   capabilities: AgentCapability[];
   gaps: AgentCapabilityGap[];
   operating_cycle: AgentOperatingMoment[];
@@ -282,6 +283,16 @@ export interface AgentMemory {
   semantic_job_items: number;
   semantic_provider: string;
   semantic_dimension: number;
+}
+
+export interface AgentCycleState {
+  last_cycle_at?: string;
+  summary: string;
+  readiness_score: number;
+  trace_count: number;
+  action_count: number;
+  orchestrator_provider: string;
+  orchestrator_pattern: string;
 }
 
 export interface SemanticMemoryMatch {
@@ -387,6 +398,20 @@ export interface AgentChatHealthcheck {
   message: string;
 }
 
+export interface LLMConfig {
+  provider: string;
+  base_url: string;
+  model: string;
+  has_api_key: boolean;
+}
+
+export interface LLMConfigUpdate {
+  provider?: string;
+  api_key?: string;
+  base_url?: string;
+  model?: string;
+}
+
 export interface AgentChatMessage {
   id: number;
   role: "user" | "assistant" | string;
@@ -410,6 +435,30 @@ export interface AgentCommandAction {
   type: string;
   target: string;
   detail: string;
+}
+
+export interface MultiAgentTrace {
+  agent_key: string;
+  observation: string;
+  decision: string;
+  actions: AgentCommandAction[];
+}
+
+export interface AgentCycleRecord {
+  id: number;
+  generated_at: string;
+  summary: string;
+  readiness_score: number;
+  orchestrator_provider: string;
+  orchestrator_pattern: string;
+  trace: MultiAgentTrace[];
+  actions: AgentCommandAction[];
+  created_at: string;
+}
+
+export interface MultiAgentCycleResult {
+  cycle: AgentCycleRecord;
+  action_requests_created: number;
 }
 
 export interface AgentActionRequest {

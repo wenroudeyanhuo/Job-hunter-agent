@@ -138,6 +138,30 @@ func BuildSourceDiscoveryCandidates(input SourceDiscoveryInput) []sourceCandidat
 					Reason:     "Platform search candidate for broadening non-official source coverage.",
 					Confidence: 52,
 				},
+				sourceCandidateInput{
+					Name:       "Liepin search - " + city + " " + directionLabel(direction),
+					URL:        "https://www.liepin.com/zhaopin/?key=" + url.QueryEscape(city+" "+directionLabel(direction)+" 校招"),
+					Category:   "job_platform",
+					ParserType: "generic",
+					Reason:     "Liepin search can broaden mid-size company coverage beyond campus-only official sites.",
+					Confidence: 50,
+				},
+				sourceCandidateInput{
+					Name:       "Maimai search - " + city + " " + directionLabel(direction),
+					URL:        "https://maimai.cn/web/search_center?type=feed&query=" + url.QueryEscape(city+" "+directionLabel(direction)+" 招聘 校招"),
+					Category:   "community",
+					ParserType: "generic",
+					Reason:     "Professional community search can surface team-level recruiting posts and referral links.",
+					Confidence: 48,
+				},
+				sourceCandidateInput{
+					Name:       "GitHub topic search - " + city + " " + directionLabel(direction),
+					URL:        "https://github.com/search?q=" + url.QueryEscape(city+" "+directionLabel(direction)+" campus hiring jobs"),
+					Category:   "community",
+					ParserType: "generic",
+					Reason:     "GitHub search can discover open-source or startup hiring pages relevant to technical roles.",
+					Confidence: 45,
+				},
 			)
 		}
 	}

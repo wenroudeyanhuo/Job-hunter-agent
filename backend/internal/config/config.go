@@ -6,28 +6,30 @@ import (
 )
 
 type Config struct {
-	Addr             string
-	DBPath           string
-	FeishuWebhookURL string
-	DisableScheduler bool
-	SourceURLs       []string
-	LLMProvider      string
-	LLMAPIKey        string
-	LLMBaseURL       string
-	LLMModel         string
+	Addr              string
+	DBPath            string
+	FeishuWebhookURL  string
+	DisableScheduler  bool
+	SourceURLs        []string
+	LLMProvider       string
+	LLMAPIKey         string
+	LLMBaseURL        string
+	LLMModel          string
+	AgentOrchestrator string
 }
 
 func Load() Config {
 	cfg := Config{
-		Addr:             os.Getenv("APP_ADDR"),
-		DBPath:           os.Getenv("APP_DB_PATH"),
-		FeishuWebhookURL: os.Getenv("FEISHU_WEBHOOK_URL"),
-		DisableScheduler: os.Getenv("DISABLE_SCHEDULER") == "1",
-		SourceURLs:       parseSourceURLs(os.Getenv("SOURCE_URLS")),
-		LLMProvider:      firstNonEmpty(os.Getenv("LLM_PROVIDER"), inferredLLMProvider()),
-		LLMAPIKey:        firstNonEmpty(os.Getenv("LLM_API_KEY"), os.Getenv("DEEPSEEK_API_KEY"), os.Getenv("OPENAI_API_KEY")),
-		LLMBaseURL:       firstNonEmpty(os.Getenv("LLM_BASE_URL"), os.Getenv("DEEPSEEK_BASE_URL"), os.Getenv("OPENAI_BASE_URL")),
-		LLMModel:         firstNonEmpty(os.Getenv("LLM_MODEL"), os.Getenv("DEEPSEEK_MODEL"), os.Getenv("OPENAI_MODEL")),
+		Addr:              os.Getenv("APP_ADDR"),
+		DBPath:            os.Getenv("APP_DB_PATH"),
+		FeishuWebhookURL:  os.Getenv("FEISHU_WEBHOOK_URL"),
+		DisableScheduler:  os.Getenv("DISABLE_SCHEDULER") == "1",
+		SourceURLs:        parseSourceURLs(os.Getenv("SOURCE_URLS")),
+		LLMProvider:       firstNonEmpty(os.Getenv("LLM_PROVIDER"), inferredLLMProvider()),
+		LLMAPIKey:         firstNonEmpty(os.Getenv("LLM_API_KEY"), os.Getenv("DEEPSEEK_API_KEY"), os.Getenv("OPENAI_API_KEY")),
+		LLMBaseURL:        firstNonEmpty(os.Getenv("LLM_BASE_URL"), os.Getenv("DEEPSEEK_BASE_URL"), os.Getenv("OPENAI_BASE_URL")),
+		LLMModel:          firstNonEmpty(os.Getenv("LLM_MODEL"), os.Getenv("DEEPSEEK_MODEL"), os.Getenv("OPENAI_MODEL")),
+		AgentOrchestrator: strings.ToLower(strings.TrimSpace(os.Getenv("AGENT_ORCHESTRATOR"))),
 	}
 	if cfg.Addr == "" {
 		cfg.Addr = ":8080"

@@ -13,10 +13,11 @@ import (
 type automationRunner struct {
 	repo               *jobs.Repository
 	fallbackWebhookURL string
+	orchestrator       jobs.RecruitingOrchestrator
 }
 
-func newAutomationRunner(repo *jobs.Repository, fallbackWebhookURL string) *automationRunner {
-	return &automationRunner{repo: repo, fallbackWebhookURL: strings.TrimSpace(fallbackWebhookURL)}
+func newAutomationRunner(repo *jobs.Repository, fallbackWebhookURL string, orchestrator jobs.RecruitingOrchestrator) *automationRunner {
+	return &automationRunner{repo: repo, fallbackWebhookURL: strings.TrimSpace(fallbackWebhookURL), orchestrator: orchestrator}
 }
 
 func (r *automationRunner) Tick(ctx context.Context, now time.Time) (bool, error) {
@@ -73,7 +74,7 @@ func (r *automationRunner) Tick(ctx context.Context, now time.Time) (bool, error
 	if err != nil {
 		return false, err
 	}
-	if err := notify.SendFeishuWebhook(ctx, webhookURL, notify.BuildFeishuDutyReport(report)); err != nil {
+	if err := notify.SendFeishuWebhook(ctx, webhookURL, notify.BuildFeishuDutyReportWithCycle(report, latestAgentCycle(ctx, r.repo))); err != nil {
 		return false, err
 	}
 	sentAt := now.UTC()
@@ -89,6 +90,9 @@ func (r *automationRunner) Tick(ctx context.Context, now time.Time) (bool, error
 	})
 	if review, err := r.buildAgentReview(ctx); err == nil {
 		_, _ = r.repo.CreateAgentReviewSnapshot(ctx, review, "automation_tick")
+	}
+	if _, err := runAndRecordAgentCycle(ctx, r.repo, "auto_duty_report_sent", now, r.orchestrator); err != nil {
+		return false, err
 	}
 	return true, nil
 }

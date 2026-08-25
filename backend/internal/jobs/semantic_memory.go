@@ -16,11 +16,36 @@ import (
 )
 
 const (
-	SemanticMemoryKindJob    = "job"
-	SemanticMemoryProvider   = "local_hash"
-	SemanticMemoryDimensions = 64
-	semanticMemoryMaxContent = 1600
+	SemanticMemoryKindJob           = "job"
+	SemanticMemoryProviderLocalHash = "local_hash"
+	SemanticMemoryProvider          = SemanticMemoryProviderLocalHash
+	SemanticMemoryDimensions        = 64
+	semanticMemoryMaxContent        = 1600
 )
+
+type EmbeddingProvider interface {
+	Name() string
+	Dimension() int
+	Embed(text string) []float64
+}
+
+type hashEmbeddingProvider struct{}
+
+func NewHashEmbeddingProvider() EmbeddingProvider {
+	return hashEmbeddingProvider{}
+}
+
+func (hashEmbeddingProvider) Name() string {
+	return SemanticMemoryProviderLocalHash
+}
+
+func (hashEmbeddingProvider) Dimension() int {
+	return SemanticMemoryDimensions
+}
+
+func (hashEmbeddingProvider) Embed(text string) []float64 {
+	return LocalHashEmbedding(text)
+}
 
 type SemanticMemoryItem struct {
 	ID                 int64             `json:"id"`
@@ -88,6 +113,13 @@ func (r *Repository) RebuildSemanticMemory(ctx context.Context) (SemanticMemoryR
 }
 
 func SemanticMemoryItemFromJob(job domain.Job) SemanticMemoryItem {
+	return SemanticMemoryItemFromJobWithProvider(job, NewHashEmbeddingProvider())
+}
+
+func SemanticMemoryItemFromJobWithProvider(job domain.Job, provider EmbeddingProvider) SemanticMemoryItem {
+	if provider == nil {
+		provider = NewHashEmbeddingProvider()
+	}
 	title := strings.TrimSpace(job.Company + " " + job.Title)
 	content := strings.Join([]string{
 		"company: " + job.Company,
@@ -101,7 +133,7 @@ func SemanticMemoryItemFromJob(job domain.Job) SemanticMemoryItem {
 	if len(content) > semanticMemoryMaxContent {
 		content = content[:semanticMemoryMaxContent]
 	}
-	return SemanticMemoryItem{
+	item := SemanticMemoryItem{
 		Kind:        SemanticMemoryKindJob,
 		ReferenceID: job.ID,
 		Title:       title,
@@ -112,9 +144,11 @@ func SemanticMemoryItemFromJob(job domain.Job) SemanticMemoryItem {
 			"status":  string(job.Status),
 			"score":   fmt.Sprintf("%d", job.MatchScore),
 		},
-		EmbeddingProvider:  SemanticMemoryProvider,
-		EmbeddingDimension: SemanticMemoryDimensions,
+		EmbeddingProvider:  provider.Name(),
+		EmbeddingDimension: provider.Dimension(),
 	}
+	item.Embedding = provider.Embed(item.Title + "\n" + item.Content)
+	return item
 }
 
 func (r *Repository) syncSemanticMemoryForJob(ctx context.Context, job domain.Job) error {
@@ -135,9 +169,12 @@ func (r *Repository) UpsertSemanticMemoryItem(ctx context.Context, item Semantic
 	if item.Kind == "" || item.ReferenceID <= 0 || item.Content == "" {
 		return SemanticMemoryItem{}, fmt.Errorf("semantic memory kind, reference id, and content are required")
 	}
-	item.EmbeddingProvider = SemanticMemoryProvider
-	item.EmbeddingDimension = SemanticMemoryDimensions
-	item.Embedding = LocalHashEmbedding(item.Title + "\n" + item.Content)
+	if strings.TrimSpace(item.EmbeddingProvider) == "" || item.EmbeddingDimension <= 0 || len(item.Embedding) == 0 {
+		provider := NewHashEmbeddingProvider()
+		item.EmbeddingProvider = provider.Name()
+		item.EmbeddingDimension = provider.Dimension()
+		item.Embedding = provider.Embed(item.Title + "\n" + item.Content)
+	}
 	metadataJSON, err := json.Marshal(item.Metadata)
 	if err != nil {
 		return SemanticMemoryItem{}, fmt.Errorf("encode semantic memory metadata: %w", err)

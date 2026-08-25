@@ -54,8 +54,61 @@ func TestRunCrawlRecordsAgentEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list events: %v", err)
 	}
-	if len(events) != 1 || events[0].Type != "crawl_completed" {
+	if !containsAgentEvent(events, "crawl_completed") {
 		t.Fatalf("expected crawl event, got %#v", events)
+	}
+}
+
+func TestRunCrawlAutomaticallyRecordsAgentCycle(t *testing.T) {
+	repo, handler := testRouter(t, fakeRunner{summary: crawl.RunSummary{JobsCreated: 2, JobsDuplicated: 1}})
+	if _, err := repo.CreateJob(t.Context(), domain.Job{
+		Company:    "Tencent",
+		Title:      "Go Backend Engineer",
+		City:       "Shenzhen",
+		MatchScore: 88,
+		Status:     domain.StatusNew,
+	}); err != nil {
+		t.Fatalf("seed job: %v", err)
+	}
+	if _, err := repo.CreateSource(t.Context(), jobs.SourceInput{
+		Name:       "Tencent Careers",
+		URL:        "https://careers.tencent.com/",
+		Enabled:    true,
+		ParserType: "generic",
+	}); err != nil {
+		t.Fatalf("seed source: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/crawl/run", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	cycles, err := repo.ListAgentCycles(t.Context(), 10)
+	if err != nil {
+		t.Fatalf("list cycles: %v", err)
+	}
+	if len(cycles) != 1 || len(cycles[0].Trace) != 4 {
+		t.Fatalf("expected automatic multi-agent cycle, got %#v", cycles)
+	}
+	if cycles[0].Summary == "" || cycles[0].OrchestratorProvider != jobs.MultiAgentOrchestratorEinoReady {
+		t.Fatalf("expected cycle metadata, got %#v", cycles[0])
+	}
+	requests, err := repo.ListAgentActionRequests(t.Context(), jobs.AgentActionRequestStatusPending)
+	if err != nil {
+		t.Fatalf("list action requests: %v", err)
+	}
+	if len(requests) == 0 {
+		t.Fatalf("expected cycle to create approval requests")
+	}
+	events, err := repo.ListAgentEvents(t.Context(), 10)
+	if err != nil {
+		t.Fatalf("list events: %v", err)
+	}
+	if !containsAgentEvent(events, "multi_agent_cycle_completed") {
+		t.Fatalf("expected multi-agent cycle event, got %#v", events)
 	}
 }
 

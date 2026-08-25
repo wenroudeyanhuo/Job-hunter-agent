@@ -46,6 +46,56 @@ button:disabled {
   margin-bottom: 22px;
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.lang-toggle {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  color: #334155;
+  padding: 8px 14px;
+  font-weight: 600;
+  font-size: 14px;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.lang-toggle:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+}
+
+.model-config-form {
+  margin-top: 24px;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 20px;
+}
+
+.model-config-header {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.model-config-header strong {
+  font-size: 16px;
+}
+
+.api-key-set {
+  color: #16a34a;
+  font-size: 13px;
+}
+
+.api-key-not-set {
+  color: #dc2626;
+  font-size: 13px;
+}
+
 h1,
 h2,
 p {
@@ -265,6 +315,7 @@ h2 {
 .employee-identity,
 .employee-focus,
 .employee-memory,
+.employee-cycle-summary,
 .employee-score,
 .employee-actions,
 .employee-section {
@@ -282,6 +333,8 @@ h2 {
 .employee-focus span,
 .employee-memory span,
 .employee-memory small,
+.employee-cycle-summary span,
+.employee-cycle-summary small,
 .employee-score span,
 .capability-row span,
 .gap-item span,
@@ -298,6 +351,9 @@ h2 {
 .employee-memory span,
 .employee-memory strong,
 .employee-memory small,
+.employee-cycle-summary span,
+.employee-cycle-summary strong,
+.employee-cycle-summary small,
 .employee-score span,
 .employee-score strong {
   display: block;
@@ -408,6 +464,43 @@ h2 {
   color: #64748b;
   font-size: 12px;
   line-height: 1.45;
+}
+
+.employee-cycle-summary {
+  display: grid;
+  gap: 6px;
+  border-left: 3px solid #14b8a6;
+  margin: 0 16px 16px;
+  padding: 10px 12px;
+  background: #f0fdfa;
+}
+
+.employee-cycle-summary strong {
+  color: #18212f;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.employee-cycle-summary small {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.employee-cycle-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.employee-cycle-metrics .metric {
+  min-height: 56px;
+  padding: 8px;
+}
+
+.employee-cycle-metrics .metric strong {
+  font-size: 15px;
 }
 
 .employee-score {
@@ -1338,6 +1431,125 @@ h2 {
   border-radius: 8px;
   background: #fff;
   margin-bottom: 16px;
+}
+
+.agent-cycles-panel {
+  overflow: hidden;
+  border: 1px solid #d8e2ef;
+  border-radius: 8px;
+  background: #fff;
+  margin-bottom: 16px;
+}
+
+.agent-cycle-list {
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid #edf1f7;
+  padding: 14px;
+}
+
+.agent-cycle-card {
+  border: 1px solid #dbe6f4;
+  border-radius: 8px;
+  background: #fbfdff;
+  padding: 14px;
+}
+
+.agent-cycle-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.agent-cycle-head strong,
+.agent-cycle-head span {
+  display: block;
+}
+
+.agent-cycle-head strong {
+  color: #18212f;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.agent-cycle-head span {
+  margin-top: 5px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.agent-cycle-head b {
+  min-width: 42px;
+  border-radius: 999px;
+  background: #e7f7f2;
+  color: #047857;
+  padding: 6px 8px;
+  text-align: center;
+  font-size: 13px;
+}
+
+.agent-trace-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.agent-trace-item {
+  min-width: 0;
+  border-left: 3px solid #14b8a6;
+  background: #f8fafc;
+  padding: 9px 10px;
+}
+
+.agent-trace-item strong,
+.agent-trace-item span,
+.agent-trace-item small {
+  display: block;
+}
+
+.agent-trace-item strong {
+  color: #18212f;
+  font-size: 12px;
+}
+
+.agent-trace-item span {
+  margin-top: 4px;
+  color: #334155;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.agent-trace-item small {
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.agent-cycle-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.agent-cycle-actions span {
+  border: 1px solid #cfd8e6;
+  border-radius: 999px;
+  background: #fff;
+  color: #334155;
+  padding: 5px 8px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.agent-cycle-card footer {
+  margin-top: 10px;
+  color: #94a3b8;
+  font-size: 11px;
 }
 
 .agent-plan-list {

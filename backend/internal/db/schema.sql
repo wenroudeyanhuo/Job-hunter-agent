@@ -166,6 +166,20 @@ CREATE TABLE IF NOT EXISTS agent_plans (
 
 CREATE INDEX IF NOT EXISTS idx_agent_plans_status ON agent_plans(status, created_at);
 
+CREATE TABLE IF NOT EXISTS agent_cycles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    generated_at TIMESTAMP NOT NULL,
+    summary TEXT NOT NULL DEFAULT '',
+    readiness_score INTEGER NOT NULL DEFAULT 0,
+    orchestrator_provider TEXT NOT NULL DEFAULT '',
+    orchestrator_pattern TEXT NOT NULL DEFAULT '',
+    trace_json TEXT NOT NULL DEFAULT '[]',
+    actions_json TEXT NOT NULL DEFAULT '[]',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_cycles_generated_at ON agent_cycles(generated_at, id);
+
 CREATE TABLE IF NOT EXISTS semantic_memory_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     kind TEXT NOT NULL,

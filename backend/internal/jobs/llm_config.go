@@ -1,12 +1,68 @@
 package jobs
 
-import "strings"
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+)
+
+const llmConfigKey = "llm_config"
 
 type LLMConfig struct {
 	Provider string `json:"provider"`
 	APIKey   string `json:"-"`
 	BaseURL  string `json:"base_url"`
 	Model    string `json:"model"`
+}
+
+type LLMConfigUpdate struct {
+	Provider string `json:"provider"`
+	APIKey   string `json:"api_key"`
+	BaseURL  string `json:"base_url"`
+	Model    string `json:"model"`
+}
+
+func (r *Repository) GetLLMConfig(ctx context.Context) (LLMConfig, error) {
+	var raw string
+	err := r.db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, llmConfigKey).Scan(&raw)
+	if err != nil {
+		return LLMConfig{}, err
+	}
+	var stored LLMConfigUpdate
+	if err := json.Unmarshal([]byte(raw), &stored); err != nil {
+		return LLMConfig{}, fmt.Errorf("decode llm_config: %w", err)
+	}
+	return LLMConfig{
+		Provider: stored.Provider,
+		APIKey:   stored.APIKey,
+		BaseURL:  stored.BaseURL,
+		Model:    stored.Model,
+	}, nil
+}
+
+func (r *Repository) SaveLLMConfig(ctx context.Context, config LLMConfig) (LLMConfig, error) {
+	config = NormalizeLLMConfig(config)
+	data, err := json.Marshal(LLMConfigUpdate{
+		Provider: config.Provider,
+		APIKey:   config.APIKey,
+		BaseURL:  config.BaseURL,
+		Model:    config.Model,
+	})
+	if err != nil {
+		return LLMConfig{}, fmt.Errorf("encode llm_config: %w", err)
+	}
+	_, err = r.db.ExecContext(ctx, `
+		INSERT INTO settings (key, value, updated_at)
+		VALUES (?, ?, datetime('now'))
+		ON CONFLICT(key) DO UPDATE SET
+			value = excluded.value,
+			updated_at = excluded.updated_at
+	`, llmConfigKey, string(data))
+	if err != nil {
+		return LLMConfig{}, fmt.Errorf("save llm_config: %w", err)
+	}
+	return config, nil
 }
 
 type AgentChatStatus struct {

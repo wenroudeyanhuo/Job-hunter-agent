@@ -15,6 +15,7 @@ type AgentState struct {
 	Workload       AgentWorkload          `json:"workload"`
 	Automation     AgentAutomationState   `json:"automation"`
 	Memory         AgentMemory            `json:"memory"`
+	Cycle          AgentCycleState        `json:"cycle"`
 	Capabilities   []AgentCapability      `json:"capabilities"`
 	Gaps           []AgentCapabilityGap   `json:"gaps"`
 	OperatingCycle []AgentOperatingMoment `json:"operating_cycle"`
@@ -52,6 +53,16 @@ type AgentMemory struct {
 	SemanticDimension  int        `json:"semantic_dimension"`
 }
 
+type AgentCycleState struct {
+	LastCycleAt          *time.Time `json:"last_cycle_at,omitempty"`
+	Summary              string     `json:"summary"`
+	ReadinessScore       int        `json:"readiness_score"`
+	TraceCount           int        `json:"trace_count"`
+	ActionCount          int        `json:"action_count"`
+	OrchestratorProvider string     `json:"orchestrator_provider"`
+	OrchestratorPattern  string     `json:"orchestrator_pattern"`
+}
+
 type AgentCapability struct {
 	Key      string `json:"key"`
 	Label    string `json:"label"`
@@ -86,6 +97,10 @@ func BuildAgentStateWithAgentWork(jobList []domain.Job, sources []Source, runs [
 }
 
 func BuildAgentStateWithSemanticMemory(jobList []domain.Job, sources []Source, runs []domain.JobRun, tasks []AgentTask, settings Settings, snapshots []AgentReviewSnapshot, events []AgentEvent, plans []AgentPlan, actionRequests []AgentActionRequest, semanticStats SemanticMemoryStats) AgentState {
+	return BuildAgentStateWithCycles(jobList, sources, runs, tasks, settings, snapshots, events, plans, actionRequests, semanticStats, nil)
+}
+
+func BuildAgentStateWithCycles(jobList []domain.Job, sources []Source, runs []domain.JobRun, tasks []AgentTask, settings Settings, snapshots []AgentReviewSnapshot, events []AgentEvent, plans []AgentPlan, actionRequests []AgentActionRequest, semanticStats SemanticMemoryStats, cycles []AgentCycleRecord) AgentState {
 	state := AgentState{
 		GeneratedAt: time.Now().UTC(),
 		Profile: AgentProfile{
@@ -100,6 +115,7 @@ func BuildAgentStateWithSemanticMemory(jobList []domain.Job, sources []Source, r
 		OperatingCycle: buildOperatingCycle(settings.CrawlSchedule),
 		Automation:     BuildAgentAutomationState(settings, tasks, time.Now().UTC()),
 		Memory:         BuildAgentMemoryWithSemanticStats(snapshots, events, semanticStats),
+		Cycle:          BuildAgentCycleState(cycles),
 	}
 
 	for _, task := range tasks {
@@ -193,6 +209,13 @@ func BuildAgentStateWithSemanticMemory(jobList []domain.Job, sources []Source, r
 			Level:    semanticMemoryCapabilityLevel(semanticStats),
 			Evidence: semanticMemoryEvidence(semanticStats),
 		},
+		{
+			Key:      "multi_agent_cycle",
+			Label:    "Multi-agent operating cycle",
+			Status:   capabilityStatus(state.Cycle.LastCycleAt != nil),
+			Level:    agentCycleCapabilityLevel(state.Cycle),
+			Evidence: agentCycleEvidence(state.Cycle),
+		},
 	}
 	state.Gaps = []AgentCapabilityGap{
 		{
@@ -225,7 +248,27 @@ func BuildAgentStateWithSemanticMemory(jobList []domain.Job, sources []Source, r
 		state.Mode = "on_duty"
 		state.Focus = "There is recruiting work waiting for your decision."
 	}
+	if state.Cycle.LastCycleAt != nil && state.Workload.PendingApprovals > 0 {
+		state.Focus = "My latest multi-agent cycle produced work waiting for your approval."
+	}
 	return state
+}
+
+func BuildAgentCycleState(cycles []AgentCycleRecord) AgentCycleState {
+	if len(cycles) == 0 {
+		return AgentCycleState{}
+	}
+	latest := cycles[0]
+	generatedAt := latest.GeneratedAt
+	return AgentCycleState{
+		LastCycleAt:          &generatedAt,
+		Summary:              latest.Summary,
+		ReadinessScore:       latest.ReadinessScore,
+		TraceCount:           len(latest.Trace),
+		ActionCount:          len(latest.Actions),
+		OrchestratorProvider: latest.OrchestratorProvider,
+		OrchestratorPattern:  latest.OrchestratorPattern,
+	}
 }
 
 func BuildAgentMemory(snapshots []AgentReviewSnapshot, events []AgentEvent) AgentMemory {
@@ -272,6 +315,23 @@ func semanticMemoryEvidence(stats SemanticMemoryStats) string {
 		return "No vectorized memory yet"
 	}
 	return itoa(stats.TotalItems) + " vectorized memories / " + itoa(stats.JobItems) + " job memories"
+}
+
+func agentCycleCapabilityLevel(cycle AgentCycleState) int {
+	if cycle.LastCycleAt == nil {
+		return 20
+	}
+	if cycle.ReadinessScore > 0 {
+		return maxInt(55, cycle.ReadinessScore)
+	}
+	return 55
+}
+
+func agentCycleEvidence(cycle AgentCycleState) string {
+	if cycle.LastCycleAt == nil {
+		return "No multi-agent cycle recorded yet"
+	}
+	return itoa(cycle.TraceCount) + " agents / " + itoa(cycle.ActionCount) + " proposed actions"
 }
 
 func buildOperatingCycle(schedule []string) []AgentOperatingMoment {
@@ -326,4 +386,11 @@ func averageCapabilityLevel(items []AgentCapability) int {
 		total += item.Level
 	}
 	return total / len(items)
+}
+
+func maxInt(left int, right int) int {
+	if left > right {
+		return left
+	}
+	return right
 }

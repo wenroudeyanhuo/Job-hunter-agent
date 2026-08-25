@@ -65,6 +65,10 @@ func BuildFeishuSummary(summary crawl.RunSummary, jobs []domain.Job) string {
 }
 
 func BuildFeishuDutyReport(report jobs.AgentDutyReport) string {
+	return BuildFeishuDutyReportWithCycle(report, nil)
+}
+
+func BuildFeishuDutyReportWithCycle(report jobs.AgentDutyReport, cycle *jobs.AgentCycleRecord) string {
 	var b strings.Builder
 	b.WriteString("Job Hunter Agent duty report\n\n")
 	b.WriteString(report.Headline)
@@ -81,6 +85,34 @@ func BuildFeishuDutyReport(report jobs.AgentDutyReport) string {
 		b.WriteString("\nTrend:\n")
 		b.WriteString(report.TrendSummary)
 		b.WriteString("\n")
+	}
+	if cycle != nil && cycle.ID >= 0 && strings.TrimSpace(cycle.Summary) != "" {
+		b.WriteString("\nLatest agent cycle:\n")
+		b.WriteString(fmt.Sprintf("- Readiness: %d\n", cycle.ReadinessScore))
+		b.WriteString(fmt.Sprintf("- Orchestrator: %s / %s\n", cycle.OrchestratorProvider, cycle.OrchestratorPattern))
+		b.WriteString("- Summary: ")
+		b.WriteString(cycle.Summary)
+		b.WriteString("\n")
+		limit := len(cycle.Trace)
+		if limit > 4 {
+			limit = 4
+		}
+		for i := 0; i < limit; i++ {
+			trace := cycle.Trace[i]
+			b.WriteString(fmt.Sprintf("- %s: %s\n", formatAgentKey(trace.AgentKey), trace.Decision))
+		}
+		if len(cycle.Actions) > 0 {
+			actions := make([]string, 0, len(cycle.Actions))
+			for _, action := range cycle.Actions {
+				actions = append(actions, action.Type)
+				if len(actions) >= 5 {
+					break
+				}
+			}
+			b.WriteString("- Approval actions: ")
+			b.WriteString(strings.Join(actions, ", "))
+			b.WriteString("\n")
+		}
 	}
 	if len(report.Tasks) > 0 {
 		b.WriteString("\nDaily tasks:\n")
@@ -129,6 +161,17 @@ func BuildFeishuDutyReport(report jobs.AgentDutyReport) string {
 	b.WriteString(" - ")
 	b.WriteString(report.NextBestAction.Reason)
 	return b.String()
+}
+
+func formatAgentKey(key string) string {
+	parts := strings.Split(strings.TrimSpace(key), "_")
+	for index, part := range parts {
+		if part == "" {
+			continue
+		}
+		parts[index] = strings.ToUpper(part[:1]) + part[1:]
+	}
+	return strings.Join(parts, " ")
 }
 
 func SendFeishuWebhook(ctx context.Context, webhookURL string, text string) error {

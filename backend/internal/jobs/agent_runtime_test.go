@@ -92,3 +92,52 @@ func TestAgentRuntimeSkipsDuplicateReviewPlanForSameDay(t *testing.T) {
 		t.Fatalf("expected one stored plan, got %#v", plans)
 	}
 }
+
+func TestAgentRuntimeRunsAndRecordsMultiAgentCycle(t *testing.T) {
+	ctx := context.Background()
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	repo := NewRepository(conn)
+	runtime := NewAgentRuntime(repo)
+
+	result, err := runtime.RunMultiAgentCycle(ctx, MultiAgentCycleRequest{
+		Input: MultiAgentCycleInput{
+			Now: time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC),
+			Jobs: []domain.Job{
+				{Company: "ByteDance", Title: "AI Application Engineer", City: "Shenzhen", MatchScore: 90, Status: domain.StatusNew},
+			},
+			Sources: []Source{
+				{Name: "ByteDance Campus", Enabled: true, HealthStatus: SourceHealthBroken},
+			},
+			Memory: SemanticMemoryStats{TotalItems: 0, JobItems: 0},
+		},
+		Source:               "scheduler",
+		RecordActionRequests: true,
+	})
+	if err != nil {
+		t.Fatalf("run multi-agent cycle: %v", err)
+	}
+	if result.Cycle.ID == 0 || len(result.Cycle.Trace) != 4 {
+		t.Fatalf("expected recorded cycle with trace, got %#v", result.Cycle)
+	}
+	if result.ActionRequestsCreated == 0 {
+		t.Fatalf("expected safe action requests to be created, got %#v", result)
+	}
+
+	cycles, err := repo.ListAgentCycles(ctx, 10)
+	if err != nil {
+		t.Fatalf("list cycles: %v", err)
+	}
+	if len(cycles) != 1 || cycles[0].ID != result.Cycle.ID {
+		t.Fatalf("expected persisted runtime cycle, got %#v", cycles)
+	}
+	requests, err := repo.ListAgentActionRequests(ctx, AgentActionRequestStatusPending)
+	if err != nil {
+		t.Fatalf("list action requests: %v", err)
+	}
+	if len(requests) != result.ActionRequestsCreated {
+		t.Fatalf("expected runtime-created action requests, got result=%#v requests=%#v", result, requests)
+	}
+}

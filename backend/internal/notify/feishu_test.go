@@ -53,3 +53,30 @@ func TestBuildFeishuDutyReportIncludesTrendSummary(t *testing.T) {
 		t.Fatalf("expected trend summary in duty report, got:\n%s", text)
 	}
 }
+
+func TestBuildFeishuDutyReportWithCycleIncludesAgentWork(t *testing.T) {
+	cycle := jobs.AgentCycleRecord{
+		Summary:              "Ran 4 recruiting agents and proposed 2 approval-gated actions.",
+		ReadinessScore:       76,
+		OrchestratorProvider: jobs.MultiAgentOrchestratorModelEnhanced,
+		Trace: []jobs.MultiAgentTrace{
+			{AgentKey: jobs.MultiAgentSourceScout, Decision: "Repair one source."},
+			{AgentKey: jobs.MultiAgentJobAnalyst, Decision: "Review strong matches."},
+		},
+		Actions: []jobs.AgentCommandAction{{Type: "review_strong_matches", Target: "opportunities"}},
+	}
+	text := BuildFeishuDutyReportWithCycle(jobs.AgentDutyReport{
+		Headline: "I found work that needs your decision today.",
+		NextBestAction: jobs.AgentReportAction{
+			Label:  "Review strong matches",
+			Reason: "These are promising.",
+		},
+	}, &cycle)
+
+	wants := []string{"Latest agent cycle", "76", "model_enhanced", "Source Scout", "review_strong_matches"}
+	for _, want := range wants {
+		if !strings.Contains(text, want) {
+			t.Fatalf("expected duty report with cycle to contain %q, got:\n%s", want, text)
+		}
+	}
+}

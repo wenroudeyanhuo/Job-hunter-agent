@@ -22,8 +22,50 @@ type AgentPlanResult struct {
 	Created bool      `json:"created"`
 }
 
+type MultiAgentCycleRequest struct {
+	Input                MultiAgentCycleInput   `json:"input"`
+	Source               string                 `json:"source"`
+	RecordActionRequests bool                   `json:"record_action_requests"`
+	ModelInsights        []ModelAgentInsight    `json:"model_insights"`
+	Orchestrator         RecruitingOrchestrator `json:"-"`
+}
+
+type MultiAgentCycleResult struct {
+	Cycle                 AgentCycleRecord `json:"cycle"`
+	ActionRequestsCreated int              `json:"action_requests_created"`
+}
+
 func NewAgentRuntime(repo *Repository) *AgentRuntime {
 	return &AgentRuntime{repo: repo}
+}
+
+func (r *AgentRuntime) RunMultiAgentCycle(ctx context.Context, request MultiAgentCycleRequest) (MultiAgentCycleResult, error) {
+	if r == nil || r.repo == nil {
+		return MultiAgentCycleResult{}, nil
+	}
+	orchestrator := request.Orchestrator
+	if orchestrator == nil {
+		orchestrator = DefaultRecruitingOrchestrator()
+	}
+	cycle := orchestrator.Run(request.Input)
+	cycle = ApplyModelAgentInsights(cycle, request.ModelInsights)
+	record, err := r.repo.RecordAgentCycle(ctx, cycle)
+	if err != nil {
+		return MultiAgentCycleResult{}, err
+	}
+	result := MultiAgentCycleResult{Cycle: record}
+	if !request.RecordActionRequests {
+		return result, nil
+	}
+	source := strings.TrimSpace(request.Source)
+	if source == "" {
+		source = "multi_agent"
+	}
+	if err := r.repo.RecordAgentActionRequests(ctx, source, cycle.Actions); err != nil {
+		return MultiAgentCycleResult{}, err
+	}
+	result.ActionRequestsCreated = countAllowedAgentActions(cycle.Actions)
+	return result, nil
 }
 
 func (r *AgentRuntime) CreateReviewPlan(ctx context.Context, request AgentReviewPlanRequest) (AgentPlanResult, error) {
@@ -74,6 +116,16 @@ func (r *AgentRuntime) CreateChatPlan(ctx context.Context, goal string, reply Ag
 		return AgentPlanResult{}, err
 	}
 	return AgentPlanResult{Plan: plan, Created: true}, nil
+}
+
+func countAllowedAgentActions(actions []AgentCommandAction) int {
+	count := 0
+	for _, action := range actions {
+		if _, ok := allowedModelActionTypes[strings.TrimSpace(action.Type)]; ok {
+			count++
+		}
+	}
+	return count
 }
 
 func actionsFromPlanSteps(steps []AgentPlanStep) []AgentCommandAction {
