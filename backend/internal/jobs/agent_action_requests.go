@@ -25,6 +25,12 @@ type AgentActionRequest struct {
 	ActionType       string     `json:"action_type"`
 	Target           string     `json:"target"`
 	Detail           string     `json:"detail"`
+	ToolName         string     `json:"tool_name"`
+	ToolDescription  string     `json:"tool_description"`
+	ToolInputSchema  string     `json:"tool_input_schema"`
+	ToolPreview      string     `json:"tool_preview"`
+	RiskLevel        string     `json:"risk_level"`
+	RequiresApproval bool       `json:"requires_approval"`
 	Status           string     `json:"status"`
 	CreatedAt        time.Time  `json:"created_at"`
 	ResolvedAt       *time.Time `json:"resolved_at,omitempty"`
@@ -202,5 +208,5 @@ func scanAgentActionRequest(scanner jobScanner) (AgentActionRequest, error) {
 		request.Status = AgentActionRequestStatusPending
 	}
 	request.ExecutionStatus = normalizeAgentActionExecutionStatus(request.ExecutionStatus)
-	return request, nil
+	return AttachAgentToolMetadata(request, NewDefaultAgentToolRegistry()), nil
 }

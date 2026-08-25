@@ -69,6 +69,9 @@ func TestSourceDiscoveryBuildsBroaderPlatformCandidates(t *testing.T) {
 	if !hasCandidateName(candidates, "Liepin search") || !hasCandidateName(candidates, "Maimai search") || !hasCandidateName(candidates, "GitHub topic search") {
 		t.Fatalf("expected broader platform discovery candidates, got %#v", candidates)
 	}
+	if !hasCandidateName(candidates, "Bilibili Jobs") || !hasCandidateName(candidates, "Xiaohongshu Careers") || !hasCandidateName(candidates, "Shopee Careers") || !hasCandidateName(candidates, "MiHoYo Careers") {
+		t.Fatalf("expected broader company career candidates, got %#v", candidates)
+	}
 }
 
 func hasCandidateName(candidates []sourceCandidateInput, prefix string) bool {

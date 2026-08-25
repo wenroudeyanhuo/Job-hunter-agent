@@ -16,6 +16,13 @@ type AgentCommandAction struct {
 	Detail string `json:"detail"`
 }
 
+type AgentToolCall struct {
+	Name      string            `json:"name"`
+	Target    string            `json:"target"`
+	Detail    string            `json:"detail"`
+	Arguments map[string]string `json:"arguments"`
+}
+
 type AgentCommandPlan struct {
 	Result               AgentCommandResult
 	TargetCities         []string

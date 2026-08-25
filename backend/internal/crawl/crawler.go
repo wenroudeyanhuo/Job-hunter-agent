@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/domain"
 	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/importer"
@@ -13,6 +14,8 @@ import (
 )
 
 const discoveredLinksPerSource = 20
+const publicURLImportAttempts = 3
+const discoveredPaginationPagesPerSource = 3
 
 type Collector interface {
 	Name() string
@@ -46,7 +49,7 @@ func (c PublicURLCollector) Collect(ctx context.Context) ([]domain.Job, error) {
 	jobs := []domain.Job{}
 	seen := map[string]struct{}{}
 	for _, sourceURL := range c.urls {
-		job, err := importer.ImportURL(ctx, sourceURL, c.client)
+		job, err := importURLWithRetry(ctx, sourceURL, c.client)
 		if err != nil {
 			jobs = append(jobs, domain.Job{
 				Title:          sourceURL,
@@ -71,6 +74,18 @@ func (c PublicURLCollector) Collect(ctx context.Context) ([]domain.Job, error) {
 					cardJob.SourceName = job.SourceName
 				}
 				cardJobsByURL[cardJob.ApplyURL] = cardJob
+			}
+		}
+		if pages, err := importer.DiscoverPaginationLinks(ctx, sourceURL, c.client, discoveredPaginationPagesPerSource); err == nil {
+			for _, pageURL := range pages {
+				if cardJobs, err := importer.DiscoverJobCards(ctx, pageURL, c.client, discoveredLinksPerSource); err == nil {
+					for _, cardJob := range cardJobs {
+						if cardJob.SourceName == "" {
+							cardJob.SourceName = job.SourceName
+						}
+						cardJobsByURL[cardJob.ApplyURL] = cardJob
+					}
+				}
 			}
 		}
 
@@ -104,6 +119,34 @@ func (c PublicURLCollector) Collect(ctx context.Context) ([]domain.Job, error) {
 		}
 	}
 	return jobs, nil
+}
+
+func importURLWithRetry(ctx context.Context, sourceURL string, client *http.Client) (domain.Job, error) {
+	var job domain.Job
+	var err error
+	for attempt := 1; attempt <= publicURLImportAttempts; attempt++ {
+		job, err = importer.ImportURL(ctx, sourceURL, client)
+		if err != nil || !isTransientManualImportFailure(job) || attempt == publicURLImportAttempts {
+			return job, err
+		}
+		select {
+		case <-ctx.Done():
+			return job, ctx.Err()
+		case <-time.After(time.Duration(attempt*50) * time.Millisecond):
+		}
+	}
+	return job, err
+}
+
+func isTransientManualImportFailure(job domain.Job) bool {
+	if job.Status != domain.StatusManualCheck {
+		return false
+	}
+	description := strings.ToLower(job.Description)
+	return strings.Contains(description, "http 5") ||
+		strings.Contains(description, "timeout") ||
+		strings.Contains(description, "temporary") ||
+		strings.Contains(description, "connection reset")
 }
 
 func appendUniqueJob(jobs []domain.Job, seen map[string]struct{}, job domain.Job) []domain.Job {

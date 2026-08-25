@@ -47,6 +47,9 @@ func TestRepositoryRecordsAndListsAgentCycles(t *testing.T) {
 	if len(record.Actions) == 0 {
 		t.Fatalf("expected approval-gated actions, got %#v", record.Actions)
 	}
+	if record.AutonomyPlan.Mode == "" || len(record.AutonomyPlan.Steps) == 0 {
+		t.Fatalf("expected autonomy plan to round trip, got %#v", record.AutonomyPlan)
+	}
 
 	list, err := repo.ListAgentCycles(ctx, 10)
 	if err != nil {
@@ -57,5 +60,8 @@ func TestRepositoryRecordsAndListsAgentCycles(t *testing.T) {
 	}
 	if list[0].ID != record.ID || list[0].Trace[0].AgentKey != MultiAgentSourceScout {
 		t.Fatalf("expected latest cycle to round trip, got %#v", list[0])
+	}
+	if list[0].AutonomyPlan.Steps[0].Tool == "" {
+		t.Fatalf("expected listed cycle to include autonomy plan, got %#v", list[0].AutonomyPlan)
 	}
 }

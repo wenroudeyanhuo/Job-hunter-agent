@@ -14,9 +14,13 @@ const (
 	MultiAgentJobAnalyst   = "job_analyst"
 	MultiAgentMemoryKeeper = "memory_keeper"
 	MultiAgentPlanner      = "planner"
+	MultiAgentObserver     = "observer"
 
 	MultiAgentOrchestratorEinoReady     = "eino_ready"
 	MultiAgentOrchestratorModelEnhanced = "model_enhanced"
+
+	AgentAutonomyStepWaitingApproval = "waiting_approval"
+	AgentAutonomyStepObserved        = "observed"
 )
 
 type RecruitingOrchestrator interface {
@@ -72,6 +76,7 @@ type MultiAgentCycle struct {
 	ReadinessScore int                  `json:"readiness_score"`
 	Trace          []MultiAgentTrace    `json:"trace"`
 	Actions        []AgentCommandAction `json:"actions"`
+	AutonomyPlan   AgentAutonomyPlan    `json:"autonomy_plan"`
 }
 
 type MultiAgentTrace struct {
@@ -82,9 +87,29 @@ type MultiAgentTrace struct {
 }
 
 type ModelAgentInsight struct {
-	AgentKey string               `json:"agent_key"`
-	Decision string               `json:"decision"`
-	Actions  []AgentCommandAction `json:"actions"`
+	AgentKey  string               `json:"agent_key"`
+	Decision  string               `json:"decision"`
+	ToolCalls []AgentToolCall      `json:"tool_calls"`
+	Actions   []AgentCommandAction `json:"actions"`
+}
+
+type AgentAutonomyPlan struct {
+	Mode                 string              `json:"mode"`
+	Summary              string              `json:"summary"`
+	NeedsApproval        bool                `json:"needs_approval"`
+	ReplanAfterExecution bool                `json:"replan_after_execution"`
+	Steps                []AgentAutonomyStep `json:"steps"`
+}
+
+type AgentAutonomyStep struct {
+	Order            int    `json:"order"`
+	Tool             string `json:"tool"`
+	Target           string `json:"target"`
+	Detail           string `json:"detail"`
+	RiskLevel        string `json:"risk_level"`
+	RequiresApproval bool   `json:"requires_approval"`
+	Status           string `json:"status"`
+	ObserverHint     string `json:"observer_hint"`
 }
 
 func ParseModelAgentInsights(raw string) []ModelAgentInsight {
@@ -105,20 +130,37 @@ func ParseModelAgentInsights(raw string) []ModelAgentInsight {
 		if insight.AgentKey == "" || insight.Decision == "" {
 			continue
 		}
-		insight.Actions = safeAgentActions(insight.Actions)
+		insight.Actions = appendUniqueAgentActions(safeAgentActions(insight.Actions), actionsFromToolCalls(insight.ToolCalls)...)
 		out = append(out, insight)
 	}
 	return out
 }
 
+func actionsFromToolCalls(calls []AgentToolCall) []AgentCommandAction {
+	registry := NewDefaultAgentToolRegistry()
+	actions := []AgentCommandAction{}
+	for _, call := range calls {
+		name := strings.TrimSpace(call.Name)
+		if _, ok := registry.Get(name); !ok {
+			continue
+		}
+		actions = append(actions, AgentCommandAction{
+			Type:   name,
+			Target: strings.TrimSpace(call.Target),
+			Detail: strings.TrimSpace(call.Detail),
+		})
+	}
+	return safeAgentActions(actions)
+}
+
 func BuildRecruitingAgentTeam() MultiAgentTeam {
-	graph := []string{MultiAgentSourceScout, MultiAgentJobAnalyst, MultiAgentMemoryKeeper, MultiAgentPlanner}
+	graph := []string{MultiAgentSourceScout, MultiAgentJobAnalyst, MultiAgentMemoryKeeper, MultiAgentPlanner, "tool_executor", MultiAgentObserver}
 	return MultiAgentTeam{
 		Orchestrator: MultiAgentOrchestrator{
 			Provider:     MultiAgentOrchestratorEinoReady,
-			Pattern:      "sequential_graph_with_approval_gate",
+			Pattern:      "plan_tool_approval_observe_replan",
 			Graph:        graph,
-			NextStep:     "Replace this deterministic graph runner with an Eino graph once the agent contracts are stable.",
+			NextStep:     "Planner creates approval-gated tool plans, executor waits for user approval, observer feeds results into the next cycle.",
 			ApprovalMode: "human_approved_actions",
 		},
 		Agents: []MultiAgentRole{
@@ -158,8 +200,71 @@ func BuildRecruitingAgentTeam() MultiAgentTeam {
 				Guardrails:   []string{"All external actions require approval", "Prefer reversible workflow actions"},
 				EinoNodeName: "planner_node",
 			},
+			{
+				Key:          MultiAgentObserver,
+				Name:         "Observer",
+				Mission:      "Summarize executed tool results and decide whether the next cycle should adjust the plan.",
+				Inputs:       []string{"tool execution receipts", "agent events", "latest tasks"},
+				Outputs:      []string{"execution observations", "follow-up cycle triggers"},
+				Guardrails:   []string{"Do not execute tools directly", "Escalate failed tool results for human review"},
+				EinoNodeName: "observer_node",
+			},
 		},
 	}
+}
+
+func BuildAgentToolObserverCycle(request AgentActionRequest, executionStatus string, executionMessage string, now time.Time) MultiAgentCycle {
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	executionStatus = normalizeAgentActionExecutionStatus(executionStatus)
+	success := executionStatus == AgentActionExecutionSucceeded
+	decision := "Tool execution completed and the work queue can continue."
+	if !success {
+		decision = "Tool execution failed and should be reviewed before retrying."
+	}
+	cycle := MultiAgentCycle{
+		GeneratedAt:    now,
+		Team:           BuildRecruitingAgentTeam(),
+		ReadinessScore: 78,
+		Trace: []MultiAgentTrace{
+			{
+				AgentKey:    MultiAgentObserver,
+				Observation: request.ActionType + " returned " + executionStatus + ": " + executionMessage,
+				Decision:    decision,
+			},
+			{
+				AgentKey:    MultiAgentPlanner,
+				Observation: "Observed latest tool execution receipt for " + request.Target + ".",
+				Decision:    "Continue with approval-gated workflow actions.",
+			},
+		},
+	}
+	cycle.Team.Orchestrator.Provider = "tool_observer"
+	cycle.Team.Orchestrator.Pattern = "execute_observe_replan"
+	cycle.Team.Orchestrator.NextStep = "Feed this observation into the next Eino graph cycle."
+	if !success {
+		cycle.ReadinessScore = 55
+		cycle.Actions = append(cycle.Actions, AgentCommandAction{Type: request.ActionType, Target: request.Target, Detail: "Review failed execution before retrying: " + executionMessage})
+	}
+	cycle.AutonomyPlan = BuildAgentAutonomyPlan(cycle.Actions, "observe_replan")
+	if success {
+		cycle.AutonomyPlan = AgentAutonomyPlan{
+			Mode:                 "observe_replan",
+			Summary:              "Observer recorded a successful tool result; the next planning cycle can continue from fresh state.",
+			ReplanAfterExecution: true,
+			Steps: []AgentAutonomyStep{{
+				Order:        1,
+				Tool:         request.ActionType,
+				Target:       request.Target,
+				Detail:       executionMessage,
+				Status:       AgentAutonomyStepObserved,
+				ObserverHint: "Use this receipt as context for the next plan.",
+			}},
+		}
+	}
+	cycle.Summary = "Observer reviewed " + request.ActionType + " execution: " + executionStatus + "."
+	return cycle
 }
 
 func RunRecruitingAgentCycle(input MultiAgentCycleInput) MultiAgentCycle {
@@ -179,8 +284,45 @@ func RunRecruitingAgentCycle(input MultiAgentCycleInput) MultiAgentCycle {
 		cycle.Actions = appendUniqueAgentActions(cycle.Actions, trace.Actions...)
 	}
 	cycle.ReadinessScore = multiAgentReadinessScore(input, cycle.Actions)
+	cycle.AutonomyPlan = BuildAgentAutonomyPlan(cycle.Actions, "approval_gated_replan")
 	cycle.Summary = buildMultiAgentCycleSummary(input, cycle)
 	return cycle
+}
+
+func BuildAgentAutonomyPlan(actions []AgentCommandAction, mode string) AgentAutonomyPlan {
+	if strings.TrimSpace(mode) == "" {
+		mode = "approval_gated_replan"
+	}
+	registry := NewDefaultAgentToolRegistry()
+	plan := AgentAutonomyPlan{
+		Mode:                 mode,
+		ReplanAfterExecution: len(actions) > 0,
+		Steps:                []AgentAutonomyStep{},
+	}
+	for _, action := range safeAgentActions(actions) {
+		tool, _ := registry.Get(action.Type)
+		step := AgentAutonomyStep{
+			Order:            len(plan.Steps) + 1,
+			Tool:             action.Type,
+			Target:           action.Target,
+			Detail:           action.Detail,
+			RiskLevel:        defaultText(tool.RiskLevel, AgentToolRiskLow),
+			RequiresApproval: true,
+			Status:           AgentAutonomyStepWaitingApproval,
+			ObserverHint:     "After approval and execution, Observer should summarize the receipt and trigger a new planning pass.",
+		}
+		if tool.RequiresApproval {
+			plan.NeedsApproval = true
+			step.RequiresApproval = true
+		}
+		plan.Steps = append(plan.Steps, step)
+	}
+	if len(plan.Steps) == 0 {
+		plan.Summary = "No tool calls are needed right now; the agent will observe the next crawl or user decision."
+		return plan
+	}
+	plan.Summary = fmt.Sprintf("Prepared %d approval-gated tool steps. Execute only after user approval, then observe and re-plan.", len(plan.Steps))
+	return plan
 }
 
 func ApplyModelAgentInsights(cycle MultiAgentCycle, insights []ModelAgentInsight) MultiAgentCycle {
@@ -249,11 +391,14 @@ func runSourceScoutAgent(input MultiAgentCycleInput) MultiAgentTrace {
 		trace.Decision = "Source pool should be expanded or repaired."
 		trace.Actions = append(trace.Actions, AgentCommandAction{Type: "discover_sources", Target: "sources", Detail: "Find additional recruiting source candidates."})
 	}
+	if unhealthy > 0 || enabled < 8 {
+		trace.Actions = append(trace.Actions, AgentCommandAction{Type: "validate_source_candidates", Target: "sources", Detail: "Validate pending source candidates before promoting them into the crawl pool."})
+	}
 	return trace
 }
 
 func runJobAnalystAgent(input MultiAgentCycleInput) MultiAgentTrace {
-	strong, manual := 0, 0
+	strong, manual, parserGaps := 0, 0, 0
 	for _, job := range input.Jobs {
 		if job.MatchScore >= 70 && job.Status != domain.StatusApplied && job.Status != domain.StatusIgnored {
 			strong++
@@ -261,10 +406,13 @@ func runJobAnalystAgent(input MultiAgentCycleInput) MultiAgentTrace {
 		if job.Status == domain.StatusManualCheck {
 			manual++
 		}
+		if job.Status == domain.StatusManualCheck && jobLooksLikeParserGap(job) {
+			parserGaps++
+		}
 	}
 	trace := MultiAgentTrace{
 		AgentKey:    MultiAgentJobAnalyst,
-		Observation: fmt.Sprintf("%d strong matches, %d manual decisions", strong, manual),
+		Observation: fmt.Sprintf("%d strong matches, %d manual decisions, %d parser gaps", strong, manual, parserGaps),
 		Decision:    "No immediate job review required.",
 	}
 	if strong > 0 {
@@ -273,6 +421,10 @@ func runJobAnalystAgent(input MultiAgentCycleInput) MultiAgentTrace {
 	}
 	if manual > 0 {
 		trace.Actions = append(trace.Actions, AgentCommandAction{Type: "review_manual_check", Target: "opportunities", Detail: "Resolve jobs that need manual decisions."})
+	}
+	if parserGaps > 0 {
+		trace.Decision = "Some collected pages look like parser gaps and should be inspected so future crawls improve."
+		trace.Actions = append(trace.Actions, AgentCommandAction{Type: "review_parser_gaps", Target: "opportunities", Detail: "Inspect low-confidence manual-check pages and decide which parser/source needs improvement."})
 	}
 	return trace
 }

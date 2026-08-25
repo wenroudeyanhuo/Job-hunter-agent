@@ -211,3 +211,39 @@ func TestScoreJobKeepsConcretePostingAsNew(t *testing.T) {
 		t.Fatalf("did not expect low confidence penalty: %#v", result.Job.PenaltyReasons)
 	}
 }
+
+func TestScoreJobWithDecisionFeedbackLearnsUserPreferences(t *testing.T) {
+	settings := DefaultSettings()
+	settings.TargetCities = []string{"Shenzhen"}
+	settings.TargetDirections = []string{"backend", "go"}
+
+	interested := ScoreJobWithDecisionFeedback(domain.Job{
+		Company:     "Tencent",
+		Title:       "Go Backend Engineer 2027 Campus",
+		City:        "Shenzhen",
+		Description: "Backend service development with Go.",
+		ApplyURL:    "https://careers.example.com/tencent/go",
+	}, settings, JobPreferenceFeedback{
+		InterestedCompanies:  []string{"Tencent"},
+		InterestedDirections: []string{"go"},
+	})
+	ignored := ScoreJobWithDecisionFeedback(domain.Job{
+		Company:     "WebStudio",
+		Title:       "Frontend Engineer 2027 Campus",
+		City:        "Shenzhen",
+		Description: "Frontend web development with React.",
+		ApplyURL:    "https://careers.example.com/frontend",
+	}, settings, JobPreferenceFeedback{
+		IgnoredDirections: []string{"frontend"},
+	})
+
+	if !contains(interested.Job.RecommendReasons, "Learned from your interested companies") || !contains(interested.Job.RecommendReasons, "Learned from your interested directions") {
+		t.Fatalf("expected learned positive reasons, got %#v", interested.Job.RecommendReasons)
+	}
+	if !contains(ignored.Job.PenaltyReasons, "Learned from ignored directions") {
+		t.Fatalf("expected learned ignore penalty, got %#v", ignored.Job.PenaltyReasons)
+	}
+	if interested.Job.MatchScore <= ignored.Job.MatchScore {
+		t.Fatalf("expected feedback to lift interested-like job above ignored-like job, got interested=%d ignored=%d", interested.Job.MatchScore, ignored.Job.MatchScore)
+	}
+}

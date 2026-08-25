@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/domain"
 )
 
 type JobDecision struct {
@@ -52,7 +54,14 @@ func (r *Repository) RecordJobDecision(ctx context.Context, input JobDecisionInp
 			return JobDecision{}, fmt.Errorf("read latest job decision id: %w", err)
 		}
 	}
-	return r.GetJobDecision(ctx, id)
+	decision, err := r.GetJobDecision(ctx, id)
+	if err != nil {
+		return JobDecision{}, err
+	}
+	if job, err := r.GetJob(ctx, input.JobID); err == nil {
+		_, _ = r.UpsertSemanticMemoryItem(ctx, SemanticMemoryItemFromDecision(decision, job))
+	}
+	return decision, nil
 }
 
 func (r *Repository) GetJobDecision(ctx context.Context, id int64) (JobDecision, error) {
@@ -85,6 +94,47 @@ func (r *Repository) ListJobDecisions(ctx context.Context, jobID int64) ([]JobDe
 		return nil, fmt.Errorf("iterate job decisions: %w", err)
 	}
 	return out, nil
+}
+
+func (r *Repository) BuildJobPreferenceFeedback(ctx context.Context, limit int) (JobPreferenceFeedback, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 200
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT j.company, j.direction_tags, d.to_status, d.action
+		FROM job_decisions d
+		JOIN jobs j ON j.id = d.job_id
+		WHERE d.to_status IN (?, ?, ?)
+		ORDER BY d.created_at DESC, d.id DESC
+		LIMIT ?
+	`, string(domain.StatusInterested), string(domain.StatusApplied), string(domain.StatusIgnored), limit)
+	if err != nil {
+		return JobPreferenceFeedback{}, fmt.Errorf("build job preference feedback: %w", err)
+	}
+	defer rows.Close()
+	feedback := JobPreferenceFeedback{}
+	for rows.Next() {
+		var company string
+		var tagsJSON string
+		var toStatus string
+		var action string
+		if err := rows.Scan(&company, &tagsJSON, &toStatus, &action); err != nil {
+			return JobPreferenceFeedback{}, fmt.Errorf("scan job preference feedback: %w", err)
+		}
+		tags := unmarshalStrings(tagsJSON)
+		switch toStatus {
+		case string(domain.StatusInterested), string(domain.StatusApplied):
+			feedback.InterestedCompanies = mergeStrings(feedback.InterestedCompanies, []string{company})
+			feedback.InterestedDirections = mergeStrings(feedback.InterestedDirections, tags)
+		case string(domain.StatusIgnored):
+			feedback.IgnoredCompanies = mergeStrings(feedback.IgnoredCompanies, []string{company})
+			feedback.IgnoredDirections = mergeStrings(feedback.IgnoredDirections, tags)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return JobPreferenceFeedback{}, fmt.Errorf("iterate job preference feedback: %w", err)
+	}
+	return feedback, nil
 }
 
 func selectJobDecisionSQL() string {

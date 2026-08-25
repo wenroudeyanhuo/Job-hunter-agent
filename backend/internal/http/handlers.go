@@ -231,6 +231,10 @@ func (h *Handlers) ListAgentActionRequests(c *gin.Context) {
 	c.JSON(http.StatusOK, requests)
 }
 
+func (h *Handlers) ListAgentTools(c *gin.Context) {
+	c.JSON(http.StatusOK, jobs.NewDefaultAgentToolRegistry().List())
+}
+
 func (h *Handlers) ListAgentPlans(c *gin.Context) {
 	plans, err := h.Repo.ListAgentPlans(c.Request.Context(), c.Query("status"), 20)
 	if err != nil {
@@ -338,9 +342,10 @@ func (h *Handlers) modelAgentInsights(ctx context.Context, input jobs.MultiAgent
 	}
 	cycle := jobs.RunRecruitingAgentCycle(input)
 	prompt := fmt.Sprintf(`Return JSON only with this shape:
-{"insights":[{"agent_key":"source_scout|job_analyst|memory_keeper|planner","decision":"concise decision","actions":[{"type":"%s","target":"...","detail":"..."}]}]}
+{"insights":[{"agent_key":"source_scout|job_analyst|memory_keeper|planner|observer","decision":"concise decision","tool_calls":[{"name":"tool_name","target":"...","detail":"...","arguments":{}}],"actions":[{"type":"legacy_tool_name","target":"...","detail":"..."}]}]}
+Use only these registered tools: %s.
 You are improving a recruiting multi-agent cycle. Keep actions safe and approval-gated. Current summary: %s. Trace: %s.`,
-		jobs.ModelActionPromptList(), cycle.Summary, formatMultiAgentTrace(cycle.Trace))
+		jobs.ModelToolSchemaPrompt(), cycle.Summary, formatMultiAgentTrace(cycle.Trace))
 	raw, err := h.callModelChat(ctx, []map[string]string{
 		{"role": "system", "content": "You are a cautious recruiting agent orchestrator. Return strict JSON only."},
 		{"role": "user", "content": prompt},
@@ -384,6 +389,7 @@ func (h *Handlers) UpdateAgentActionRequest(c *gin.Context) {
 			respondError(c, http.StatusInternalServerError, err)
 			return
 		}
+		h.recordToolObserverCycle(c, current, jobs.AgentActionExecutionSucceeded, executionMessage)
 	} else if jobs.NormalizeAgentActionRequestStatus(req.Status) == jobs.AgentActionRequestStatusDismissed {
 		if _, err := h.Repo.RecordAgentPlanStepExecution(c.Request.Context(), current.PlanID, current.ActionType, jobs.AgentPlanStepStatusSkipped, "Action dismissed by user."); err != nil {
 			respondError(c, http.StatusInternalServerError, err)
@@ -402,6 +408,21 @@ func (h *Handlers) UpdateAgentActionRequest(c *gin.Context) {
 		Level:   "info",
 	})
 	c.JSON(http.StatusOK, request)
+}
+
+func (h *Handlers) recordToolObserverCycle(c *gin.Context, request jobs.AgentActionRequest, executionStatus string, executionMessage string) {
+	cycle := jobs.BuildAgentToolObserverCycle(request, executionStatus, executionMessage, time.Now().UTC())
+	record, err := h.Repo.RecordAgentCycle(c.Request.Context(), cycle)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+	h.recordAgentEvent(c, jobs.AgentEventInput{
+		Type:    "tool_observer_cycle_completed",
+		Title:   "Observed tool execution",
+		Summary: record.Summary,
+		Level:   "success",
+	})
 }
 
 func (h *Handlers) buildMultiAgentCycleInput(ctx context.Context) (jobs.MultiAgentCycleInput, error) {
@@ -436,100 +457,7 @@ func (h *Handlers) buildMultiAgentCycleInput(ctx context.Context) (jobs.MultiAge
 }
 
 func (h *Handlers) executeApprovedAgentAction(c *gin.Context, request jobs.AgentActionRequest) (string, error) {
-	ctx := c.Request.Context()
-	message := "Action completed."
-	switch request.ActionType {
-	case "add_recommended_and_crawl":
-		if h.Runner == nil {
-			return "", fmt.Errorf("crawl runner is not configured")
-		}
-		seeded, err := h.Repo.SeedRecommendedSources(ctx)
-		if err != nil {
-			return "", err
-		}
-		summary, err := h.Runner.Run(ctx, "agent_action_recommended_crawl")
-		if err != nil {
-			return "", err
-		}
-		cleanup, err := h.cleanupLandingPages(ctx)
-		if err != nil {
-			return "", err
-		}
-		summary.LandingPagesIgnored = cleanup.Ignored
-		h.recordCrawlEvent(c, "agent_action_recommended_crawl_completed", "Agent recommended source crawl completed", summary)
-		h.refreshAgentTasksAfterCrawl(c)
-		h.snapshotAgentReview(c, "agent_action_recommended_crawl_completed")
-		message = "Seeded " + strconv.Itoa(seeded.Created) + " recommended sources, skipped " + strconv.Itoa(seeded.Duplicated) + " duplicates, created " + strconv.Itoa(summary.JobsCreated) + " jobs, and flagged " + strconv.Itoa(summary.ManualCheckCount) + " for review."
-	case "run_crawl":
-		if h.Runner == nil {
-			return "", fmt.Errorf("crawl runner is not configured")
-		}
-		summary, err := h.Runner.Run(ctx, "agent_action")
-		if err != nil {
-			return "", err
-		}
-		cleanup, err := h.cleanupLandingPages(ctx)
-		if err != nil {
-			return "", err
-		}
-		summary.LandingPagesIgnored = cleanup.Ignored
-		h.recordCrawlEvent(c, "agent_action_crawl_completed", "Agent action crawl completed", summary)
-		h.refreshAgentTasksAfterCrawl(c)
-		h.snapshotAgentReview(c, "agent_action_crawl_completed")
-		message = "Created " + strconv.Itoa(summary.JobsCreated) + " jobs, found " + strconv.Itoa(summary.JobsDuplicated) + " duplicates, and flagged " + strconv.Itoa(summary.ManualCheckCount) + " for review."
-	case "refresh_tasks":
-		if _, err := h.Repo.SyncAgentTasks(ctx, time.Now().UTC()); err != nil {
-			return "", err
-		}
-		message = "Refreshed today's task queue."
-	case "sync_application_plans":
-		plans, err := h.Repo.SyncApplicationPlans(ctx, time.Now().UTC())
-		if err != nil {
-			return "", err
-		}
-		message = "Synced " + strconv.Itoa(len(plans)) + " application plans."
-	case "send_feishu_report":
-		webhookURL, err := h.effectiveFeishuWebhookURL(ctx)
-		if err != nil {
-			return "", err
-		}
-		if webhookURL == "" {
-			return "", fmt.Errorf("Feishu webhook URL is not configured")
-		}
-		report, err := h.buildDutyReport(ctx)
-		if err != nil {
-			return "", err
-		}
-		if err := notify.SendFeishuWebhook(ctx, webhookURL, notify.BuildFeishuDutyReportWithCycle(report, h.latestAgentCycle(ctx))); err != nil {
-			return "", err
-		}
-		message = "Sent the current duty report to Feishu."
-	case "discover_sources":
-		settings, err := h.Repo.GetSettings(ctx)
-		if err != nil {
-			return "", err
-		}
-		result, err := h.Repo.DiscoverSourceCandidates(ctx, jobs.SourceDiscoveryInput{
-			TargetCities:     settings.TargetCities,
-			TargetDirections: settings.TargetDirections,
-		})
-		if err != nil {
-			return "", err
-		}
-		message = "Discovered " + strconv.Itoa(result.Created) + " new source candidates and skipped " + strconv.Itoa(result.Duplicated) + " duplicates."
-	case "review_strong_matches", "review_manual_check":
-		// Navigation-only requests are safely completed once the user approves them.
-		message = "Opened the requested review workflow."
-	default:
-		return "", fmt.Errorf("unsupported agent action: %s", request.ActionType)
-	}
-	h.recordAgentEvent(c, jobs.AgentEventInput{
-		Type:    "agent_action_executed",
-		Title:   "Executed approved action",
-		Summary: request.ActionType + ": " + message,
-		Level:   "success",
-	})
-	return message, nil
+	return NewAgentToolExecutor(h).Execute(c, request)
 }
 
 func (h *Handlers) GetAutomationStatus(c *gin.Context) {
@@ -540,6 +468,22 @@ func (h *Handlers) GetAutomationStatus(c *gin.Context) {
 	}
 	webhookConfigured := strings.TrimSpace(settings.FeishuWebhookURL) != "" || strings.TrimSpace(h.FeishuWebhookURL) != ""
 	c.JSON(http.StatusOK, jobs.BuildAgentAutomationDiagnostics(settings, webhookConfigured, true, time.Now().UTC()))
+}
+
+func (h *Handlers) GetOnboardingHealth(c *gin.Context) {
+	settings, err := h.Repo.GetSettings(c.Request.Context())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	webhookConfigured := strings.TrimSpace(settings.FeishuWebhookURL) != "" || strings.TrimSpace(h.FeishuWebhookURL) != ""
+	modelConfigured := jobs.BuildAgentChatStatus(h.currentLLM()).Configured
+	health, err := h.Repo.BuildOnboardingHealth(c.Request.Context(), true, webhookConfigured, modelConfigured, time.Now().UTC())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, health)
 }
 
 func (h *Handlers) ListAgentChatMessages(c *gin.Context) {
@@ -675,7 +619,7 @@ func (h *Handlers) runModelChat(ctx context.Context, userMessage string, chatCon
 	messages := []map[string]string{
 		{
 			"role": "system",
-			"content": fmt.Sprintf("You are Job Hunter Agent, a Chinese-speaking digital employee for autumn recruitment. Be concise, practical, and use the current local context. Current view: %s. Open tasks: %d. Strong matches: %d. Manual decisions: %d. Source issues: %d. Recommended jobs: %s. Memory: %s. Semantic memories: %s. If suggesting an action, return JSON with content and actions. Allowed action types: %s. Never suggest direct resume submission or third-party login actions.",
+			"content": fmt.Sprintf("You are Job Hunter Agent, a Chinese-speaking personal digital employee for autumn recruitment. Be concise, practical, and use the current local context. When the user asks what to apply for, explain why each recommended job fits and mention uncertainty if data is weak. Current view: %s. Open tasks: %d. Strong matches: %d. Manual decisions: %d. Source issues: %d. Recommended jobs: %s. Memory: %s. Decision memory and semantic memories: %s. If suggesting an action, return JSON with content and actions. Allowed action types: %s. Never suggest direct resume submission or third-party login actions.",
 				chatContext.ActiveView, chatContext.OpenTasks, chatContext.StrongMatches, chatContext.ManualDecisions, chatContext.SourceIssues, formatAgentChatJobSummaries(chatContext.RecommendedJobs), formatAgentMemory(chatContext.Memory), formatSemanticMemoryMatches(chatContext.SemanticMatches), jobs.ModelActionPromptList()),
 		},
 	}
@@ -1199,7 +1143,12 @@ func (h *Handlers) ImportURL(c *gin.Context) {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
-	scored := jobs.ScoreJobWithSettings(imported, settings)
+	feedback, err := h.Repo.BuildJobPreferenceFeedback(c.Request.Context(), 200)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	scored := jobs.ScoreJobWithDecisionFeedback(imported, settings, feedback)
 	if scored.HardFiltered {
 		scored.Job.Status = domain.StatusManualCheck
 		scored.Job.PenaltyReasons = append(scored.Job.PenaltyReasons, scored.HardFilterReason)

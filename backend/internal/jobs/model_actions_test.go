@@ -58,3 +58,16 @@ func TestModelActionPromptListIncludesEveryAllowedAction(t *testing.T) {
 		t.Fatalf("expected recommended bootstrap action in prompt list, got %q", prompt)
 	}
 }
+
+func TestParseModelToolCallReplyUsesRegisteredToolSchema(t *testing.T) {
+	raw := `{"tool_calls":[{"name":"run_crawl","target":"sources","detail":"Run a crawl.","arguments":{}},{"name":"submit_resume","target":"external","detail":"unsafe","arguments":{}}]}`
+
+	actions := ParseModelToolCallReply(raw)
+
+	if len(actions) != 1 || actions[0].Type != "run_crawl" {
+		t.Fatalf("expected only registered safe tool call, got %#v", actions)
+	}
+	if schema := ModelToolSchemaPrompt(); !strings.Contains(schema, "run_crawl") || strings.Contains(schema, "submit_resume") {
+		t.Fatalf("unexpected tool schema prompt: %s", schema)
+	}
+}

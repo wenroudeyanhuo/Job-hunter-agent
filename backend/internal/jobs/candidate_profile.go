@@ -98,7 +98,12 @@ func (r *Repository) SaveCandidateProfile(ctx context.Context, profile Candidate
 	if err != nil {
 		return CandidateProfile{}, fmt.Errorf("save candidate profile: %w", err)
 	}
-	return r.GetCandidateProfile(ctx)
+	saved, err := r.GetCandidateProfile(ctx)
+	if err != nil {
+		return CandidateProfile{}, err
+	}
+	_, _ = r.UpsertSemanticMemoryItem(ctx, SemanticMemoryItemFromProfile(saved))
+	return saved, nil
 }
 
 func normalizeCandidateProfile(profile CandidateProfile) CandidateProfile {

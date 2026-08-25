@@ -21,6 +21,7 @@ const (
 	AgentTaskKindReviewStrongMatch   = "review_strong_match"
 	AgentTaskKindDecideManualJob     = "decide_manual_job"
 	AgentTaskKindInspectSource       = "inspect_source"
+	AgentTaskKindFixParserGap        = "fix_parser_gap"
 	AgentTaskKindRunCrawl            = "run_crawl"
 	AgentTaskKindPrepareApplication  = "prepare_application"
 	AgentTaskKindFollowUpApplication = "follow_up_application"
@@ -284,16 +285,24 @@ func (r *Repository) buildDesiredAgentTasks(ctx context.Context, taskDate string
 			})
 		}
 		if job.Status == domain.StatusManualCheck {
+			kind := AgentTaskKindDecideManualJob
+			action := "review_manual_check"
+			priority := 120
+			if jobLooksLikeParserGap(job) {
+				kind = AgentTaskKindFixParserGap
+				action = "inspect_failed_sources"
+				priority = 155
+			}
 			tasks = append(tasks, AgentTaskInput{
 				TaskDate:  taskDate,
-				Kind:      AgentTaskKindDecideManualJob,
+				Kind:      kind,
 				Title:     "Decide " + fallbackText(job.Company, "Unknown company"),
 				Detail:    fallbackText(job.Title, "Untitled role") + " / " + firstText(job.PenaltyReasons, "Needs classification"),
-				Priority:  120,
+				Priority:  priority,
 				Count:     1,
 				SubjectID: job.ID,
 				JobID:     job.ID,
-				Action:    "review_manual_check",
+				Action:    action,
 			})
 		}
 	}
@@ -364,6 +373,16 @@ func (r *Repository) buildDesiredAgentTasks(ctx context.Context, taskDate string
 		return tasks[i].Priority > tasks[j].Priority
 	})
 	return tasks, nil
+}
+
+func jobLooksLikeParserGap(job domain.Job) bool {
+	text := strings.ToLower(strings.Join(append([]string{job.Title, job.Description, job.SourceURL, job.ApplyURL}, job.PenaltyReasons...), " "))
+	return strings.Contains(text, "parser gap") ||
+		strings.Contains(text, "no concrete job") ||
+		strings.Contains(text, "low confidence job posting") ||
+		strings.Contains(text, "source parser failed") ||
+		strings.Contains(text, "landing page") ||
+		strings.Contains(text, "manual check")
 }
 
 func (r *Repository) upsertAgentTask(ctx context.Context, input AgentTaskInput) error {

@@ -12,6 +12,7 @@ type SourceOperationsSummary struct {
 	WarningSources      int                  `json:"warning_sources"`
 	BrokenSources       int                  `json:"broken_sources"`
 	UnknownSources      int                  `json:"unknown_sources"`
+	SourceQualityScore  int                  `json:"source_quality_score"`
 	PendingCandidates   int                  `json:"pending_candidates"`
 	VerifiedCandidates  int                  `json:"verified_candidates"`
 	RejectedCandidates  int                  `json:"rejected_candidates"`
@@ -91,7 +92,31 @@ func (r *Repository) BuildSourceOperationsSummary(ctx context.Context) (SourceOp
 			Detail: "Seed recommended sources and run the first crawl.",
 		})
 	}
+	summary.SourceQualityScore = calculateSourceQualityScore(summary)
 	return summary, nil
+}
+
+func calculateSourceQualityScore(summary SourceOperationsSummary) int {
+	if summary.TotalSources == 0 {
+		return 0
+	}
+	score := 100
+	score -= summary.BrokenSources * 25
+	score -= summary.WarningSources * 12
+	score -= summary.UnknownSources * 4
+	if summary.PendingCandidates > 0 {
+		score += 5
+	}
+	if summary.VerifiedCandidates > 0 {
+		score += 8
+	}
+	if score < 0 {
+		return 0
+	}
+	if score > 100 {
+		return 100
+	}
+	return score
 }
 
 func sourceAttention(source Source) SourceAttention {
