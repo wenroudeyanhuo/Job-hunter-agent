@@ -12,6 +12,13 @@ type ScoreResult struct {
 	HardFilterReason string
 }
 
+type JobPreferenceFeedback struct {
+	InterestedCompanies  []string
+	InterestedDirections []string
+	IgnoredCompanies     []string
+	IgnoredDirections    []string
+}
+
 func ScoreJob(input domain.Job) ScoreResult {
 	return ScoreJobWithSettings(input, DefaultSettings())
 }
@@ -94,6 +101,39 @@ func ScoreJobWithSettings(input domain.Job, settings Settings) ScoreResult {
 	}
 
 	return ScoreResult{Job: job}
+}
+
+func ScoreJobWithDecisionFeedback(input domain.Job, settings Settings, feedback JobPreferenceFeedback) ScoreResult {
+	result := ScoreJobWithSettings(input, settings)
+	if result.HardFiltered {
+		return result
+	}
+	job := result.Job
+	text := normalizedSearchText(job.Company, job.Title, job.City, job.Description, strings.Join(job.DirectionTags, " "))
+	if _, ok := matchedSettingValue(text, feedback.InterestedCompanies); ok {
+		job.MatchScore += 8
+		job.RecommendReasons = mergeStrings(job.RecommendReasons, []string{"Learned from your interested companies"})
+	}
+	if len(intersectStrings(job.DirectionTags, feedback.InterestedDirections)) > 0 {
+		job.MatchScore += 6
+		job.RecommendReasons = mergeStrings(job.RecommendReasons, []string{"Learned from your interested directions"})
+	}
+	if _, ok := matchedSettingValue(text, feedback.IgnoredCompanies); ok {
+		job.MatchScore -= 10
+		job.PenaltyReasons = mergeStrings(job.PenaltyReasons, []string{"Learned from ignored companies"})
+	}
+	if len(intersectStrings(job.DirectionTags, feedback.IgnoredDirections)) > 0 {
+		job.MatchScore -= 8
+		job.PenaltyReasons = mergeStrings(job.PenaltyReasons, []string{"Learned from ignored directions"})
+	}
+	if job.MatchScore < 0 {
+		job.MatchScore = 0
+	}
+	if job.MatchScore > 100 {
+		job.MatchScore = 100
+	}
+	result.Job = job
+	return result
 }
 
 func IsHardFiltered(job domain.Job) (bool, string) {

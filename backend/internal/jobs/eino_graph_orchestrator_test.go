@@ -22,8 +22,14 @@ func TestEinoRecruitingOrchestratorRunsGraph(t *testing.T) {
 	if cycle.Team.Orchestrator.Provider != "eino_graph" {
 		t.Fatalf("expected eino graph provider, got %#v", cycle.Team.Orchestrator)
 	}
-	if len(cycle.Trace) != 4 || cycle.Summary == "" {
+	if len(cycle.Trace) != 6 || cycle.Summary == "" {
 		t.Fatalf("expected complete graph cycle, got %#v", cycle)
+	}
+	if cycle.Trace[4].AgentKey != MultiAgentPlanner || cycle.Trace[5].AgentKey != MultiAgentObserver {
+		t.Fatalf("expected tool planner and observer nodes, got %#v", cycle.Trace)
+	}
+	if cycle.AutonomyPlan.Mode != "eino_graph" || !cycle.AutonomyPlan.ReplanAfterExecution {
+		t.Fatalf("expected Eino graph to build autonomous plan, got %#v", cycle.AutonomyPlan)
 	}
 }
 

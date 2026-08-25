@@ -110,6 +110,16 @@ func BuildSourceDiscoveryCandidates(input SourceDiscoveryInput) []sourceCandidat
 			Confidence: 72,
 		})
 	}
+	for _, source := range broaderCompanyCareerCandidates() {
+		out = append(out, sourceCandidateInput{
+			Name:       source.Name,
+			URL:        source.URL,
+			Category:   source.Category,
+			ParserType: source.ParserType,
+			Reason:     "Broader official career entrance for personal source expansion beyond top-tier companies.",
+			Confidence: source.Confidence,
+		})
+	}
 	for _, city := range cities {
 		for _, direction := range directions {
 			query := city + " " + directionLabel(direction) + " \u6821\u62db \u5b9e\u4e60 \u62db\u8058"
@@ -166,6 +176,30 @@ func BuildSourceDiscoveryCandidates(input SourceDiscoveryInput) []sourceCandidat
 		}
 	}
 	return dedupeSourceCandidateInputs(out)
+}
+
+func broaderCompanyCareerCandidates() []struct {
+	Name       string
+	URL        string
+	Category   string
+	ParserType string
+	Confidence int
+} {
+	return []struct {
+		Name       string
+		URL        string
+		Category   string
+		ParserType string
+		Confidence int
+	}{
+		{Name: "Bilibili Careers discovery", URL: "https://jobs.bilibili.com/", Category: "internet", ParserType: "generic", Confidence: 66},
+		{Name: "Xiaohongshu Careers discovery", URL: "https://job.xiaohongshu.com/", Category: "internet", ParserType: "generic", Confidence: 66},
+		{Name: "Shopee Careers discovery", URL: "https://careers.shopee.sg/jobs", Category: "cross_border", ParserType: "generic", Confidence: 62},
+		{Name: "MiHoYo Careers discovery", URL: "https://jobs.mihoyo.com/", Category: "game", ParserType: "generic", Confidence: 62},
+		{Name: "NetEase Careers discovery", URL: "https://hr.163.com/", Category: "internet", ParserType: "generic", Confidence: 60},
+		{Name: "Kingsoft Careers discovery", URL: "https://join.kingsoft.com/", Category: "software", ParserType: "generic", Confidence: 58},
+		{Name: "SHEIN Careers discovery", URL: "https://careers.sheingroup.com/", Category: "cross_border", ParserType: "generic", Confidence: 58},
+	}
 }
 
 func (r *Repository) ListSourceCandidates(ctx context.Context, filter SourceCandidateFilter) ([]SourceCandidate, error) {

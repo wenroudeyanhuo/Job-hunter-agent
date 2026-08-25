@@ -57,6 +57,10 @@ func (r *Runner) Run(ctx context.Context, trigger string) (RunSummary, error) {
 	if err != nil {
 		return summary, err
 	}
+	feedback, err := r.repo.BuildJobPreferenceFeedback(ctx, 200)
+	if err != nil {
+		return summary, err
+	}
 
 	for _, collector := range r.collectors {
 		collected, err := collector.Collect(ctx)
@@ -81,7 +85,7 @@ func (r *Runner) Run(ctx context.Context, trigger string) (RunSummary, error) {
 				stat.Status = "failed"
 				stat.ErrorMessage = appendErrorMessage(stat.ErrorMessage, rawJob.Description)
 			}
-			scored := jobs.ScoreJobWithSettings(rawJob, settings)
+			scored := jobs.ScoreJobWithDecisionFeedback(rawJob, settings, feedback)
 			if scored.HardFiltered {
 				stat.JobsFiltered++
 				continue

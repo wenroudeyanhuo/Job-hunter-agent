@@ -1546,6 +1546,84 @@ h2 {
   font-weight: 700;
 }
 
+.agent-autonomy-plan {
+  margin-top: 12px;
+  border: 1px solid #dbe6f4;
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px;
+}
+
+.agent-autonomy-title {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.agent-autonomy-title strong {
+  color: #18212f;
+  font-size: 12px;
+}
+
+.agent-autonomy-title span,
+.agent-autonomy-plan > small {
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.agent-autonomy-plan > small {
+  display: block;
+  margin-top: 5px;
+}
+
+.agent-autonomy-steps {
+  display: grid;
+  gap: 7px;
+  margin-top: 9px;
+}
+
+.agent-autonomy-step {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  border: 1px solid #edf1f7;
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 8px;
+}
+
+.agent-autonomy-step > span {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #dbeafe;
+  color: #1d4ed8;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.agent-autonomy-step strong,
+.agent-autonomy-step small {
+  display: block;
+}
+
+.agent-autonomy-step strong {
+  color: #18212f;
+  font-size: 12px;
+}
+
+.agent-autonomy-step small {
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
 .agent-cycle-card footer {
   margin-top: 10px;
   color: #94a3b8;
@@ -1732,6 +1810,101 @@ h2 {
   border-left: 3px solid #1fb56e;
   padding-left: 8px;
   color: #176443;
+}
+
+.tool-preview {
+  margin-top: 8px;
+  border: 1px solid #dbe7f5;
+  border-radius: 8px;
+  background: #f8fbff;
+  padding: 8px 10px;
+}
+
+.action-request-row .tool-risk {
+  display: inline-flex;
+  width: fit-content;
+  border-radius: 999px;
+  background: #edf7f2;
+  color: #176443;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.action-request-row .risk-medium {
+  background: #fff7ed;
+  color: #9a3412;
+}
+
+.action-request-row .risk-high {
+  background: #fef2f2;
+  color: #b42318;
+}
+
+.onboarding-health-card {
+  margin-top: 12px;
+}
+
+.onboarding-next-steps {
+  display: grid;
+  gap: 5px;
+  margin-top: 10px;
+}
+
+.onboarding-next-steps small {
+  color: #475569;
+  line-height: 1.4;
+}
+
+.onboarding-wizard {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.wizard-step {
+  border: 1px solid #dbe7f5;
+  border-radius: 8px;
+  background: #fff;
+  padding: 8px;
+}
+
+.wizard-step span {
+  display: inline-grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border-radius: 999px;
+  background: #e8edf5;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.wizard-step strong {
+  display: block;
+  margin-top: 6px;
+  color: #334155;
+  font-size: 12px;
+}
+
+.wizard-step small {
+  display: block;
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.wizard-step.done {
+  border-color: #b7ead0;
+  background: #f2fbf6;
+}
+
+.wizard-step.done span {
+  background: #18a36d;
+  color: #fff;
 }
 
 .action-request-row .receipt-failed {

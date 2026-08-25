@@ -9,10 +9,10 @@ import (
 func TestBuildRecruitingAgentTeamDefinesSpecializedAgents(t *testing.T) {
 	team := BuildRecruitingAgentTeam()
 
-	if len(team.Agents) != 4 {
-		t.Fatalf("expected four specialized agents, got %#v", team.Agents)
+	if len(team.Agents) != 5 {
+		t.Fatalf("expected five specialized agents, got %#v", team.Agents)
 	}
-	if team.Agents[0].Key != MultiAgentSourceScout || team.Agents[1].Key != MultiAgentJobAnalyst || team.Agents[2].Key != MultiAgentMemoryKeeper || team.Agents[3].Key != MultiAgentPlanner {
+	if team.Agents[0].Key != MultiAgentSourceScout || team.Agents[1].Key != MultiAgentJobAnalyst || team.Agents[2].Key != MultiAgentMemoryKeeper || team.Agents[3].Key != MultiAgentPlanner || team.Agents[4].Key != MultiAgentObserver {
 		t.Fatalf("unexpected agent order: %#v", team.Agents)
 	}
 	if team.Orchestrator.Provider != MultiAgentOrchestratorEinoReady {
@@ -47,6 +47,15 @@ func TestRunRecruitingAgentCycleProducesTraceAndActions(t *testing.T) {
 	}
 	if cycle.Summary == "" || cycle.ReadinessScore <= 0 {
 		t.Fatalf("expected cycle summary and readiness score, got %#v", cycle)
+	}
+	if cycle.AutonomyPlan.Mode != "approval_gated_replan" {
+		t.Fatalf("expected cycle to build an autonomy plan, got %#v", cycle.AutonomyPlan)
+	}
+	if len(cycle.AutonomyPlan.Steps) == 0 || !cycle.AutonomyPlan.NeedsApproval || !cycle.AutonomyPlan.ReplanAfterExecution {
+		t.Fatalf("expected approval-gated replan steps, got %#v", cycle.AutonomyPlan)
+	}
+	if cycle.AutonomyPlan.Steps[0].Status != AgentAutonomyStepWaitingApproval {
+		t.Fatalf("expected tool plan to wait for approval, got %#v", cycle.AutonomyPlan.Steps[0])
 	}
 }
 
@@ -90,6 +99,29 @@ func TestApplyModelAgentInsightsAnnotatesCycleAndFiltersActions(t *testing.T) {
 	}
 	if enhanced.Trace[1].Decision != "Model says Tencent backend should be reviewed today." {
 		t.Fatalf("expected model decision to annotate matching trace, got %#v", enhanced.Trace[1])
+	}
+}
+
+func TestRunRecruitingAgentCycleProactivelyPlansDailySelfCheck(t *testing.T) {
+	cycle := RunRecruitingAgentCycle(MultiAgentCycleInput{
+		Jobs: []domain.Job{
+			{Company: "Tencent", Title: "Go Backend Engineer", City: "Shenzhen", MatchScore: 86, Status: domain.StatusNew},
+			{Company: "ParserGap", Title: "Career home", City: "", MatchScore: 15, Status: domain.StatusManualCheck, PenaltyReasons: []string{"Low confidence job posting"}},
+		},
+		Sources: []Source{
+			{Name: "Broken Careers", Enabled: true, HealthStatus: SourceHealthBroken},
+		},
+		Memory: SemanticMemoryStats{TotalItems: 0, JobItems: 0},
+	})
+
+	if !multiAgentHasAction(cycle.Actions, "validate_source_candidates") {
+		t.Fatalf("expected proactive source validation action, got %#v", cycle.Actions)
+	}
+	if !multiAgentHasAction(cycle.Actions, "review_parser_gaps") {
+		t.Fatalf("expected proactive parser-gap review action, got %#v", cycle.Actions)
+	}
+	if cycle.AutonomyPlan.Summary == "" || len(cycle.AutonomyPlan.Steps) < 3 {
+		t.Fatalf("expected autonomy plan to include proactive daily work, got %#v", cycle.AutonomyPlan)
 	}
 }
 

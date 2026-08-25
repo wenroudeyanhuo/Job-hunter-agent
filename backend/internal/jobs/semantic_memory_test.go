@@ -2,6 +2,9 @@ package jobs
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -138,6 +141,78 @@ func TestRepositoryRefreshesSemanticMemoryWhenJobChanges(t *testing.T) {
 	}
 	if !strings.Contains(item.Content, "distributed tracing") {
 		t.Fatalf("expected semantic memory content to include updated notes, got %q", item.Content)
+	}
+}
+
+func TestRepositoryUsesQdrantSemanticMemoryWhenConfigured(t *testing.T) {
+	ctx := context.Background()
+	var upsertCalled bool
+	var searchCalled bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/job_hunter_test_memory":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"result":true}`))
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/job_hunter_test_memory/points":
+			upsertCalled = true
+			if r.URL.Query().Get("wait") != "true" {
+				t.Fatalf("expected qdrant upsert to wait, got query %q", r.URL.RawQuery)
+			}
+			var payload struct {
+				Points []struct {
+					ID      int64          `json:"id"`
+					Vector  []float64      `json:"vector"`
+					Payload map[string]any `json:"payload"`
+				} `json:"points"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Fatalf("decode qdrant upsert: %v", err)
+			}
+			if len(payload.Points) != 1 || len(payload.Points[0].Vector) != SemanticMemoryDimensions {
+				t.Fatalf("expected one qdrant point with embedding, got %#v", payload.Points)
+			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"result":{"operation_id":1,"status":"completed"}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/collections/job_hunter_test_memory/points/search":
+			searchCalled = true
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"result":[{"id":7,"score":0.91,"payload":{"kind":"job","reference_id":42,"title":"Qdrant Go Backend","content":"Go backend in Shenzhen","metadata":{"company":"QdrantCo"},"embedding_provider":"qdrant","embedding_dimension":64,"updated_at":"2026-08-25T09:00:00Z"}}]}`))
+		default:
+			t.Fatalf("unexpected qdrant request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+	t.Setenv("SEMANTIC_MEMORY_PROVIDER", SemanticMemoryProviderQdrant)
+	t.Setenv("QDRANT_URL", server.URL)
+	t.Setenv("QDRANT_COLLECTION", "job_hunter_test_memory")
+
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	repo := NewRepository(conn)
+	if _, err := repo.UpsertSemanticMemoryItem(ctx, SemanticMemoryItem{
+		Kind:        SemanticMemoryKindJob,
+		ReferenceID: 42,
+		Title:       "Qdrant Go Backend",
+		Content:     "Go backend in Shenzhen",
+		Metadata:    map[string]string{"company": "QdrantCo"},
+	}); err != nil {
+		t.Fatalf("upsert semantic memory: %v", err)
+	}
+	if !upsertCalled {
+		t.Fatal("expected qdrant upsert to be called")
+	}
+
+	matches, err := repo.SearchSemanticMemory(ctx, SemanticMemoryQuery{Query: "go backend shenzhen", Kind: SemanticMemoryKindJob, Limit: 3})
+	if err != nil {
+		t.Fatalf("search semantic memory: %v", err)
+	}
+	if !searchCalled {
+		t.Fatal("expected qdrant search to be called")
+	}
+	if len(matches) != 1 || matches[0].ReferenceID != 42 || matches[0].Score != 0.91 {
+		t.Fatalf("expected qdrant match to be returned, got %#v", matches)
 	}
 }
 

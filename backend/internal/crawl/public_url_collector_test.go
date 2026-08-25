@@ -40,6 +40,31 @@ func TestPublicURLCollectorKeepsInvalidURLForManualCheck(t *testing.T) {
 	}
 }
 
+func TestPublicURLCollectorRetriesTransientImportFailure(t *testing.T) {
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts == 1 {
+			http.Error(w, "busy", http.StatusServiceUnavailable)
+			return
+		}
+		_, _ = w.Write([]byte(`<html><head><title>Tencent Go Backend Engineer 2027 Campus - Shenzhen</title><meta name="description" content="Campus recruitment for Go backend microservices in Shenzhen."></head></html>`))
+	}))
+	defer server.Close()
+
+	collector := NewPublicURLCollector([]string{server.URL}, server.Client())
+	jobs, err := collector.Collect(context.Background())
+	if err != nil {
+		t.Fatalf("collect: %v", err)
+	}
+	if attempts < 2 {
+		t.Fatalf("expected retry, got %d attempts", attempts)
+	}
+	if len(jobs) != 1 || jobs[0].Status == "manual_check" {
+		t.Fatalf("expected successful retry import, got %#v", jobs)
+	}
+}
+
 func TestPublicURLCollectorImportsDiscoveredLinks(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

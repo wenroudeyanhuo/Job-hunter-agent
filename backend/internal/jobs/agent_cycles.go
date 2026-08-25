@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -16,6 +17,7 @@ type AgentCycleRecord struct {
 	OrchestratorPattern  string               `json:"orchestrator_pattern"`
 	Trace                []MultiAgentTrace    `json:"trace"`
 	Actions              []AgentCommandAction `json:"actions"`
+	AutonomyPlan         AgentAutonomyPlan    `json:"autonomy_plan"`
 	CreatedAt            time.Time            `json:"created_at"`
 }
 
@@ -31,13 +33,17 @@ func (r *Repository) RecordAgentCycle(ctx context.Context, cycle MultiAgentCycle
 	if err != nil {
 		return AgentCycleRecord{}, fmt.Errorf("marshal agent cycle actions: %w", err)
 	}
+	autonomyPlanJSON, err := json.Marshal(cycle.AutonomyPlan)
+	if err != nil {
+		return AgentCycleRecord{}, fmt.Errorf("marshal agent cycle autonomy plan: %w", err)
+	}
 	result, err := r.db.ExecContext(ctx, `
 		INSERT INTO agent_cycles (
 			generated_at, summary, readiness_score, orchestrator_provider,
-			orchestrator_pattern, trace_json, actions_json
-		) VALUES (?, ?, ?, ?, ?, ?, ?)
+			orchestrator_pattern, trace_json, actions_json, autonomy_plan_json
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`, cycle.GeneratedAt, cycle.Summary, cycle.ReadinessScore, cycle.Team.Orchestrator.Provider,
-		cycle.Team.Orchestrator.Pattern, string(traceJSON), string(actionsJSON))
+		cycle.Team.Orchestrator.Pattern, string(traceJSON), string(actionsJSON), string(autonomyPlanJSON))
 	if err != nil {
 		return AgentCycleRecord{}, fmt.Errorf("record agent cycle: %w", err)
 	}
@@ -87,7 +93,7 @@ func (r *Repository) ListAgentCycles(ctx context.Context, limit int) ([]AgentCyc
 func selectAgentCycleSQL() string {
 	return `
 		SELECT id, generated_at, summary, readiness_score, orchestrator_provider,
-			orchestrator_pattern, trace_json, actions_json, created_at
+			orchestrator_pattern, trace_json, actions_json, autonomy_plan_json, created_at
 		FROM agent_cycles`
 }
 
@@ -95,6 +101,7 @@ func scanAgentCycle(scanner jobScanner) (AgentCycleRecord, error) {
 	var record AgentCycleRecord
 	var traceJSON string
 	var actionsJSON string
+	var autonomyPlanJSON string
 	if err := scanner.Scan(
 		&record.ID,
 		&record.GeneratedAt,
@@ -104,6 +111,7 @@ func scanAgentCycle(scanner jobScanner) (AgentCycleRecord, error) {
 		&record.OrchestratorPattern,
 		&traceJSON,
 		&actionsJSON,
+		&autonomyPlanJSON,
 		&record.CreatedAt,
 	); err != nil {
 		return AgentCycleRecord{}, fmt.Errorf("scan agent cycle: %w", err)
@@ -113,6 +121,11 @@ func scanAgentCycle(scanner jobScanner) (AgentCycleRecord, error) {
 	}
 	if err := json.Unmarshal([]byte(actionsJSON), &record.Actions); err != nil {
 		return AgentCycleRecord{}, fmt.Errorf("decode agent cycle actions: %w", err)
+	}
+	if strings.TrimSpace(autonomyPlanJSON) != "" {
+		if err := json.Unmarshal([]byte(autonomyPlanJSON), &record.AutonomyPlan); err != nil {
+			return AgentCycleRecord{}, fmt.Errorf("decode agent cycle autonomy plan: %w", err)
+		}
 	}
 	return record, nil
 }

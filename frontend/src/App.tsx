@@ -15,6 +15,7 @@ import {
   getAgentReview,
   getAgentReviewHistory,
   getAgentState,
+  getOnboardingHealth,
   getCandidateProfile,
   getJobDetail,
   getSettings,
@@ -62,7 +63,7 @@ import {
   rejectSourceCandidate,
 } from "./api";
 import { DigitalEmployee3D } from "./DigitalEmployee3D";
-import type { AgentActionRequest, AgentAutomationDiagnostics, AgentBriefing, AgentChatHealthcheck, AgentChatMessage, AgentChatStatus, AgentCommandResult, AgentCycleRecord, AgentDutyReport, AgentEvent, AgentPlan, AgentReview, AgentReviewHistory, AgentState, AgentTask, ApplicationPlan, CandidateProfile, Company, Job, JobDetail, JobRun, JobRunSource, JobStatus, LLMConfig, RunSummary, SemanticMemoryMatch, Settings, Source, SourceCandidate, SourceOperationsSummary } from "./types";
+import type { AgentActionRequest, AgentAutomationDiagnostics, AgentBriefing, AgentChatHealthcheck, AgentChatMessage, AgentChatStatus, AgentCommandResult, AgentCycleRecord, AgentDutyReport, AgentEvent, AgentPlan, AgentReview, AgentReviewHistory, AgentState, AgentTask, ApplicationPlan, CandidateProfile, Company, Job, JobDetail, JobRun, JobRunSource, JobStatus, LLMConfig, OnboardingHealth, RunSummary, SemanticMemoryMatch, Settings, Source, SourceCandidate, SourceOperationsSummary } from "./types";
 
 type AppView = "dashboard" | "opportunities" | "applications" | "memory" | "profile" | "companies" | "runs" | "settings";
 
@@ -210,6 +211,7 @@ export default function App() {
   const [agentTasks, setAgentTasks] = useState<AgentTask[]>([]);
   const [applicationPlans, setApplicationPlans] = useState<ApplicationPlan[]>([]);
   const [automationStatus, setAutomationStatus] = useState<AgentAutomationDiagnostics | null>(null);
+  const [onboardingHealth, setOnboardingHealth] = useState<OnboardingHealth | null>(null);
   const [chatStatus, setChatStatus] = useState<AgentChatStatus | null>(null);
   const [chatHealthcheck, setChatHealthcheck] = useState<AgentChatHealthcheck | null>(null);
   const [chatMessages, setChatMessages] = useState<AgentChatMessage[]>([]);
@@ -363,6 +365,11 @@ export default function App() {
     setAutomationStatus(data);
   }
 
+  async function refreshOnboardingHealth() {
+    const data = await getOnboardingHealth();
+    setOnboardingHealth(data);
+  }
+
   async function refreshLLMConfig() {
     const data = await getAgentChatConfig();
     setLLMConfig(data);
@@ -390,7 +397,7 @@ export default function App() {
   }
 
   useEffect(() => {
-    Promise.all([refresh(), refreshSources(), refreshSourceCandidates(), refreshSourceOperations(), refreshCompanies(), refreshRuns(), refreshSettings(), refreshProfile(), refreshBriefing(), refreshAgentState(), refreshDutyReport(), refreshAgentReview(), refreshAgentReviewHistory(), refreshAgentEvents(), refreshAgentActionRequests(), refreshAgentPlans(), refreshAgentCycles(), refreshTasks(), refreshApplicationPlans(), refreshAutomationStatus(), refreshChat(), refreshLLMConfig()])
+    Promise.all([refresh(), refreshSources(), refreshSourceCandidates(), refreshSourceOperations(), refreshCompanies(), refreshRuns(), refreshSettings(), refreshProfile(), refreshBriefing(), refreshAgentState(), refreshDutyReport(), refreshAgentReview(), refreshAgentReviewHistory(), refreshAgentEvents(), refreshAgentActionRequests(), refreshAgentPlans(), refreshAgentCycles(), refreshTasks(), refreshApplicationPlans(), refreshAutomationStatus(), refreshOnboardingHealth(), refreshChat(), refreshLLMConfig()])
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
@@ -845,6 +852,7 @@ export default function App() {
       await refreshTasks();
       await refreshAgentState();
       await refreshAutomationStatus();
+      await refreshOnboardingHealth();
     } catch (err) {
       setError(err instanceof Error ? err.message : t("error.saveSettings"));
     } finally {
@@ -1772,6 +1780,38 @@ export default function App() {
             </div>
           </div>
         )}
+        {onboardingHealth && (
+          <div className="automation-diagnostic onboarding-health-card">
+            <div>
+              <strong>{t("onboarding.title")} · {onboardingHealth.readiness_score}/100</strong>
+              <span>{t("onboarding.openTasks", { count: onboardingHealth.open_tasks })}</span>
+            </div>
+            <div className="automation-diagnostic-grid">
+              <span>{onboardingHealth.database_ready ? t("onboarding.databaseReady") : t("onboarding.databaseMissing")}</span>
+              <span>{onboardingHealth.source_pool_ready ? t("onboarding.sourcesReady") : t("onboarding.sourcesMissing")}</span>
+              <span>{onboardingHealth.profile_ready ? t("onboarding.profileReady") : t("onboarding.profileMissing")}</span>
+              <span>{onboardingHealth.has_crawl_history ? t("onboarding.crawlReady") : t("onboarding.crawlMissing")}</span>
+              <span>{onboardingHealth.feishu_configured ? t("label.webhookConfigured") : t("label.webhookMissing")}</span>
+              <span>{onboardingHealth.model_configured ? t("chat.modelOnline") : t("chat.localRules")}</span>
+            </div>
+            {onboardingHealth.next_steps.length > 0 && (
+              <div className="onboarding-next-steps">
+                {onboardingHealth.next_steps.slice(0, 4).map((step) => (
+                  <small key={step}>{step}</small>
+                ))}
+              </div>
+            )}
+            <div className="onboarding-wizard">
+              {(onboardingHealth.wizard_steps || []).map((step, index) => (
+                <div className={step.done ? "wizard-step done" : "wizard-step"} key={step.key || step.title}>
+                  <span>{index + 1}</span>
+                  <strong>{step.title}</strong>
+                  <small>{step.detail}</small>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         <form className="settings-grid" onSubmit={handleSaveSettings}>
           <label>
             {t("settings.targetCities")}
@@ -2629,6 +2669,7 @@ function SourceOperationsPanel({
     <section className="source-ops-panel">
       <div className="source-ops-metrics">
         <Metric label={t("dutyReport.sources")} value={`${summary.enabled_sources}/${summary.total_sources}`} />
+        <Metric label={t("metric.sourceQuality")} value={summary.source_quality_score} />
         <Metric label={t("metric.healthy")} value={summary.healthy_sources} />
         <Metric label={t("metric.unhealthy")} value={summary.warning_sources + summary.broken_sources} />
         <Metric label={t("metric.candidates")} value={summary.pending_candidates} />
@@ -3145,6 +3186,15 @@ function AgentActionRequestsPanel({
             <div>
               <strong>{formatActionLabel(request.action_type, t)}</strong>
               <span>{request.detail || request.target || t("actions.agentSuggested")}</span>
+              {(request.tool_preview || request.tool_description || request.risk_level) && (
+                <div className="tool-preview">
+                  <span className={`tool-risk risk-${request.risk_level || "low"}`}>
+                    {t("actions.risk")}: {formatRiskLevel(request.risk_level, t)}
+                  </span>
+                  <small>{request.tool_preview || request.tool_description}</small>
+                  {request.requires_approval && <small>{t("actions.requiresApproval")}</small>}
+                </div>
+              )}
               {request.execution_status && request.execution_status !== "not_run" && (
                 <small className={`execution-receipt receipt-${request.execution_status}`}>
                   {formatExecutionStatus(request.execution_status, t)}: {request.execution_message || t("actions.noExecutionDetail")}
@@ -3214,6 +3264,27 @@ function AgentCyclesPanel({
                 {cycle.actions.map((action) => (
                   <span key={`${cycle.id}-${action.type}-${action.target}`}>{formatActionLabel(action.type)}</span>
                 ))}
+              </div>
+            )}
+            {cycle.autonomy_plan?.steps?.length > 0 && (
+              <div className="agent-autonomy-plan">
+                <div className="agent-autonomy-title">
+                  <strong>Autonomy Plan</strong>
+                  <span>{cycle.autonomy_plan.needs_approval ? "Approval gated" : "Observe only"} · {cycle.autonomy_plan.replan_after_execution ? "Re-plan after execution" : "No re-plan needed"}</span>
+                </div>
+                {cycle.autonomy_plan.summary && <small>{cycle.autonomy_plan.summary}</small>}
+                <div className="agent-autonomy-steps">
+                  {cycle.autonomy_plan.steps.slice(0, 4).map((step) => (
+                    <div className="agent-autonomy-step" key={`${cycle.id}-${step.order}-${step.tool}`}>
+                      <span>{step.order}</span>
+                      <div>
+                        <strong>{formatActionLabel(step.tool)}</strong>
+                        <small>{step.detail || step.target || step.observer_hint}</small>
+                      </div>
+                      <b className={`risk-pill risk-${step.risk_level}`}>{step.risk_level}</b>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
             <footer>{formatDateTime(cycle.generated_at)}</footer>
@@ -3415,6 +3486,7 @@ const actionLabelKeys: Record<string, TranslationKey> = {
   cleanup_landing_pages: "actionLabel.cleanupLandingPages",
   refresh_tasks: "actionLabel.refreshTasks",
   discover_sources: "actionLabel.discoverSources",
+  rebuild_semantic_memory: "actionLabel.rebuildSemanticMemory",
   review_strong_matches: "actionLabel.reviewStrongMatches",
   inspect_failed_sources: "actionLabel.inspectSources",
   sync_application_plans: "actionLabel.syncApplicationPlans",
@@ -3443,6 +3515,11 @@ const executionStatusLabelKeys: Record<string, TranslationKey> = {
 function formatExecutionStatus(status: string, t?: (key: TranslationKey) => string) {
   if (t && executionStatusLabelKeys[status]) return t(executionStatusLabelKeys[status]);
   return status.replace(/_/g, " ");
+}
+
+function formatRiskLevel(risk: string, t?: (key: TranslationKey) => string) {
+  const key = risk === "high" ? "risk.high" : risk === "medium" ? "risk.medium" : "risk.low";
+  return t ? t(key) : risk || "low";
 }
 
 function compactMemoryContent(value: string) {

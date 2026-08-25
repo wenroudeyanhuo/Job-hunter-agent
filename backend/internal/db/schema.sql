@@ -175,6 +175,7 @@ CREATE TABLE IF NOT EXISTS agent_cycles (
     orchestrator_pattern TEXT NOT NULL DEFAULT '',
     trace_json TEXT NOT NULL DEFAULT '[]',
     actions_json TEXT NOT NULL DEFAULT '[]',
+    autonomy_plan_json TEXT NOT NULL DEFAULT '{}',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

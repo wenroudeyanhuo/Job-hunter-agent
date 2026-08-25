@@ -15,6 +15,8 @@ const (
 	einoNodeJobAnalyst   = "job_analyst"
 	einoNodeMemoryKeeper = "memory_keeper"
 	einoNodePlanner      = "planner"
+	einoNodeToolPlanner  = "tool_planner"
+	einoNodeObserver     = "observer"
 	einoNodeFinalize     = "finalize_cycle"
 )
 
@@ -44,6 +46,12 @@ func NewEinoRecruitingOrchestrator(ctx context.Context) (RecruitingOrchestrator,
 	if err := graph.AddLambdaNode(einoNodePlanner, compose.InvokableLambda(runEinoPlanner)); err != nil {
 		return nil, err
 	}
+	if err := graph.AddLambdaNode(einoNodeToolPlanner, compose.InvokableLambda(runEinoToolPlanner)); err != nil {
+		return nil, err
+	}
+	if err := graph.AddLambdaNode(einoNodeObserver, compose.InvokableLambda(runEinoObserver)); err != nil {
+		return nil, err
+	}
 	if err := graph.AddLambdaNode(einoNodeFinalize, compose.InvokableLambda(finalizeEinoCycle)); err != nil {
 		return nil, err
 	}
@@ -62,7 +70,13 @@ func NewEinoRecruitingOrchestrator(ctx context.Context) (RecruitingOrchestrator,
 	if err := graph.AddEdge(einoNodeMemoryKeeper, einoNodePlanner); err != nil {
 		return nil, err
 	}
-	if err := graph.AddEdge(einoNodePlanner, einoNodeFinalize); err != nil {
+	if err := graph.AddEdge(einoNodePlanner, einoNodeToolPlanner); err != nil {
+		return nil, err
+	}
+	if err := graph.AddEdge(einoNodeToolPlanner, einoNodeObserver); err != nil {
+		return nil, err
+	}
+	if err := graph.AddEdge(einoNodeObserver, einoNodeFinalize); err != nil {
 		return nil, err
 	}
 	if err := graph.AddEdge(einoNodeFinalize, compose.END); err != nil {
@@ -85,7 +99,8 @@ func (o *einoRecruitingOrchestrator) Run(input MultiAgentCycleInput) MultiAgentC
 		return RunRecruitingAgentCycle(input)
 	}
 	cycle.Team.Orchestrator.Provider = "eino_graph"
-	cycle.Team.Orchestrator.NextStep = "Running through an Eino Graph orchestrator."
+	cycle.Team.Orchestrator.Pattern = "plan_tool_approval_observe_replan"
+	cycle.Team.Orchestrator.NextStep = "Running through an Eino Graph with memory, tool planning, approval boundary, and observer nodes."
 	return cycle
 }
 
@@ -123,9 +138,34 @@ func runEinoPlanner(_ context.Context, state einoCycleState) (einoCycleState, er
 	return state, nil
 }
 
+func runEinoToolPlanner(_ context.Context, state einoCycleState) (einoCycleState, error) {
+	for _, trace := range state.Cycle.Trace {
+		state.Cycle.Actions = appendUniqueAgentActions(state.Cycle.Actions, trace.Actions...)
+	}
+	state.Cycle.AutonomyPlan = BuildAgentAutonomyPlan(state.Cycle.Actions, "eino_graph")
+	state.Cycle.Trace = append(state.Cycle.Trace, MultiAgentTrace{
+		AgentKey:    MultiAgentPlanner,
+		Observation: "Registered tools available: " + ModelActionPromptList(),
+		Decision:    "Built a structured tool plan with approval gates before every executable step.",
+	})
+	return state, nil
+}
+
+func runEinoObserver(_ context.Context, state einoCycleState) (einoCycleState, error) {
+	state.Cycle.Trace = append(state.Cycle.Trace, MultiAgentTrace{
+		AgentKey:    MultiAgentObserver,
+		Observation: "Observer node is waiting for approved tool execution receipts.",
+		Decision:    "After execution, summarize the receipt, update memory or tasks, then trigger the next planning pass.",
+	})
+	return state, nil
+}
+
 func finalizeEinoCycle(_ context.Context, state einoCycleState) (MultiAgentCycle, error) {
 	for _, trace := range state.Cycle.Trace {
 		state.Cycle.Actions = appendUniqueAgentActions(state.Cycle.Actions, trace.Actions...)
+	}
+	if state.Cycle.AutonomyPlan.Mode == "" {
+		state.Cycle.AutonomyPlan = BuildAgentAutonomyPlan(state.Cycle.Actions, "eino_graph")
 	}
 	state.Cycle.ReadinessScore = multiAgentReadinessScore(state.Input, state.Cycle.Actions)
 	state.Cycle.Summary = buildMultiAgentCycleSummary(state.Input, state.Cycle)

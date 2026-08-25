@@ -3,6 +3,7 @@ package importer
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -52,6 +53,7 @@ var recruitmentLinkKeywords = []string{
 }
 
 var recruitmentURLPattern = regexp.MustCompile("https?://[^\\s\"'\\\\<>]+|/[^\\s\"'\\\\<>]*(?:job|jobs|position|positions|recruit|campus|intern|\u5c97\u4f4d|\u804c\u4f4d|\u6821\u62db|\u793e\u62db)[^\\s\"'\\\\<>]*")
+var deadlinePattern = regexp.MustCompile(`(?i)(deadline|截止|截止时间|申请截止|投递截止)[:：\s]*(\d{4}[-/.年]\d{1,2}[-/.月]\d{1,2}日?)`)
 
 func ImportURL(ctx context.Context, rawURL string, client *http.Client) (domain.Job, error) {
 	parsed, err := parseHTTPURL(rawURL)
@@ -108,6 +110,8 @@ func ImportURL(ctx context.Context, rawURL string, client *http.Client) (domain.
 	if containsAny(job.Title+" "+job.Description, "shenzhen", "\u6df1\u5733") {
 		job.City = "Shenzhen"
 	}
+	job.DirectionTags = directionTagsFromText(job.Title + " " + job.Description)
+	job.DeadlineAt = deadlineFromText(job.Title + " " + job.Description)
 	return job, nil
 }
 
@@ -218,6 +222,16 @@ func DiscoverJobCards(ctx context.Context, rawURL string, client *http.Client, l
 	}
 	jobs := []domain.Job{}
 	seen := map[string]struct{}{}
+	for _, job := range jobsFromJSONLD(doc, parsed) {
+		if _, exists := seen[job.ApplyURL]; exists {
+			continue
+		}
+		seen[job.ApplyURL] = struct{}{}
+		jobs = append(jobs, job)
+		if len(jobs) >= limit {
+			return jobs, nil
+		}
+	}
 	var walk func(*html.Node)
 	walk = func(n *html.Node) {
 		if len(jobs) >= limit {
@@ -225,6 +239,14 @@ func DiscoverJobCards(ctx context.Context, rawURL string, client *http.Client, l
 		}
 		if n.Type == html.ElementNode && n.Data == "a" {
 			if job, ok := jobFromAnchorCard(n, parsed); ok {
+				if _, exists := seen[job.ApplyURL]; !exists {
+					seen[job.ApplyURL] = struct{}{}
+					jobs = append(jobs, job)
+				}
+			}
+		}
+		if n.Type == html.ElementNode && n.Data != "a" {
+			if job, ok := jobFromStructuredCard(n, parsed); ok {
 				if _, exists := seen[job.ApplyURL]; !exists {
 					seen[job.ApplyURL] = struct{}{}
 					jobs = append(jobs, job)
@@ -240,6 +262,202 @@ func DiscoverJobCards(ctx context.Context, rawURL string, client *http.Client, l
 	}
 	walk(doc)
 	return jobs, nil
+}
+
+func jobsFromJSONLD(doc *html.Node, base *url.URL) []domain.Job {
+	out := []domain.Job{}
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if n.Type == html.ElementNode && n.Data == "script" && strings.Contains(strings.ToLower(attrValue(n, "type")), "ld+json") && n.FirstChild != nil {
+			out = append(out, parseJSONLDJobs(n.FirstChild.Data, base)...)
+		}
+		for child := n.FirstChild; child != nil; child = child.NextSibling {
+			walk(child)
+		}
+	}
+	walk(doc)
+	return out
+}
+
+func parseJSONLDJobs(raw string, base *url.URL) []domain.Job {
+	var payload any
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		return nil
+	}
+	return parseJSONLDJobNodes(payload, base)
+}
+
+func parseJSONLDJobNodes(value any, base *url.URL) []domain.Job {
+	switch typed := value.(type) {
+	case []any:
+		out := []domain.Job{}
+		for _, item := range typed {
+			out = append(out, parseJSONLDJobNodes(item, base)...)
+		}
+		return out
+	case map[string]any:
+		out := []domain.Job{}
+		if graph, ok := typed["@graph"]; ok {
+			out = append(out, parseJSONLDJobNodes(graph, base)...)
+		}
+		if jsonLDTypeMatches(typed["@type"], "JobPosting") {
+			if job, ok := jobFromJSONLDMap(typed, base); ok {
+				out = append(out, job)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func jsonLDTypeMatches(value any, want string) bool {
+	switch typed := value.(type) {
+	case string:
+		return strings.EqualFold(strings.TrimSpace(typed), want)
+	case []any:
+		for _, item := range typed {
+			if jsonLDTypeMatches(item, want) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func jobFromJSONLDMap(payload map[string]any, base *url.URL) (domain.Job, bool) {
+	title := cleanText(jsonString(payload["title"]))
+	description := cleanText(jsonString(payload["description"]))
+	if title == "" {
+		return domain.Job{}, false
+	}
+	applyURL := jsonString(payload["url"])
+	if applyURL == "" {
+		applyURL = base.String()
+	}
+	resolved, err := base.Parse(applyURL)
+	if err != nil || resolved.Host == "" || (resolved.Scheme != "http" && resolved.Scheme != "https") {
+		return domain.Job{}, false
+	}
+	resolved.Fragment = ""
+	company := jsonNestedString(payload["hiringOrganization"], "name")
+	if company == "" {
+		company = companyFromHost(base.Hostname())
+	}
+	city := cityFromText(jsonNestedString(payload["jobLocation"], "address", "addressLocality") + " " + jsonString(payload["jobLocation"]) + " " + title + " " + description)
+	job := domain.Job{
+		Company:       company,
+		Title:         title,
+		City:          city,
+		DirectionTags: directionTagsFromText(title + " " + description),
+		Description:   description,
+		SourceName:    base.Hostname(),
+		SourceURL:     base.String(),
+		ApplyURL:      resolved.String(),
+		DeadlineAt:    deadlineFromJSONString(jsonString(payload["validThrough"])),
+		DiscoveredAt:  time.Now().UTC(),
+	}
+	if !LooksLikeConcreteJobPosting(job) {
+		return domain.Job{}, false
+	}
+	return job, true
+}
+
+func jsonString(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return strings.TrimSpace(typed)
+	case map[string]any:
+		return strings.TrimSpace(jsonNestedString(typed, "name"))
+	}
+	return ""
+}
+
+func jsonNestedString(value any, path ...string) string {
+	current := value
+	for _, key := range path {
+		mapping, ok := current.(map[string]any)
+		if !ok {
+			return ""
+		}
+		current = mapping[key]
+	}
+	return jsonString(current)
+}
+
+func deadlineFromJSONString(value string) *time.Time {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	if parsed, err := time.Parse("2006-01-02", value); err == nil {
+		return &parsed
+	}
+	if parsed, err := time.Parse(time.RFC3339, value); err == nil {
+		return &parsed
+	}
+	return deadlineFromText("deadline " + value)
+}
+
+func DiscoverPaginationLinks(ctx context.Context, rawURL string, client *http.Client, limit int) ([]string, error) {
+	parsed, err := parseHTTPURL(rawURL)
+	if err != nil {
+		return nil, err
+	}
+	if limit <= 0 {
+		return []string{}, nil
+	}
+	if client == nil {
+		client = http.DefaultClient
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("create pagination discovery request: %w", err)
+	}
+	req.Header.Set("User-Agent", defaultUserAgent)
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetch pagination page: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("fetch pagination page returned HTTP %d", resp.StatusCode)
+	}
+	doc, err := html.Parse(io.LimitReader(resp.Body, maxImportBodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("parse pagination page: %w", err)
+	}
+	links := []string{}
+	seen := map[string]struct{}{parsed.String(): {}}
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if len(links) >= limit {
+			return
+		}
+		if n.Type == html.ElementNode && n.Data == "a" {
+			href := attrValue(n, "href")
+			text := strings.ToLower(cleanText(nodeText(n)) + " " + attrValue(n, "rel") + " " + attrValue(n, "aria-label") + " " + attrValue(n, "class"))
+			if href != "" && looksLikePaginationLink(text, href) {
+				resolved, err := parsed.Parse(href)
+				if err == nil && (resolved.Scheme == "http" || resolved.Scheme == "https") && resolved.Host != "" {
+					resolved.Fragment = ""
+					link := resolved.String()
+					if _, ok := seen[link]; !ok {
+						seen[link] = struct{}{}
+						links = append(links, link)
+					}
+				}
+			}
+		}
+		for child := n.FirstChild; child != nil; child = child.NextSibling {
+			walk(child)
+			if len(links) >= limit {
+				return
+			}
+		}
+	}
+	walk(doc)
+	return links, nil
 }
 
 func LooksLikeConcreteJobPosting(job domain.Job) bool {
@@ -297,6 +515,44 @@ func jobFromAnchorCard(node *html.Node, base *url.URL) (domain.Job, bool) {
 		SourceURL:    base.String(),
 		ApplyURL:     resolved.String(),
 		DiscoveredAt: time.Now().UTC(),
+	}
+	job.DirectionTags = directionTagsFromText(title + " " + text)
+	job.DeadlineAt = deadlineFromText(text)
+	if !LooksLikeConcreteJobPosting(job) {
+		return domain.Job{}, false
+	}
+	return job, true
+}
+
+func jobFromStructuredCard(node *html.Node, base *url.URL) (domain.Job, bool) {
+	href := firstAttrValue(node, "data-href", "data-url", "data-apply-url", "data-link")
+	if href == "" {
+		return domain.Job{}, false
+	}
+	resolved, err := base.Parse(href)
+	if err != nil || (resolved.Scheme != "http" && resolved.Scheme != "https") || resolved.Host == "" {
+		return domain.Job{}, false
+	}
+	resolved.Fragment = ""
+	text := cleanText(nodeText(node))
+	title := firstHeadingText(node)
+	if title == "" {
+		title = firstUsefulLine(text)
+	}
+	if title == "" || !containsAny(href+" "+title+" "+text, recruitmentLinkKeywords...) {
+		return domain.Job{}, false
+	}
+	job := domain.Job{
+		Company:       companyFromHost(base.Hostname()),
+		Title:         title,
+		City:          cityFromText(text),
+		DirectionTags: directionTagsFromText(title + " " + text),
+		Description:   cardDescription(text, title),
+		SourceName:    base.Hostname(),
+		SourceURL:     base.String(),
+		ApplyURL:      resolved.String(),
+		DeadlineAt:    deadlineFromText(text),
+		DiscoveredAt:  time.Now().UTC(),
 	}
 	if !LooksLikeConcreteJobPosting(job) {
 		return domain.Job{}, false
@@ -412,6 +668,15 @@ func attrValue(node *html.Node, key string) string {
 	return ""
 }
 
+func firstAttrValue(node *html.Node, keys ...string) string {
+	for _, key := range keys {
+		if value := attrValue(node, key); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
 func nodeText(node *html.Node) string {
 	var values []string
 	var walk func(*html.Node)
@@ -476,6 +741,70 @@ func cityFromText(text string) string {
 		return "Hangzhou"
 	}
 	return ""
+}
+
+func directionTagsFromText(text string) []string {
+	lower := strings.ToLower(text)
+	tags := []string{}
+	if containsAny(lower, "frontend", "\u524d\u7aef") {
+		tags = append(tags, "frontend")
+	}
+	if containsAny(lower, "backend", "\u540e\u7aef", "\u670d\u52a1\u7aef") {
+		tags = append(tags, "backend")
+	}
+	if containsAny(lower, "java") {
+		tags = append(tags, "java")
+	}
+	if containsAny(lower, "go", "golang") {
+		tags = append(tags, "go")
+	}
+	if containsAny(lower, "algorithm", "\u7b97\u6cd5") {
+		tags = append(tags, "algorithm")
+	}
+	if containsAny(lower, "llm", "ai", "\u5927\u6a21\u578b", "agent") {
+		tags = append(tags, "ai_application")
+	}
+	return uniqueStrings(tags)
+}
+
+func deadlineFromText(text string) *time.Time {
+	match := deadlinePattern.FindStringSubmatch(text)
+	if len(match) < 3 {
+		return nil
+	}
+	value := strings.NewReplacer("年", "-", "月", "-", "日", "", "/", "-", ".", "-").Replace(match[2])
+	parsed, err := time.Parse("2006-1-2", value)
+	if err != nil {
+		return nil
+	}
+	return &parsed
+}
+
+func looksLikePaginationLink(text string, href string) bool {
+	lower := strings.ToLower(href + " " + text)
+	return strings.Contains(lower, "page=") ||
+		strings.Contains(lower, "page/") ||
+		strings.Contains(lower, "next") ||
+		strings.Contains(lower, "more") ||
+		strings.Contains(lower, "\u4e0b\u4e00\u9875") ||
+		strings.Contains(lower, "\u66f4\u591a")
+}
+
+func uniqueStrings(values []string) []string {
+	seen := map[string]struct{}{}
+	out := []string{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }
 
 func cardDescription(text string, title string) string {

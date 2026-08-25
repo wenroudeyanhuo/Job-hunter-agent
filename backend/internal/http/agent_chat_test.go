@@ -154,6 +154,12 @@ func TestAgentChatModelPromptIncludesRecommendedJobs(t *testing.T) {
 	if len(requestPayload.Messages) == 0 || !strings.Contains(requestPayload.Messages[0].Content, "Tencent - Go Backend Engineer - Shenzhen - score 92") {
 		t.Fatalf("expected model prompt to include recommended job context, got %#v", requestPayload.Messages)
 	}
+	if !strings.Contains(requestPayload.Messages[0].Content, "explain why each recommended job fits") {
+		t.Fatalf("expected model prompt to require recommendation explanations, got %#v", requestPayload.Messages[0].Content)
+	}
+	if !strings.Contains(requestPayload.Messages[0].Content, "Decision memory") {
+		t.Fatalf("expected model prompt to include decision-memory context, got %#v", requestPayload.Messages[0].Content)
+	}
 }
 
 func TestAgentChatModelReceivesRecentConversationHistory(t *testing.T) {

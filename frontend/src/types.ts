@@ -169,6 +169,7 @@ export interface SourceOperationsSummary {
   warning_sources: number;
   broken_sources: number;
   unknown_sources: number;
+  source_quality_score: number;
   pending_candidates: number;
   verified_candidates: number;
   rejected_candidates: number;
@@ -365,6 +366,30 @@ export interface AgentAutomationDiagnostics {
   reason: string;
 }
 
+export interface OnboardingHealth {
+  generated_at: string;
+  database_ready: boolean;
+  scheduler_expected: boolean;
+  feishu_configured: boolean;
+  model_configured: boolean;
+  source_pool_ready: boolean;
+  profile_ready: boolean;
+  has_crawl_history: boolean;
+  open_tasks: number;
+  readiness_score: number;
+  next_steps: string[];
+  wizard_steps: OnboardingWizardStep[];
+}
+
+export interface OnboardingWizardStep {
+  key: string;
+  title: string;
+  detail: string;
+  done: boolean;
+  action: string;
+  action_url: string;
+}
+
 export interface AgentStaleTask {
   id: number;
   title: string;
@@ -437,11 +462,39 @@ export interface AgentCommandAction {
   detail: string;
 }
 
+export interface AgentToolDefinition {
+  name: string;
+  description: string;
+  input_schema: string;
+  risk_level: "low" | "medium" | "high" | string;
+  requires_approval: boolean;
+  preview: string;
+}
+
 export interface MultiAgentTrace {
   agent_key: string;
   observation: string;
   decision: string;
   actions: AgentCommandAction[];
+}
+
+export interface AgentAutonomyStep {
+  order: number;
+  tool: string;
+  target: string;
+  detail: string;
+  risk_level: "low" | "medium" | "high" | string;
+  requires_approval: boolean;
+  status: string;
+  observer_hint: string;
+}
+
+export interface AgentAutonomyPlan {
+  mode: string;
+  summary: string;
+  needs_approval: boolean;
+  replan_after_execution: boolean;
+  steps: AgentAutonomyStep[];
 }
 
 export interface AgentCycleRecord {
@@ -453,6 +506,7 @@ export interface AgentCycleRecord {
   orchestrator_pattern: string;
   trace: MultiAgentTrace[];
   actions: AgentCommandAction[];
+  autonomy_plan: AgentAutonomyPlan;
   created_at: string;
 }
 
@@ -468,6 +522,12 @@ export interface AgentActionRequest {
   action_type: string;
   target: string;
   detail: string;
+  tool_name: string;
+  tool_description: string;
+  tool_input_schema: string;
+  tool_preview: string;
+  risk_level: "low" | "medium" | "high" | string;
+  requires_approval: boolean;
   status: "pending" | "approved" | "dismissed" | string;
   created_at: string;
   resolved_at?: string;

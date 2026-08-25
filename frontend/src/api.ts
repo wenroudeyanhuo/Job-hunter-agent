@@ -17,6 +17,7 @@ import type {
   AgentReviewSnapshot,
   AgentState,
   AgentTask,
+  AgentToolDefinition,
   ApplicationPlan,
   CandidateProfile,
   Company,
@@ -29,6 +30,7 @@ import type {
   JobStatus,
   LLMConfig,
   LLMConfigUpdate,
+  OnboardingHealth,
   RecommendedCrawlResponse,
   RunSummary,
   SeedSourcesResult,
@@ -96,6 +98,11 @@ export async function listAgentActionRequests(status = "pending"): Promise<Agent
   return Array.isArray(requests) ? requests : [];
 }
 
+export async function listAgentTools(): Promise<AgentToolDefinition[]> {
+  const tools = await request<AgentToolDefinition[] | null>("/api/agent/tools");
+  return Array.isArray(tools) ? tools : [];
+}
+
 export async function listAgentPlans(status = ""): Promise<AgentPlan[]> {
   const query = status ? `?status=${encodeURIComponent(status)}` : "";
   const plans = await request<AgentPlan[] | null>(`/api/agent/plans${query}`);
@@ -145,6 +152,10 @@ export async function updateAgentChatConfig(update: LLMConfigUpdate): Promise<LL
 
 export async function getAutomationStatus(): Promise<AgentAutomationDiagnostics> {
   return request<AgentAutomationDiagnostics>("/api/agent/automation/status");
+}
+
+export async function getOnboardingHealth(): Promise<OnboardingHealth> {
+  return request<OnboardingHealth>("/api/agent/onboarding/health");
 }
 
 export async function listAgentChatMessages(): Promise<AgentChatMessage[]> {

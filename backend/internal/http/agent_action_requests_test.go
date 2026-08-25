@@ -36,6 +36,9 @@ func TestAgentActionRequestsAPIListsAndUpdatesRequests(t *testing.T) {
 	if len(requests) != 1 || requests[0].ActionType != "sync_application_plans" {
 		t.Fatalf("unexpected requests: %#v", requests)
 	}
+	if requests[0].ToolName != "sync_application_plans" || requests[0].RiskLevel == "" || requests[0].ToolPreview == "" {
+		t.Fatalf("expected tool metadata in action request response: %#v", requests[0])
+	}
 
 	req = httptest.NewRequest(http.MethodPatch, "/api/agent/actions/"+strconv.FormatInt(requests[0].ID, 10), strings.NewReader(`{"status":"dismissed"}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -50,6 +53,36 @@ func TestAgentActionRequestsAPIListsAndUpdatesRequests(t *testing.T) {
 	}
 	if updated.Status != jobs.AgentActionRequestStatusDismissed || updated.ResolvedAt == nil {
 		t.Fatalf("expected dismissed request, got %#v", updated)
+	}
+}
+
+func TestAgentToolsAPIListsRegisteredTools(t *testing.T) {
+	_, handler := testRouter(t, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/agent/tools", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 list tools, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var tools []jobs.AgentToolDefinition
+	if err := json.Unmarshal(rec.Body.Bytes(), &tools); err != nil {
+		t.Fatalf("decode tools: %v", err)
+	}
+	if len(tools) == 0 {
+		t.Fatal("expected registered tools")
+	}
+	foundRunCrawl := false
+	for _, tool := range tools {
+		if tool.Name == "run_crawl" {
+			foundRunCrawl = true
+			if tool.RiskLevel != jobs.AgentToolRiskMedium || !tool.RequiresApproval || tool.Preview == "" {
+				t.Fatalf("unexpected run_crawl tool metadata: %#v", tool)
+			}
+		}
+	}
+	if !foundRunCrawl {
+		t.Fatalf("expected run_crawl in tools: %#v", tools)
 	}
 }
 
@@ -89,6 +122,31 @@ func TestAgentActionRequestApprovalExecutesRunCrawl(t *testing.T) {
 	}
 	if len(approved) != 1 || approved[0].ExecutionStatus != jobs.AgentActionExecutionSucceeded || !strings.Contains(approved[0].ExecutionMessage, "Created 2 jobs") {
 		t.Fatalf("expected execution receipt on approved action, got %#v", approved)
+	}
+	cycles, err := repo.ListAgentCycles(t.Context(), 3)
+	if err != nil {
+		t.Fatalf("list agent cycles: %v", err)
+	}
+	if len(cycles) == 0 || cycles[0].OrchestratorProvider != "tool_observer" {
+		t.Fatalf("expected observer cycle after tool execution, got %#v", cycles)
+	}
+}
+
+func TestOnboardingHealthAPIReturnsReadinessAndNextSteps(t *testing.T) {
+	_, handler := testRouter(t, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/agent/onboarding/health", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 onboarding health, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var response jobs.OnboardingHealth
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode onboarding health: %v", err)
+	}
+	if !response.DatabaseReady || response.ReadinessScore <= 0 || len(response.NextSteps) == 0 {
+		t.Fatalf("expected readiness and next steps, got %#v", response)
 	}
 }
 

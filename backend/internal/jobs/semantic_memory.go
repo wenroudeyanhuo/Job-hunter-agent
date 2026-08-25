@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"math"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -17,7 +18,12 @@ import (
 
 const (
 	SemanticMemoryKindJob           = "job"
+	SemanticMemoryKindDecision      = "decision"
+	SemanticMemoryKindProfile       = "profile"
 	SemanticMemoryProviderLocalHash = "local_hash"
+	SemanticMemoryProviderDeepSeek  = "deepseek_embedding"
+	SemanticMemoryProviderQdrant    = "qdrant"
+	SemanticMemoryProviderPGVector  = "pgvector"
 	SemanticMemoryProvider          = SemanticMemoryProviderLocalHash
 	SemanticMemoryDimensions        = 64
 	semanticMemoryMaxContent        = 1600
@@ -33,6 +39,28 @@ type hashEmbeddingProvider struct{}
 
 func NewHashEmbeddingProvider() EmbeddingProvider {
 	return hashEmbeddingProvider{}
+}
+
+func ConfiguredSemanticMemoryProviderName() string {
+	switch strings.ToLower(strings.TrimSpace(firstNonEmptyString(os.Getenv("SEMANTIC_MEMORY_PROVIDER"), os.Getenv("EMBEDDING_PROVIDER")))) {
+	case SemanticMemoryProviderDeepSeek, "deepseek", "deepseek_embeddings":
+		return SemanticMemoryProviderDeepSeek
+	case SemanticMemoryProviderQdrant:
+		return SemanticMemoryProviderQdrant
+	case SemanticMemoryProviderPGVector, "postgres", "postgres_pgvector":
+		return SemanticMemoryProviderPGVector
+	default:
+		return SemanticMemoryProviderLocalHash
+	}
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func (hashEmbeddingProvider) Name() string {
@@ -87,10 +115,12 @@ type SemanticMemoryRebuildResult struct {
 }
 
 type SemanticMemoryStats struct {
-	TotalItems int    `json:"total_items"`
-	JobItems   int    `json:"job_items"`
-	Provider   string `json:"provider"`
-	Dimension  int    `json:"dimension"`
+	TotalItems    int    `json:"total_items"`
+	JobItems      int    `json:"job_items"`
+	DecisionItems int    `json:"decision_items"`
+	ProfileItems  int    `json:"profile_items"`
+	Provider      string `json:"provider"`
+	Dimension     int    `json:"dimension"`
 }
 
 func (r *Repository) RebuildSemanticMemory(ctx context.Context) (SemanticMemoryRebuildResult, error) {
@@ -200,7 +230,14 @@ func (r *Repository) UpsertSemanticMemoryItem(ctx context.Context, item Semantic
 	if err != nil {
 		return SemanticMemoryItem{}, fmt.Errorf("upsert semantic memory item: %w", err)
 	}
-	return r.GetSemanticMemoryItemByReference(ctx, item.Kind, item.ReferenceID)
+	stored, err := r.GetSemanticMemoryItemByReference(ctx, item.Kind, item.ReferenceID)
+	if err != nil {
+		return SemanticMemoryItem{}, err
+	}
+	if store := configuredExternalSemanticMemoryStore(); store != nil {
+		_ = store.Upsert(ctx, stored)
+	}
+	return stored, nil
 }
 
 func (r *Repository) SearchSemanticMemory(ctx context.Context, query SemanticMemoryQuery) ([]SemanticMemoryMatch, error) {
@@ -213,6 +250,12 @@ func (r *Repository) SearchSemanticMemory(ctx context.Context, query SemanticMem
 		return []SemanticMemoryMatch{}, nil
 	}
 	target := LocalHashEmbedding(query.Query)
+	if store := configuredExternalSemanticMemoryStore(); store != nil {
+		matches, err := store.Search(ctx, query, target)
+		if err == nil {
+			return matches, nil
+		}
+	}
 	items, err := r.listSemanticMemoryItems(ctx, query.Kind, 200)
 	if err != nil {
 		return nil, err
@@ -249,14 +292,80 @@ func (r *Repository) SearchSemanticMemory(ctx context.Context, query SemanticMem
 }
 
 func (r *Repository) GetSemanticMemoryStats(ctx context.Context) (SemanticMemoryStats, error) {
-	stats := SemanticMemoryStats{Provider: SemanticMemoryProvider, Dimension: SemanticMemoryDimensions}
+	stats := SemanticMemoryStats{Provider: ConfiguredSemanticMemoryProviderName(), Dimension: SemanticMemoryDimensions}
 	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM semantic_memory_items`).Scan(&stats.TotalItems); err != nil {
 		return SemanticMemoryStats{}, fmt.Errorf("count semantic memory items: %w", err)
 	}
 	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM semantic_memory_items WHERE kind = ?`, SemanticMemoryKindJob).Scan(&stats.JobItems); err != nil {
 		return SemanticMemoryStats{}, fmt.Errorf("count semantic job memory items: %w", err)
 	}
+	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM semantic_memory_items WHERE kind = ?`, SemanticMemoryKindDecision).Scan(&stats.DecisionItems); err != nil {
+		return SemanticMemoryStats{}, fmt.Errorf("count semantic decision memory items: %w", err)
+	}
+	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM semantic_memory_items WHERE kind = ?`, SemanticMemoryKindProfile).Scan(&stats.ProfileItems); err != nil {
+		return SemanticMemoryStats{}, fmt.Errorf("count semantic profile memory items: %w", err)
+	}
 	return stats, nil
+}
+
+func SemanticMemoryItemFromDecision(decision JobDecision, job domain.Job) SemanticMemoryItem {
+	content := strings.Join([]string{
+		"decision action: " + decision.Action,
+		"reason: " + decision.Reason,
+		"from status: " + decision.FromStatus,
+		"to status: " + decision.ToStatus,
+		"notes: " + decision.Notes,
+		"company: " + job.Company,
+		"title: " + job.Title,
+		"city: " + job.City,
+	}, "\n")
+	provider := NewHashEmbeddingProvider()
+	item := SemanticMemoryItem{
+		Kind:        SemanticMemoryKindDecision,
+		ReferenceID: decision.ID,
+		Title:       "Decision for " + strings.TrimSpace(job.Company+" "+job.Title),
+		Content:     content,
+		Metadata: map[string]string{
+			"job_id":    fmt.Sprintf("%d", decision.JobID),
+			"action":    decision.Action,
+			"to_status": decision.ToStatus,
+			"company":   job.Company,
+		},
+		EmbeddingProvider:  provider.Name(),
+		EmbeddingDimension: provider.Dimension(),
+	}
+	item.Embedding = provider.Embed(item.Title + "\n" + item.Content)
+	return item
+}
+
+func SemanticMemoryItemFromProfile(profile CandidateProfile) SemanticMemoryItem {
+	content := strings.Join([]string{
+		"target cities: " + strings.Join(profile.TargetCities, ", "),
+		"target directions: " + strings.Join(profile.TargetDirections, ", "),
+		"skills: " + strings.Join(profile.Skills, ", "),
+		"education: " + profile.Education,
+		"graduation year: " + profile.GraduationYear,
+		"internship preference: " + profile.InternshipPreference,
+		"preferred companies: " + strings.Join(profile.PreferredCompanies, ", "),
+		"blocked keywords: " + strings.Join(profile.BlockedKeywords, ", "),
+		"notes: " + profile.Notes,
+	}, "\n")
+	provider := NewHashEmbeddingProvider()
+	item := SemanticMemoryItem{
+		Kind:        SemanticMemoryKindProfile,
+		ReferenceID: candidateProfileID,
+		Title:       "Candidate preference profile",
+		Content:     content,
+		Metadata: map[string]string{
+			"target_cities":     strings.Join(profile.TargetCities, ","),
+			"target_directions": strings.Join(profile.TargetDirections, ","),
+			"updated_at":        profile.UpdatedAt.Format(time.RFC3339),
+		},
+		EmbeddingProvider:  provider.Name(),
+		EmbeddingDimension: provider.Dimension(),
+	}
+	item.Embedding = provider.Embed(item.Title + "\n" + item.Content)
+	return item
 }
 
 func (r *Repository) GetSemanticMemoryItem(ctx context.Context, id int64) (SemanticMemoryItem, error) {
