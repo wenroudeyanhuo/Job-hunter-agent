@@ -23,6 +23,24 @@ The project is in an early productization phase and already provides a local end
 - Feishu test notifications, crawl summaries, duty reports, and Agent Cycle summaries.
 - Docker Compose for local deployment; frontend can be deployed separately as static assets.
 
+## Architecture
+
+```mermaid
+flowchart LR
+  Sources["Public sources<br/>career sites, job platforms, manual URLs"] --> Backend["Go backend<br/>crawl, parse, score, agent runtime"]
+  Backend --> SQLite["SQLite<br/>jobs, tasks, plans, cycles, decisions"]
+  SQLite --> Dashboard["React dashboard<br/>opportunities, tasks, approvals, memory"]
+  SQLite --> Agent["Digital employee<br/>Source Scout / Job Analyst / Memory Keeper / Planner / Observer"]
+  Agent --> Approval["Human approval gate<br/>Suggested Actions"]
+  Approval --> Tools["Tool Executor<br/>crawl, validate sources, refresh tasks, send reports"]
+  Tools --> SQLite
+  Agent -. optional .-> Model["DeepSeek / OpenAI-compatible model"]
+  SQLite -. optional .-> Qdrant["Qdrant vector search"]
+  Tools -. optional .-> Feishu["Feishu bot"]
+```
+
+See the full architecture guide: [docs/architecture.md](docs/architecture.md)
+
 ## Core Capabilities
 
 ### 1. Recruiting Data Collection
