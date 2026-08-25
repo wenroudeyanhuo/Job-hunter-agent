@@ -1,97 +1,123 @@
-# Job Hunter Agent
+# Job Hunter Agent / 秋招数字员工
 
-Job Hunter Agent is a local-first assistant for collecting, filtering, scoring, and tracking campus recruitment opportunities.
+![Job Hunter Agent avatar](frontend/public/assets/job-agent-avatar.png)
 
-The project is currently focused on Shenzhen-oriented technical roles such as frontend, backend, Java, Go, algorithm, and AI application development. It is designed as a practical personal workflow tool first, with a clean path toward more capable recruiting automation later.
+Job Hunter Agent 是一个面向秋招/校招场景的本地优先数字员工项目。它会持续发现招聘来源、采集岗位、过滤低质量信息、为岗位打分、生成每日待办，并通过网页看板和飞书机器人把“今天该处理什么”推给你。
 
-## Status
+这个项目目前优先服务技术方向求职者，默认关注深圳以及前端、后端、Java、Go、算法、AI 应用开发等岗位。它不是一个简单的爬虫集合，而是在逐步演进成一个可配置、可审计、可接入大模型和 Eino Graph 编排的求职 Agent。
 
-Early MVP. The current version provides a Go backend foundation, SQLite persistence, scoring and deduplication rules, a crawl runner, scheduled runs, source discovery, Feishu webhook notification support, optional model-backed chat, and a React dashboard shell.
+> English: Job Hunter Agent is a local-first recruiting digital employee. It collects and scores campus recruitment opportunities, tracks decisions, generates daily work queues, sends Feishu reports, and is evolving toward a multi-agent workflow with optional model and Eino Graph orchestration.
 
-## Features
+## 项目状态
 
-- Local SQLite database for job opportunities and crawl logs.
-- Go backend with REST APIs for jobs, crawl runs, settings, and Feishu test notification.
-- Rule-based scoring for target cities, target roles, company signals, campus recruitment signals, and application links.
-- Hard filters for obvious outsourcing, training/course-sales content, unclear-conversion internships, and unrelated roles.
-- Deduplication by application URL and normalized company/title/city.
-- Scheduled crawl runner for 09:00, 12:00, and 18:00.
-- React dashboard for reviewing jobs, filtering by status/direction, updating status, and running a crawl.
-- Candidate profile page for cities, directions, skills, education, preferred companies, blocked keywords, and notes.
-- Job detail panel with profile-aware fit signals, risks, suggested action, notes, and decision history.
-- Application Kanban workspace for turning interested strong matches into human-approved application preparation plans, resume-version notes, draft notes, and follow-up dates.
-- Daily agent task queue generated from recommended jobs, manual decisions, source issues, and crawl history.
-- Digital employee sidebar with an agent profile, avatar, maturity score, capability map, operating cycle, and mainstream capability gaps.
-- Multi-agent recruiting runtime with Source Scout, Job Analyst, Memory Keeper, and Planner roles, plus an Eino-ready orchestration boundary.
-- Agent Cycle history that records each multi-agent run, and automatic cycle review after crawl/report workflows so the employee can propose approval-gated next actions.
-- Recruiting orchestrator interface with deterministic fallback and model-enhanced cycle insights for DeepSeek/OpenAI-compatible configurations.
-- Command Center for rule-based natural-language workflow commands such as changing target cities/directions, refreshing tasks, running a crawl, and sending Feishu reports.
-- Global digital employee chat with a persistent 3D avatar, local rule fallback, saved chat history, recent-conversation model context, optional OpenAI-compatible or DeepSeek model mode, and safe whitelisted action suggestions.
-- Local semantic memory with deterministic hash embeddings, automatic job-memory sync, a rebuildable memory index, semantic search API, and retrieved memories injected into local/model chat context.
-- Suggested action approval queue so model or local-rule recommendations are persisted, reviewed, approved, or dismissed before execution.
-- Source discovery that proposes broader official, community, and job-platform search entrances from the user's target cities and directions.
-- Source-candidate validation that fetches candidate pages, checks recruitment signals and discovered job links, then adjusts confidence before the source is accepted.
-- Source operations summary for unhealthy sources, pending candidates, high-confidence promotions, and recommended maintenance actions.
-- Automatic duty report controls with configurable report time, scheduler tick, task SLA, stale-task detection, escalation, snooze, completion reasons, and last-sent tracking.
-- Automatic source discovery controls with a configurable interval so the assistant can keep expanding the source pool over time.
-- Feishu webhook summaries after crawl runs when a webhook is configured in Settings or `FEISHU_WEBHOOK_URL`.
-- Feishu duty reports can include the latest Agent Cycle summary, specialist decisions, and pending approval action types.
+当前处于早期产品化阶段，已经具备可本地运行的完整闭环：
 
-## What It Does
+- Go 后端、React 前端、SQLite 本地持久化。
+- 岗位采集、来源发现、来源验证、去重、过滤和评分。
+- 候选人画像、岗位详情、投递看板、每日任务队列。
+- 数字员工侧边栏、全局聊天、指令中心、建议动作审批队列。
+- DeepSeek/OpenAI-compatible 模型可选接入，本地规则兜底。
+- 多 Agent 运行时：Source Scout、Job Analyst、Memory Keeper、Planner。
+- 可选 Eino Graph 编排路径，默认 deterministic 编排保证零配置可运行。
+- 飞书机器人测试消息、采集摘要、值班日报和 Agent Cycle 摘要。
+- Docker Compose 本地部署，前端可单独静态部署。
 
-- Tracks campus recruitment and job-hunting opportunities in a local SQLite database.
-- Scores jobs for Shenzhen-focused frontend, backend, Java, Go, algorithm, and AI application development roles.
-- Filters obvious outsourcing, training, low-quality, and unclear-conversion internship content.
-- Provides a local dashboard for reviewing jobs and updating status.
-- Builds a local candidate profile and uses it to explain why a role fits or carries risk.
-- Records job decisions such as interested, applied, ignored, and notes updates as a timeline.
-- Prepares application plans for interested strong matches, including priority, target date, checklist, next action, resume version, draft notes, and follow-up date.
-- Generates a daily task queue for recommended jobs, human decisions, unhealthy sources, and crawl setup.
-- Shows what the assistant can already do, where it is weaker than mainstream digital employees, and which capability should be improved next.
-- Accepts simple workflow commands from the digital employee sidebar. Current parsing is deterministic and transparent, not LLM-based.
-- Keeps a global chat assistant available across pages. Without a model key it answers with local recruiting context; with model settings it calls an OpenAI-compatible chat-completions endpoint with recent conversation history, parses safe JSON action suggestions, filters unsafe actions, persists safe suggestions for review, and falls back locally if the model fails.
-- Uses the configured DeepSeek/OpenAI-compatible model to enhance manual Agent Cycles with specialist insights when available, while keeping deterministic local orchestration as fallback.
-- Builds a local semantic memory index from tracked jobs so the assistant can retrieve opportunities by intent instead of exact keywords only. The default provider is `local_hash` for zero-config local development; the storage boundary is intentionally small enough to replace later with DeepSeek embeddings, pgvector, Qdrant, or another vector backend.
-- Discovers, validates, and summarizes source candidates so the crawl pool does not stay fixed forever.
-- Tracks stale or escalated daily tasks, supports snoozing or closing work items with reasons, and can send an automatic duty report when enabled and the configured report time is reached.
-- Supports manual crawl runs and scheduled runs at 09:00, 12:00, and 18:00.
-- Runs a multi-agent review after completed crawl/report workflows, then stores the trace and creates safe approval requests for the next step.
-- Can send Feishu incoming webhook notifications.
+## 核心能力
 
-## What It Does Not Do
+### 1. 招聘信息收集
 
-- It does not automatically submit resumes.
-- It does not log in to job platforms.
-- It does not bypass captcha, sliders, or anti-bot systems.
-- It does not sync to Feishu Base yet.
+- 支持手动 URL 导入和定时采集。
+- 默认采集时间支持 09:00、12:00、18:00。
+- 自动发现更多公司官网、社区入口、求职平台搜索入口。
+- 对候选来源进行页面验证，识别招聘信号和岗位链接。
+- 采集结果写入 SQLite，不只是临时显示在页面上。
 
-## Project Structure
+### 2. 岗位过滤与评分
 
-```text
-.
-+-- backend
-|   +-- cmd/server              # Backend entrypoint
-|   +-- internal/app            # Application wiring
-|   +-- internal/config         # Environment configuration
-|   +-- internal/crawl          # Crawl runner and scheduler
-|   +-- internal/db             # SQLite schema and connection
-|   +-- internal/domain         # Shared domain types
-|   +-- internal/http           # REST API handlers and routes
-|   +-- internal/jobs           # Job repository, scoring, and dedupe
-|   +-- internal/notify         # Feishu webhook notification
-+-- frontend
-    +-- src                     # React dashboard
+- 根据城市、岗位方向、公司信号、校招信号、投递链接等维度评分。
+- 过滤外包、培训机构、课程销售、转正不明、无关岗位等低质量内容。
+- 按申请链接和公司/标题/城市归一化结果去重。
+- 在岗位详情里解释匹配原因、风险点和建议动作。
+
+### 3. 求职工作台
+
+- Dashboard：查看机会、任务、Agent Cycle、来源状态和建议动作。
+- Profile：配置城市、方向、技能、学历、偏好公司、排除关键词。
+- Applications：把感兴趣岗位转成投递计划，维护简历版本、草稿备注和跟进日期。
+- Companies：维护公司池、发现来源、验证来源、接受高质量来源。
+- Settings：配置采集计划、飞书机器人、模型、自动日报、任务 SLA。
+
+### 4. 数字员工与 Agent 闭环
+
+- 全局数字员工聊天入口，支持本地规则回复和模型增强回复。
+- 聊天上下文会注入候选人画像、近期岗位、语义记忆和最近会话。
+- 模型建议不会直接执行，必须进入 Suggested Actions 等待人工审批。
+- 每次采集/日报后可以触发 Agent Cycle，记录多 Agent 观察、决策和下一步动作。
+- 本地语义记忆使用 deterministic hash embeddings，后续可替换为 DeepSeek embeddings、pgvector、Qdrant 等。
+
+### 5. 飞书通知
+
+- 支持在 Settings 中填写自己的飞书机器人 webhook。
+- 支持发送测试消息。
+- 采集完成后可发送摘要。
+- 自动值班日报可包含任务队列、异常来源、推荐岗位和最新 Agent Cycle。
+
+## 不做什么
+
+为了保持开源项目的安全边界，当前不会做这些事情：
+
+- 不自动提交简历。
+- 不自动登录第三方招聘平台。
+- 不绕过验证码、滑块或反爬机制。
+- 不在未确认的情况下执行外部动作。
+- 不把密钥写入语义记忆。
+
+## 快速开始
+
+### 方式一：本地开发运行
+
+后端需要 Go 1.25 或更新版本：
+
+```bash
+cd backend
+go run ./cmd/server
 ```
 
-## Third-Party Assets
+前端需要 Node.js 和 npm：
 
-- `frontend/public/assets/noto-cat-face.svg` is from Google Noto Emoji and is used for the digital employee cat avatar. See `frontend/public/assets/NotoEmoji-LICENSE.txt` for the upstream license.
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-## Development
+打开：
 
-### Environment
+```text
+http://localhost:5173
+```
 
-Copy `.env.example` to `.env` if you want to keep local settings in a file. The app reads these environment variables:
+后端默认监听：
+
+```text
+http://localhost:8080
+```
+
+### 方式二：Docker Compose
+
+```bash
+docker compose up --build
+```
+
+Docker Compose 会启动 Go 后端、SQLite 持久化卷和 Nginx 前端服务。打开：
+
+```text
+http://localhost:5173
+```
+
+## 环境变量
+
+可以复制 `.env.example` 为 `.env`，也可以直接在系统环境变量中配置：
 
 ```env
 APP_ADDR=:8080
@@ -108,15 +134,15 @@ DEEPSEEK_API_KEY=
 DEEPSEEK_MODEL=deepseek-chat
 ```
 
-`SOURCE_URLS` can contain comma-separated or newline-separated public recruitment URLs. Manual and scheduled crawl runs import these URLs, score them, deduplicate them, and store them in the local database.
+常用配置说明：
 
-`FEISHU_WEBHOOK_URL` is optional. Open-source users can also open the dashboard, go to Settings, paste their own Feishu incoming bot webhook URL, save it, and send a test notification. A saved dashboard webhook takes priority over the environment variable and does not require restarting the backend.
+- `SOURCE_URLS`：逗号或换行分隔的公开招聘 URL。
+- `FEISHU_WEBHOOK_URL`：飞书机器人 webhook，页面 Settings 中保存的 webhook 优先级更高。
+- `AGENT_ORCHESTRATOR`：默认 `deterministic`；可选 `eino_graph`。
+- `LLM_PROVIDER`：可配置为 `deepseek` 或 OpenAI-compatible provider。
+- `LLM_API_KEY` / `DEEPSEEK_API_KEY`：模型密钥，未配置时使用本地规则回复。
 
-`AGENT_ORCHESTRATOR` defaults to `deterministic`. To run the optional Eino Graph orchestration path, install Eino, set `AGENT_ORCHESTRATOR=eino_graph`, and start the backend with the Go build tag: `go run -tags eino ./cmd/server`.
-
-`LLM_PROVIDER`, `LLM_API_KEY`, `LLM_BASE_URL`, and `LLM_MODEL` are optional. If they are not configured, the global digital employee chat uses local rule-based replies. If they are configured, the backend calls an OpenAI-compatible `/chat/completions` endpoint and falls back to local replies on failure. `OPENAI_API_KEY`, `OPENAI_BASE_URL`, and `OPENAI_MODEL` are also accepted.
-
-DeepSeek can be configured without code changes:
+DeepSeek 示例：
 
 ```env
 LLM_PROVIDER=deepseek
@@ -124,132 +150,137 @@ DEEPSEEK_API_KEY=your_key
 DEEPSEEK_MODEL=deepseek-chat
 ```
 
-The DeepSeek default base URL is `https://api.deepseek.com`. The chat panel includes a model health check button that verifies the configured provider can answer a small chat-completions request.
+## 可选 Eino Graph
 
-Automatic Feishu duty reports require the backend process to stay running with the scheduler enabled, a Feishu webhook in Settings or `FEISHU_WEBHOOK_URL`, Automatic duty report enabled in Settings, and the configured duty report time reached in the configured time zone. The default time zone is `Asia/Shanghai`. The Settings page includes an automation diagnostic card that shows webhook readiness, scheduler expectation, next report time, last sent time, and the reason a scheduled report has not fired yet.
+默认编排是 deterministic，保证任何人 clone 后都能跑起来。想尝试 Eino Graph：
 
-### Backend
-
-Requires Go 1.25 or newer.
-
-```bash
+```powershell
 cd backend
-go run ./cmd/server
+go get github.com/cloudwego/eino@latest
+$env:AGENT_ORCHESTRATOR="eino_graph"
+go run -tags eino ./cmd/server
 ```
 
-The backend listens on `http://localhost:8080` by default.
+验证：
 
-Useful commands:
+```powershell
+go test -tags eino ./internal/jobs -run TestEinoRecruitingOrchestratorRunsGraph
+```
+
+不开 `eino` build tag 时，即使配置了 `AGENT_ORCHESTRATOR=eino_graph`，项目也会安全回退到 deterministic 编排。
+
+## 第一次使用建议
+
+1. 打开 `http://localhost:5173`。
+2. 进入 Settings，设置目标城市、岗位方向、排除关键词和采集计划。
+3. 如果需要飞书通知，填写自己的机器人 webhook 并发送测试消息。
+4. 进入 Companies，添加推荐公司池，执行 Discover Sources。
+5. 验证并接受有价值的来源。
+6. 回到 Dashboard，运行一次 crawl。
+7. 查看 Opportunities，标记 Interested、Applied 或 Ignore。
+8. 在 Profile 中补充自己的技能、学历、偏好公司和求职备注。
+9. 在 Applications 中维护投递计划、简历版本、草稿备注和跟进日期。
+10. 在 Dashboard 查看 Daily Tasks、Suggested Actions 和 Agent Cycles。
+11. 使用右下角数字员工聊天，询问“今天最值得投哪些岗位？”或“为什么这个岗位适合我？”。
+
+## 常用命令
+
+后端测试：
 
 ```bash
 cd backend
 go test ./...
 ```
 
-### Frontend
-
-Requires Node.js and npm.
+Eino tagged 测试：
 
 ```bash
-cd frontend
-npm install
-npm run dev
+cd backend
+go test -tags eino ./internal/jobs -run TestEinoRecruitingOrchestratorRunsGraph
 ```
 
-The dashboard is available at `http://localhost:5173` by default. The frontend dev server proxies `/api` and `/healthz` to the backend at `http://localhost:8080`.
-
-Build check:
+前端构建：
 
 ```bash
 cd frontend
 npm run build
 ```
 
-### Docker Compose
+## 项目结构
 
-For an open-source style local deployment, Docker Compose runs the Go backend, a persistent SQLite volume, and an Nginx-served frontend that proxies `/api` to the backend.
-
-```bash
-docker compose up --build
+```text
+.
++-- backend
+|   +-- cmd/server              # 后端入口
+|   +-- internal/app            # 应用装配和调度
+|   +-- internal/config         # 环境配置
+|   +-- internal/crawl          # 采集 runner 和 scheduler
+|   +-- internal/db             # SQLite schema 和连接
+|   +-- internal/domain         # 共享领域类型
+|   +-- internal/http           # REST API handlers 和 routes
+|   +-- internal/jobs           # 岗位、评分、Agent runtime、语义记忆
+|   +-- internal/notify         # 飞书 webhook 通知
++-- frontend
+    +-- src                     # React 看板
 ```
 
-Open `http://localhost:5173`. The backend is also exposed at `http://localhost:8080`.
+## 本地数据
 
-Vercel is a good fit for the static frontend only. This project currently uses a long-running Go backend plus local SQLite and scheduled jobs, so a single Vercel deployment is not the best default. For the full product, use Docker Compose locally or deploy the backend to a service with persistent storage, then point the frontend to that backend.
-
-### Deployment Notes
-
-- Frontend: can be deployed as static assets after `npm run build`.
-- Backend: should run on a service that supports a long-lived Go process and persistent disk or a managed database.
-- Scheduler: must remain enabled for automatic crawls, automatic source discovery, stale-task escalation, and automatic Feishu duty reports.
-- SQLite: works well for local-first usage. For hosted multi-user usage, plan a Postgres migration before exposing it publicly.
-- Vercel: suitable for the frontend, but not enough for the current full product because Vercel serverless functions do not provide a simple always-on scheduler plus persistent local SQLite disk.
-- Open-source setup: see [docs/open-source-setup.md](docs/open-source-setup.md) for local, Docker Compose, Feishu, and DeepSeek configuration.
-
-### First Run Checklist
-
-After the backend and frontend are running:
-
-1. Open `http://localhost:5173`.
-2. Go to Companies and add the recommended company pool.
-3. Run Discover Sources, then validate and accept useful source candidates.
-4. Go to Settings and adjust cities, directions, excluded keywords, crawl schedule, automatic source discovery, and your optional Feishu webhook.
-5. Use Send Feishu Test if a webhook is configured.
-6. Go back to Dashboard and run a crawl.
-7. Review Opportunities, mark promising jobs as Interested or Applied, and ignore low-quality matches.
-8. Refresh Daily Tasks on the Dashboard to turn the current pipeline into an actionable work queue.
-9. Use the digital employee sidebar to inspect maturity, capabilities, current gaps, and the daily operating cycle.
-10. Configure Automatic duty report, Duty report time, and Task SLA hours in Settings if you want stale-task tracking and scheduled reporting.
-11. Go to Profile and write your candidate signals: target cities, directions, skills, preferred companies, blocked keywords, and notes.
-12. Try Command Center commands such as `只看深圳 Go 后端，刷新任务`, `run crawl`, `发送飞书日报`, or `同步投递计划`.
-13. Mark promising jobs as Interested, then open Applications and sync application plans.
-14. Use the Applications Kanban to move plans through Prepare, Ready, Applied, and Paused; edit resume version, draft notes, and follow-up dates.
-15. Open Details from an opportunity to review fit signals, application plan, risks, suggested action, notes, and decision history.
-16. Use the global digital employee chat in the lower-right corner to ask what to do next or why a role fits.
-17. Review Suggested Actions on the Dashboard and approve or ignore what the agent proposes.
-18. Review Agent Cycles on the Dashboard to see which specialist agent observed what after the latest workflow.
-19. Review the Companies source operations summary for broken sources, pending candidates, and high-confidence promotions.
-20. Use Snooze, Complete, or Ignore in Daily Tasks to keep the assistant's work queue accurate.
-21. Use Send to Feishu from the duty report when you want the assistant to push the current task queue and summary to your bot.
-
-## Local Data
-
-By default, the backend stores SQLite data under:
+默认 SQLite 数据库路径：
 
 ```text
 backend/data/job-hunter-agent.db
 ```
 
-Local databases, logs, build outputs, private planning docs, and environment files are ignored by Git.
+本地数据库、日志、构建产物、私有计划文档和环境变量文件已经通过 `.gitignore` 忽略。
 
-Recommended backup workflow:
+建议备份方式：
 
-1. Stop the backend process.
-2. Copy `backend/data/job-hunter-agent.db` to a dated backup path.
-3. Start the backend again.
+1. 停止后端进程。
+2. 复制 `backend/data/job-hunter-agent.db` 到带日期的备份路径。
+3. 重新启动后端。
 
-Restore workflow:
+恢复方式：
 
-1. Stop the backend process.
-2. Replace `backend/data/job-hunter-agent.db` with the backup file.
-3. Start the backend. Schema migrations run automatically and add missing columns for newer versions.
+1. 停止后端进程。
+2. 用备份文件替换 `backend/data/job-hunter-agent.db`。
+3. 启动后端，schema migration 会自动补齐新版本字段。
 
-For automated backups, run a scheduled copy while the backend is stopped, or use a SQLite online backup command from your deployment environment.
+## 部署说明
 
-## Roadmap
+- 前端：`npm run build` 后可以作为静态资源部署。
+- 后端：需要支持长时间运行的 Go 进程和持久化存储。
+- Scheduler：自动采集、自动来源发现、任务 SLA、飞书日报都依赖常驻后端。
+- SQLite：适合本地优先使用；如果要做公开多用户服务，建议迁移到 Postgres。
+- Vercel：适合部署前端，不适合作为当前完整产品的唯一部署方式。
 
-- Add manual URL import API and dashboard flow.
-- Add the first real public-source collector.
-- Improve parser adapters for more company-specific career pages and job-platform result pages.
-- Improve parsing for deadline, location granularity, and application URL.
-- Upgrade model chat from plain conversation to structured tool-calling planning.
-- Add editable resume-version templates and richer generated application draft notes.
-- Add optional Feishu Base or spreadsheet sync.
-- Explore resume matching and assisted application workflows after the collection pipeline is reliable.
+更多开源运行说明见 [docs/open-source-setup.md](docs/open-source-setup.md)。
 
-## Contributing
+## 路线图
 
-This project is early and evolving. Small, focused pull requests are preferred. Please avoid adding automation that logs in to third-party platforms, bypasses anti-bot systems, or submits applications without explicit user confirmation.
+- 提升更多公司官网和求职平台的岗位解析质量。
+- 扩大默认公司池和来源发现策略，让数据不固定在少量头部公司。
+- 将模型聊天升级为更结构化的工具调用和任务规划。
+- 将 Eino Graph 从可选适配推进到更完整的多 Agent 编排。
+- 引入可替换的向量数据库或外部 embedding provider。
+- 增加简历版本模板、投递草稿生成和更细的跟进提醒。
+- 探索 Feishu Base、表格或其他外部系统同步。
+
+## 贡献
+
+欢迎提交 issue 和 PR。建议优先选择小而清晰的改动，例如：
+
+- 新增招聘来源适配器。
+- 改进岗位解析。
+- 补充测试。
+- 优化中文/英文文案。
+- 改进 Agent 决策和安全边界。
+
+请避免加入自动登录、绕过反爬、未经确认自动投递等能力。
+
+## 第三方素材
+
+- `frontend/public/assets/noto-cat-face.svg` 来自 Google Noto Emoji，用于数字员工猫头像。上游许可证见 `frontend/public/assets/NotoEmoji-LICENSE.txt`。
 
 ## License
 
