@@ -138,6 +138,20 @@ func TestAgentChatModelPromptIncludesRecommendedJobs(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed job: %v", err)
 	}
+	ignoredJob, err := repo.CreateJob(t.Context(), domain.Job{
+		Company:       "TrainingCo",
+		Title:         "Frontend Bootcamp Assistant",
+		City:          "Shenzhen",
+		ApplyURL:      "https://careers.example.com/training/frontend",
+		DirectionTags: []string{"frontend"},
+		MatchScore:    20,
+	})
+	if err != nil {
+		t.Fatalf("seed ignored job: %v", err)
+	}
+	if err := repo.UpdateStatus(t.Context(), ignoredJob.ID, domain.StatusIgnored); err != nil {
+		t.Fatalf("mark ignored job: %v", err)
+	}
 	handler := NewRouter(&Handlers{
 		Repo: repo,
 		LLM:  &jobs.LLMConfig{APIKey: "test-key", BaseURL: model.URL, Model: "test-model"},
@@ -159,6 +173,9 @@ func TestAgentChatModelPromptIncludesRecommendedJobs(t *testing.T) {
 	}
 	if !strings.Contains(requestPayload.Messages[0].Content, "Decision memory") {
 		t.Fatalf("expected model prompt to include decision-memory context, got %#v", requestPayload.Messages[0].Content)
+	}
+	if !strings.Contains(requestPayload.Messages[0].Content, "Preference learning") || !strings.Contains(requestPayload.Messages[0].Content, "TrainingCo") {
+		t.Fatalf("expected model prompt to include learned preference context, got %#v", requestPayload.Messages[0].Content)
 	}
 }
 

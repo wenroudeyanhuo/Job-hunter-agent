@@ -3,6 +3,7 @@ import type {
   AgentAutomationDiagnostics,
   AgentActionRequest,
   AgentPlan,
+  AgentPreferenceInsights,
   AgentChatMessage,
   AgentChatHealthcheck,
   AgentChatResponse,
@@ -73,6 +74,10 @@ export async function getAgentBriefing(): Promise<AgentBriefing> {
 
 export async function getAgentState(): Promise<AgentState> {
   return request<AgentState>("/api/agent/state");
+}
+
+export async function getAgentPreferenceInsights(): Promise<AgentPreferenceInsights> {
+  return request<AgentPreferenceInsights>("/api/agent/preferences");
 }
 
 export async function runAgentCommand(text: string): Promise<AgentCommandResult> {

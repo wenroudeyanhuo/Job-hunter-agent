@@ -146,6 +146,11 @@ func (r *automationRunner) buildDutyReport(ctx context.Context) (jobs.AgentDutyR
 	}
 	report := jobs.BuildAgentDutyReport(jobList, sources, runs)
 	report = jobs.AddTasksToDutyReport(report, tasks)
+	insights, err := r.repo.BuildAgentPreferenceInsights(ctx, time.Now().UTC())
+	if err != nil {
+		return jobs.AgentDutyReport{}, err
+	}
+	report = jobs.AddPreferenceInsightsToDutyReport(report, insights)
 	snapshots, err := r.repo.ListAgentReviewSnapshots(ctx, 2)
 	if err != nil {
 		return jobs.AgentDutyReport{}, err

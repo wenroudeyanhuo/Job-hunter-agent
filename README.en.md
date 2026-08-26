@@ -242,6 +242,8 @@ Local databases, logs, build outputs, private planning docs, and environment fil
 
 More setup notes: [docs/open-source-setup.md](docs/open-source-setup.md).
 
+v1.0 goal and definition of done: [docs/v1.0-goal.md](docs/v1.0-goal.md).
+
 Product-agent roadmap: [docs/product-agent-roadmap.zh-CN.md](docs/product-agent-roadmap.zh-CN.md).
 
 ## Roadmap

@@ -62,6 +62,15 @@ func (h *Handlers) GetAgentState(c *gin.Context) {
 	c.JSON(http.StatusOK, state)
 }
 
+func (h *Handlers) GetAgentPreferenceInsights(c *gin.Context) {
+	insights, err := h.Repo.BuildAgentPreferenceInsights(c.Request.Context(), time.Now().UTC())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, insights)
+}
+
 func (h *Handlers) RunAgentCommand(c *gin.Context) {
 	var req struct {
 		Text string `json:"text"`
@@ -580,11 +589,26 @@ func (h *Handlers) buildAgentChatContext(ctx context.Context, activeView string)
 	if err != nil {
 		return jobs.AgentChatContext{}, err
 	}
+	preferences, err := h.Repo.BuildAgentPreferenceInsights(ctx, time.Now().UTC())
+	if err != nil {
+		return jobs.AgentChatContext{}, err
+	}
 	context := jobs.AgentChatContext{
 		ActiveView:     activeView,
 		ModelEnabled:   jobs.BuildAgentChatStatus(h.currentLLM()).Configured,
+		Preferences:    preferences,
 		Memory:         jobs.BuildAgentMemory(snapshots, events),
 		RecentMessages: recentMessages,
+	}
+	for _, insight := range preferences.Recommendations {
+		context.RecommendedJobs = append(context.RecommendedJobs, jobs.AgentChatJobSummary{
+			Company:    insight.Company,
+			Title:      insight.Title,
+			City:       insight.City,
+			MatchScore: insight.Score,
+			Reasons:    insight.Reasons,
+			Warnings:   insight.Warnings,
+		})
 	}
 	for _, job := range jobList {
 		if job.MatchScore >= 70 {
@@ -595,6 +619,8 @@ func (h *Handlers) buildAgentChatContext(ctx context.Context, activeView string)
 					Title:      job.Title,
 					City:       job.City,
 					MatchScore: job.MatchScore,
+					Reasons:    job.RecommendReasons,
+					Warnings:   job.PenaltyReasons,
 				})
 			}
 		}
@@ -619,8 +645,8 @@ func (h *Handlers) runModelChat(ctx context.Context, userMessage string, chatCon
 	messages := []map[string]string{
 		{
 			"role": "system",
-			"content": fmt.Sprintf("You are Job Hunter Agent, a Chinese-speaking personal digital employee for autumn recruitment. Be concise, practical, and use the current local context. When the user asks what to apply for, explain why each recommended job fits and mention uncertainty if data is weak. Current view: %s. Open tasks: %d. Strong matches: %d. Manual decisions: %d. Source issues: %d. Recommended jobs: %s. Memory: %s. Decision memory and semantic memories: %s. If suggesting an action, return JSON with content and actions. Allowed action types: %s. Never suggest direct resume submission or third-party login actions.",
-				chatContext.ActiveView, chatContext.OpenTasks, chatContext.StrongMatches, chatContext.ManualDecisions, chatContext.SourceIssues, formatAgentChatJobSummaries(chatContext.RecommendedJobs), formatAgentMemory(chatContext.Memory), formatSemanticMemoryMatches(chatContext.SemanticMatches), jobs.ModelActionPromptList()),
+			"content": fmt.Sprintf("You are Job Hunter Agent, a Chinese-speaking personal digital employee for autumn recruitment. Be concise, practical, and use the current local context. When the user asks what to apply for, explain why each recommended job fits and mention uncertainty if data is weak. Current view: %s. Open tasks: %d. Strong matches: %d. Manual decisions: %d. Source issues: %d. Recommended jobs: %s. Preference learning: %s. Memory: %s. Decision memory and semantic memories: %s. If suggesting an action, return JSON with content and actions. Allowed action types: %s. Never suggest direct resume submission or third-party login actions.",
+				chatContext.ActiveView, chatContext.OpenTasks, chatContext.StrongMatches, chatContext.ManualDecisions, chatContext.SourceIssues, formatAgentChatJobSummaries(chatContext.RecommendedJobs), formatPreferenceInsights(chatContext.Preferences), formatAgentMemory(chatContext.Memory), formatSemanticMemoryMatches(chatContext.SemanticMatches), jobs.ModelActionPromptList()),
 		},
 	}
 	messages = append(messages, formatAgentChatHistory(chatContext.RecentMessages)...)
@@ -709,9 +735,48 @@ func formatAgentChatJobSummaries(jobList []jobs.AgentChatJobSummary) string {
 	}
 	parts := make([]string, 0, len(jobList))
 	for _, job := range jobList {
-		parts = append(parts, fmt.Sprintf("%s - %s - %s - score %d", job.Company, job.Title, job.City, job.MatchScore))
+		detail := fmt.Sprintf("%s - %s - %s - score %d", job.Company, job.Title, job.City, job.MatchScore)
+		if len(job.Reasons) > 0 {
+			detail += " - reasons: " + strings.Join(job.Reasons, ", ")
+		}
+		if len(job.Warnings) > 0 {
+			detail += " - warnings: " + strings.Join(job.Warnings, ", ")
+		}
+		parts = append(parts, detail)
 	}
 	return strings.Join(parts, "; ")
+}
+
+func formatPreferenceInsights(insights jobs.AgentPreferenceInsights) string {
+	if insights.TotalDecisions == 0 {
+		return "none yet"
+	}
+	parts := []string{insights.Summary}
+	if len(insights.InterestedCompanies) > 0 {
+		parts = append(parts, "liked companies: "+formatPreferenceSignals(insights.InterestedCompanies))
+	}
+	if len(insights.InterestedDirections) > 0 {
+		parts = append(parts, "liked directions: "+formatPreferenceSignals(insights.InterestedDirections))
+	}
+	if len(insights.IgnoredCompanies) > 0 {
+		parts = append(parts, "ignored companies: "+formatPreferenceSignals(insights.IgnoredCompanies))
+	}
+	if len(insights.IgnoredDirections) > 0 {
+		parts = append(parts, "ignored directions: "+formatPreferenceSignals(insights.IgnoredDirections))
+	}
+	return strings.Join(parts, "; ")
+}
+
+func formatPreferenceSignals(signals []jobs.PreferenceSignal) string {
+	limit := len(signals)
+	if limit > 4 {
+		limit = 4
+	}
+	parts := make([]string, 0, limit)
+	for _, signal := range signals[:limit] {
+		parts = append(parts, fmt.Sprintf("%s x%d", signal.Name, signal.Count))
+	}
+	return strings.Join(parts, ", ")
 }
 
 func formatAgentMemory(memory jobs.AgentMemory) string {
@@ -1674,6 +1739,11 @@ func (h *Handlers) buildDutyReport(ctx context.Context) (jobs.AgentDutyReport, e
 		return jobs.AgentDutyReport{}, err
 	}
 	report = jobs.AddTasksToDutyReport(report, tasks)
+	insights, err := h.Repo.BuildAgentPreferenceInsights(ctx, time.Now().UTC())
+	if err != nil {
+		return jobs.AgentDutyReport{}, err
+	}
+	report = jobs.AddPreferenceInsightsToDutyReport(report, insights)
 	snapshots, err := h.Repo.ListAgentReviewSnapshots(ctx, 2)
 	if err != nil {
 		return jobs.AgentDutyReport{}, err

@@ -125,6 +125,54 @@ func TestPublicURLCollectorImportsStructuredJobCards(t *testing.T) {
 	}
 }
 
+func TestPublicURLCollectorImportsJobsFromEmbeddedJSONState(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<html><body>
+<script id="__NEXT_DATA__" type="application/json">
+{
+  "props": {
+    "pageProps": {
+      "jobs": [
+        {
+          "company": "DeepAI",
+          "title": "AI Application Backend Engineer",
+          "city": "Shenzhen",
+          "url": "/jobs/ai-backend",
+          "description": "Build agent workflow, RAG services, and Go backend systems.",
+          "deadline": "2026-10-31"
+        },
+        {
+          "company": "DeepAI",
+          "name": "Algorithm Intern",
+          "location": "Guangzhou",
+          "applyUrl": "/jobs/algorithm-intern",
+          "requirements": "Machine learning and recommendation algorithm internship."
+        }
+      ]
+    }
+  }
+}
+</script>
+</body></html>`))
+	}))
+	defer server.Close()
+
+	collector := NewPublicURLCollector([]string{server.URL}, server.Client())
+	jobs, err := collector.Collect(context.Background())
+	if err != nil {
+		t.Fatalf("collect: %v", err)
+	}
+	if len(jobs) != 2 {
+		t.Fatalf("expected two jobs from embedded JSON, got %#v", jobs)
+	}
+	if jobs[0].Company != "DeepAI" || jobs[0].City != "Shenzhen" || jobs[0].ApplyURL != server.URL+"/jobs/ai-backend" {
+		t.Fatalf("unexpected embedded JSON job: %#v", jobs[0])
+	}
+	if jobs[0].DeadlineAt == nil {
+		t.Fatalf("expected deadline to be parsed, got %#v", jobs[0])
+	}
+}
+
 func TestPublicURLCollectorSkipsRecruitmentLandingPageWithoutConcreteJob(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`<html><head><title>华为应届生_实习生_留学生_海外本地最新招聘信息-华为校园招聘</title></head><body>校园招聘官网</body></html>`))

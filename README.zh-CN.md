@@ -224,6 +224,8 @@ backend/data/job-hunter-agent.db
 
 更多开源运行说明见 [docs/open-source-setup.md](docs/open-source-setup.md)。
 
+v1.0 的项目终点和验收标准见 [docs/v1.0-goal.md](docs/v1.0-goal.md)。
+
 数字员工产品化方案见 [docs/product-agent-roadmap.zh-CN.md](docs/product-agent-roadmap.zh-CN.md)。
 
 ## 路线图

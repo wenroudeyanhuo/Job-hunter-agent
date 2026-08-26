@@ -8,17 +8,19 @@ import (
 )
 
 type AgentDutyReport struct {
-	GeneratedAt    time.Time           `json:"generated_at"`
-	Tone           string              `json:"tone"`
-	Headline       string              `json:"headline"`
-	Summary        AgentDutySummary    `json:"summary"`
-	TodaysWork     []AgentWorkItem     `json:"todays_work"`
-	NeedsDecision  []AgentDecisionItem `json:"needs_decision"`
-	SourceIssues   []AgentSourceIssue  `json:"source_issues"`
-	Tasks          []AgentTask         `json:"tasks"`
-	NextBestAction AgentReportAction   `json:"next_best_action"`
-	TrendSummary   string              `json:"trend_summary"`
-	LatestRun      *domain.JobRun      `json:"latest_run,omitempty"`
+	GeneratedAt     time.Time                  `json:"generated_at"`
+	Tone            string                     `json:"tone"`
+	Headline        string                     `json:"headline"`
+	Summary         AgentDutySummary           `json:"summary"`
+	TodaysWork      []AgentWorkItem            `json:"todays_work"`
+	NeedsDecision   []AgentDecisionItem        `json:"needs_decision"`
+	SourceIssues    []AgentSourceIssue         `json:"source_issues"`
+	Tasks           []AgentTask                `json:"tasks"`
+	Recommended     []JobRecommendationInsight `json:"recommended_jobs"`
+	LearningSummary string                     `json:"learning_summary"`
+	NextBestAction  AgentReportAction          `json:"next_best_action"`
+	TrendSummary    string                     `json:"trend_summary"`
+	LatestRun       *domain.JobRun             `json:"latest_run,omitempty"`
 }
 
 type AgentDutySummary struct {
@@ -190,6 +192,33 @@ func AddTasksToDutyReport(report AgentDutyReport, tasks []AgentTask) AgentDutyRe
 			report.Summary.EscalatedTasks++
 		default:
 			report.Summary.OpenTasks++
+		}
+	}
+	return report
+}
+
+func AddPreferenceInsightsToDutyReport(report AgentDutyReport, insights AgentPreferenceInsights) AgentDutyReport {
+	report.Recommended = insights.Recommendations
+	report.LearningSummary = insights.Summary
+	if len(report.Recommended) > 0 {
+		hasRecommendedWork := false
+		for _, item := range report.TodaysWork {
+			if item.Kind == "review_recommended_jobs" {
+				hasRecommendedWork = true
+				break
+			}
+		}
+		if !hasRecommendedWork {
+			report.TodaysWork = append(report.TodaysWork, AgentWorkItem{
+				Kind:     "review_recommended_jobs",
+				Title:    "Review personalized recommendations",
+				Detail:   "These roles are ranked with your profile and decision history.",
+				Priority: 88,
+				Count:    len(report.Recommended),
+			})
+			sort.Slice(report.TodaysWork, func(i, j int) bool {
+				return report.TodaysWork[i].Priority > report.TodaysWork[j].Priority
+			})
 		}
 	}
 	return report

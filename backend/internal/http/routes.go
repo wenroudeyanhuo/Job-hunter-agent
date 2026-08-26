@@ -18,6 +18,7 @@ func NewRouter(handlers *Handlers) http.Handler {
 	api := router.Group("/api")
 	api.GET("/agent/briefing", handlers.GetAgentBriefing)
 	api.GET("/agent/state", handlers.GetAgentState)
+	api.GET("/agent/preferences", handlers.GetAgentPreferenceInsights)
 	api.POST("/agent/commands", handlers.RunAgentCommand)
 	api.GET("/agent/memory/search", handlers.SearchSemanticMemory)
 	api.POST("/agent/memory/rebuild", handlers.RebuildSemanticMemory)

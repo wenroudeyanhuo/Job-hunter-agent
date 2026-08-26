@@ -35,6 +35,7 @@ type AgentChatContext struct {
 	ActiveView      string
 	ModelEnabled    bool
 	RecommendedJobs []AgentChatJobSummary
+	Preferences     AgentPreferenceInsights
 	Memory          AgentMemory
 	SemanticMatches []SemanticMemoryMatch
 	RecentMessages  []AgentChatMessage
@@ -45,6 +46,8 @@ type AgentChatJobSummary struct {
 	Title      string
 	City       string
 	MatchScore int
+	Reasons    []string
+	Warnings   []string
 }
 
 type AgentChatReply struct {

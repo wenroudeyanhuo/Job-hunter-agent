@@ -15,6 +15,7 @@ import {
   getAgentReview,
   getAgentReviewHistory,
   getAgentState,
+  getAgentPreferenceInsights,
   getOnboardingHealth,
   getCandidateProfile,
   getJobDetail,
@@ -63,7 +64,7 @@ import {
   rejectSourceCandidate,
 } from "./api";
 import { DigitalEmployee3D } from "./DigitalEmployee3D";
-import type { AgentActionRequest, AgentAutomationDiagnostics, AgentBriefing, AgentChatHealthcheck, AgentChatMessage, AgentChatStatus, AgentCommandResult, AgentCycleRecord, AgentDutyReport, AgentEvent, AgentPlan, AgentReview, AgentReviewHistory, AgentState, AgentTask, ApplicationPlan, CandidateProfile, Company, Job, JobDetail, JobRun, JobRunSource, JobStatus, LLMConfig, OnboardingHealth, RunSummary, SemanticMemoryMatch, Settings, Source, SourceCandidate, SourceOperationsSummary } from "./types";
+import type { AgentActionRequest, AgentAutomationDiagnostics, AgentBriefing, AgentChatHealthcheck, AgentChatMessage, AgentChatStatus, AgentCommandResult, AgentCycleRecord, AgentDutyReport, AgentEvent, AgentPlan, AgentPreferenceInsights, AgentReview, AgentReviewHistory, AgentState, AgentTask, ApplicationPlan, CandidateProfile, Company, Job, JobDetail, JobRun, JobRunSource, JobStatus, LLMConfig, OnboardingHealth, RunSummary, SemanticMemoryMatch, Settings, Source, SourceCandidate, SourceOperationsSummary } from "./types";
 
 type AppView = "dashboard" | "opportunities" | "applications" | "memory" | "profile" | "companies" | "runs" | "settings";
 
@@ -208,6 +209,7 @@ export default function App() {
   const [agentActionRequests, setAgentActionRequests] = useState<AgentActionRequest[]>([]);
   const [agentPlans, setAgentPlans] = useState<AgentPlan[]>([]);
   const [agentCycles, setAgentCycles] = useState<AgentCycleRecord[]>([]);
+  const [preferenceInsights, setPreferenceInsights] = useState<AgentPreferenceInsights | null>(null);
   const [agentTasks, setAgentTasks] = useState<AgentTask[]>([]);
   const [applicationPlans, setApplicationPlans] = useState<ApplicationPlan[]>([]);
   const [automationStatus, setAutomationStatus] = useState<AgentAutomationDiagnostics | null>(null);
@@ -328,6 +330,11 @@ export default function App() {
     setAgentCycles(data);
   }
 
+  async function refreshPreferenceInsights() {
+    const data = await getAgentPreferenceInsights();
+    setPreferenceInsights(data);
+  }
+
   async function refreshChat() {
     const [status, messages] = await Promise.all([getAgentChatStatus(), listAgentChatMessages()]);
     setChatStatus(status);
@@ -397,7 +404,7 @@ export default function App() {
   }
 
   useEffect(() => {
-    Promise.all([refresh(), refreshSources(), refreshSourceCandidates(), refreshSourceOperations(), refreshCompanies(), refreshRuns(), refreshSettings(), refreshProfile(), refreshBriefing(), refreshAgentState(), refreshDutyReport(), refreshAgentReview(), refreshAgentReviewHistory(), refreshAgentEvents(), refreshAgentActionRequests(), refreshAgentPlans(), refreshAgentCycles(), refreshTasks(), refreshApplicationPlans(), refreshAutomationStatus(), refreshOnboardingHealth(), refreshChat(), refreshLLMConfig()])
+    Promise.all([refresh(), refreshSources(), refreshSourceCandidates(), refreshSourceOperations(), refreshCompanies(), refreshRuns(), refreshSettings(), refreshProfile(), refreshBriefing(), refreshAgentState(), refreshDutyReport(), refreshAgentReview(), refreshAgentReviewHistory(), refreshAgentEvents(), refreshAgentActionRequests(), refreshAgentPlans(), refreshAgentCycles(), refreshPreferenceInsights(), refreshTasks(), refreshApplicationPlans(), refreshAutomationStatus(), refreshOnboardingHealth(), refreshChat(), refreshLLMConfig()])
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
@@ -576,6 +583,28 @@ export default function App() {
       setError(err instanceof Error ? err.message : t("error.runFailed"));
     } finally {
       setRunning(false);
+    }
+  }
+
+  async function handleOnboardingStep(stepKey: string) {
+    switch (stepKey) {
+      case "profile":
+        setActiveView("profile");
+        return;
+      case "sources":
+        setActiveView("companies");
+        await handleRunSourceDiscovery();
+        return;
+      case "crawl":
+        setActiveView("runs");
+        await handleRunCrawl();
+        return;
+      case "model":
+      case "reports":
+        setActiveView("settings");
+        return;
+      default:
+        setActiveView("dashboard");
     }
   }
 
@@ -1270,6 +1299,7 @@ export default function App() {
       refreshAgentActionRequests(),
       refreshAgentPlans(),
       refreshAgentCycles(),
+      refreshPreferenceInsights(),
       refreshTasks(),
       refreshApplicationPlans(),
       refreshAutomationStatus(),
@@ -1318,8 +1348,9 @@ export default function App() {
     await refreshAgentReviewHistory();
     await refreshAgentEvents();
     await refreshTasks();
-      await refreshAgentState();
-      await refreshAutomationStatus();
+    await refreshAgentState();
+    await refreshAutomationStatus();
+    await refreshPreferenceInsights();
   }
 
   return (
@@ -1363,6 +1394,8 @@ export default function App() {
             <ProductReadinessPanel items={readinessItems} busy={running || seedingSources || recommendedRunning} />
 
             <AgentWorkPlansPanel plans={agentPlans} onCreateTodayPlan={handleCreateTodayPlan} busy={planningToday} />
+
+            <PreferenceInsightsPanel insights={preferenceInsights} />
 
             <AgentActionRequestsPanel
               requests={agentActionRequests}
@@ -1805,8 +1838,13 @@ export default function App() {
               {(onboardingHealth.wizard_steps || []).map((step, index) => (
                 <div className={step.done ? "wizard-step done" : "wizard-step"} key={step.key || step.title}>
                   <span>{index + 1}</span>
-                  <strong>{step.title}</strong>
-                  <small>{step.detail}</small>
+                  <div>
+                    <strong>{step.title}</strong>
+                    <small>{step.detail}</small>
+                  </div>
+                  <button type="button" onClick={() => handleOnboardingStep(step.key)} disabled={step.done || running || discoveringSources}>
+                    {step.done ? t("action.done") : step.action}
+                  </button>
                 </div>
               ))}
             </div>
@@ -2418,6 +2456,7 @@ function AgentDutyReportPanel({
   const { t } = useLang();
   const topDecision = report.needs_decision.slice(0, 3);
   const sourceIssues = report.source_issues.slice(0, 3);
+  const recommended = (report.recommended_jobs || []).slice(0, 3);
   return (
     <section className={`duty-report duty-${report.tone}`}>
       <div className="panel-header">
@@ -2471,6 +2510,22 @@ function AgentDutyReportPanel({
           {sourceIssues.length === 0 && <div className="empty-source">{t("empty.sourcesStable")}</div>}
         </div>
       </div>
+      {(report.learning_summary || recommended.length > 0) && (
+        <div className="duty-learning">
+          {report.learning_summary && <strong>{report.learning_summary}</strong>}
+          <div className="duty-recommendations">
+            {recommended.map((job) => (
+              <div className="duty-recommendation" key={`${job.job_id}-${job.title}`}>
+                <div>
+                  <span>{job.company} / {job.title}</span>
+                  <small>{job.city || "Unknown city"} / {t("label.score")} {job.score}</small>
+                </div>
+                <p>{job.reasons.slice(0, 2).join(" · ") || "Ranked by profile and decision history."}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="duty-summary">
         <span>{report.summary.new_jobs} {t("run.new")}</span>
         <span>{report.summary.strong_matches} {t("dutyReport.strong")}</span>
@@ -3155,6 +3210,75 @@ function ProductReadinessPanel({
             </button>
           </div>
         ))}
+      </div>
+    </section>
+  );
+}
+
+function PreferenceInsightsPanel({ insights }: { insights: AgentPreferenceInsights | null }) {
+  const { t } = useLang();
+  const learnedPositive = [
+    ...(insights?.interested_companies || []),
+    ...(insights?.interested_directions || []),
+  ].slice(0, 6);
+  const learnedNegative = [
+    ...(insights?.ignored_companies || []),
+    ...(insights?.ignored_directions || []),
+  ].slice(0, 6);
+  const recommendations = insights?.recommended_jobs?.slice(0, 3) || [];
+
+  return (
+    <section className="preference-insights-panel">
+      <div className="panel-header">
+        <div>
+          <h2>Learning Insights</h2>
+          <span>{insights?.summary || "Waiting for your first Interested / Ignore decision"}</span>
+        </div>
+        <small>{insights ? `${insights.total_decisions} decisions` : "0 decisions"}</small>
+      </div>
+      <div className="preference-insights-grid">
+        <div className="preference-signal-card">
+          <strong>Preference memory</strong>
+          <div className="preference-signal-list">
+            {learnedPositive.map((signal) => (
+              <span className="preference-chip positive" title={signal.evidence} key={`positive-${signal.label}`}>
+                {signal.label} x{signal.count}
+              </span>
+            ))}
+            {learnedPositive.length === 0 && <small>No positive preference learned yet.</small>}
+          </div>
+        </div>
+        <div className="preference-signal-card">
+          <strong>Avoidance memory</strong>
+          <div className="preference-signal-list">
+            {learnedNegative.map((signal) => (
+              <span className="preference-chip negative" title={signal.evidence} key={`negative-${signal.label}`}>
+                {signal.label} x{signal.count}
+              </span>
+            ))}
+            {learnedNegative.length === 0 && <small>No avoidance signal learned yet.</small>}
+          </div>
+        </div>
+      </div>
+      <div className="preference-recommendations">
+        {recommendations.map((job) => (
+          <article className="preference-job-card" key={job.job_id}>
+            <div className="preference-job-head">
+              <div>
+                <strong>{job.company} / {job.title}</strong>
+                <span>{job.city || "Unknown city"} / {t(statusLabelKeys[job.status])}</span>
+              </div>
+              <b>{job.score}</b>
+            </div>
+            <div className="preference-job-reasons">
+              {job.reasons.slice(0, 3).map((reason) => <span className="reason-positive" key={`${job.job_id}-${reason}`}>{reason}</span>)}
+              {job.warnings.slice(0, 2).map((warning) => <span className="reason-warning" key={`${job.job_id}-${warning}`}>{warning}</span>)}
+            </div>
+          </article>
+        ))}
+        {recommendations.length === 0 && (
+          <div className="empty-source">Mark jobs as Interested or Ignore, then the employee will explain what it learned and why it ranks future jobs.</div>
+        )}
       </div>
     </section>
   );

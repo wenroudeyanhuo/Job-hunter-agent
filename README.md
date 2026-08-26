@@ -69,6 +69,7 @@ docker compose up --build
 
 - [中文文档](README.zh-CN.md)
 - [English README](README.en.md)
+- [v1.0 goal and definition of done](docs/v1.0-goal.md)
 - [Architecture](docs/architecture.md)
 - [Open source setup guide](docs/open-source-setup.md)
 - [Multi-Agent and Eino roadmap](docs/multi-agent-eino-roadmap.md)

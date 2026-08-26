@@ -86,6 +86,32 @@ func BuildFeishuDutyReportWithCycle(report jobs.AgentDutyReport, cycle *jobs.Age
 		b.WriteString(report.TrendSummary)
 		b.WriteString("\n")
 	}
+	if strings.TrimSpace(report.LearningSummary) != "" {
+		b.WriteString("\nLearning:\n")
+		b.WriteString(report.LearningSummary)
+		b.WriteString("\n")
+	}
+	if len(report.Recommended) > 0 {
+		b.WriteString("\nPersonalized recommendations:\n")
+		limit := len(report.Recommended)
+		if limit > 5 {
+			limit = 5
+		}
+		for i := 0; i < limit; i++ {
+			item := report.Recommended[i]
+			b.WriteString(fmt.Sprintf("- %s - %s - %s - score %d\n", item.Company, item.Title, item.City, item.Score))
+			if len(item.Reasons) > 0 {
+				b.WriteString("  Why: ")
+				b.WriteString(strings.Join(item.Reasons, ", "))
+				b.WriteString("\n")
+			}
+			if len(item.Warnings) > 0 {
+				b.WriteString("  Watch: ")
+				b.WriteString(strings.Join(item.Warnings, ", "))
+				b.WriteString("\n")
+			}
+		}
+	}
 	if cycle != nil && cycle.ID >= 0 && strings.TrimSpace(cycle.Summary) != "" {
 		b.WriteString("\nLatest agent cycle:\n")
 		b.WriteString(fmt.Sprintf("- Readiness: %d\n", cycle.ReadinessScore))
