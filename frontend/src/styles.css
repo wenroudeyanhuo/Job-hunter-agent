@@ -1316,6 +1316,63 @@ h2 {
   font-weight: 720;
 }
 
+.duty-learning {
+  border-top: 1px solid #edf1f7;
+  background: #fbfdff;
+  padding: 12px 16px;
+}
+
+.duty-learning > strong {
+  display: block;
+  color: #18212f;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.duty-recommendations {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.duty-recommendation {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.9fr);
+  gap: 12px;
+  align-items: start;
+  border: 1px solid #dbe6f4;
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px;
+}
+
+.duty-recommendation span,
+.duty-recommendation small,
+.duty-recommendation p {
+  display: block;
+}
+
+.duty-recommendation span {
+  color: #18212f;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.duty-recommendation small,
+.duty-recommendation p {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.duty-recommendation small {
+  margin-top: 4px;
+}
+
+.duty-recommendation p {
+  margin: 0;
+}
+
 .duty-trend {
   border-top: 1px solid #edf1f7;
   background: #f8fafc;
@@ -1423,6 +1480,151 @@ h2 {
   border-radius: 8px;
   background: #fff;
   margin-bottom: 16px;
+}
+
+.preference-insights-panel {
+  overflow: hidden;
+  border: 1px solid #d8e2ef;
+  border-radius: 8px;
+  background: #fff;
+  margin-bottom: 16px;
+}
+
+.preference-insights-panel .panel-header small {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.preference-insights-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  border-top: 1px solid #edf1f7;
+  padding: 14px 14px 0;
+}
+
+.preference-signal-card {
+  min-width: 0;
+  border: 1px solid #dbe6f4;
+  border-radius: 8px;
+  background: #fbfdff;
+  padding: 12px;
+}
+
+.preference-signal-card strong,
+.preference-signal-card small {
+  display: block;
+}
+
+.preference-signal-card strong {
+  color: #18212f;
+  font-size: 13px;
+}
+
+.preference-signal-card small {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.preference-signal-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.preference-chip {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-radius: 999px;
+  padding: 6px 9px;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.preference-chip.positive {
+  background: #e7f7f2;
+  color: #047857;
+}
+
+.preference-chip.negative {
+  background: #fff1f2;
+  color: #be123c;
+}
+
+.preference-recommendations {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+}
+
+.preference-job-card {
+  border: 1px solid #edf1f7;
+  border-radius: 8px;
+  background: #fff;
+  padding: 12px;
+}
+
+.preference-job-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+}
+
+.preference-job-head strong,
+.preference-job-head span {
+  display: block;
+}
+
+.preference-job-head strong {
+  color: #18212f;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.preference-job-head span {
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.preference-job-head b {
+  min-width: 38px;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  padding: 6px 8px;
+  text-align: center;
+  font-size: 12px;
+}
+
+.preference-job-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.preference-job-reasons span {
+  border-radius: 999px;
+  padding: 5px 8px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.reason-positive {
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.reason-warning {
+  background: #fff7ed;
+  color: #9a3412;
 }
 
 .agent-plans-panel {
@@ -1864,6 +2066,9 @@ h2 {
 }
 
 .wizard-step {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 8px;
   border: 1px solid #dbe7f5;
   border-radius: 8px;
   background: #fff;
@@ -1884,7 +2089,6 @@ h2 {
 
 .wizard-step strong {
   display: block;
-  margin-top: 6px;
   color: #334155;
   font-size: 12px;
 }
@@ -1895,6 +2099,23 @@ h2 {
   color: #64748b;
   font-size: 11px;
   line-height: 1.35;
+}
+
+.wizard-step button {
+  width: 100%;
+  border: 1px solid #cfd8e6;
+  border-radius: 6px;
+  background: #fff;
+  color: #334155;
+  padding: 7px 8px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.wizard-step:not(.done) button {
+  border-color: #1769e0;
+  background: #1769e0;
+  color: #fff;
 }
 
 .wizard-step.done {
@@ -3495,6 +3716,8 @@ td {
   .source-ops-metrics,
   .review-body,
   .readiness-grid,
+  .preference-insights-grid,
+  .onboarding-wizard,
   .duty-grid,
   .company-grid,
   .workspace {
@@ -3539,6 +3762,7 @@ td {
   .action-request-row,
   .tasks-toolbar,
   .task-row,
+  .duty-recommendation,
   .settings-grid,
   .profile-grid,
   .job-detail-grid,

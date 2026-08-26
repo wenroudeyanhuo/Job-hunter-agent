@@ -52,3 +52,20 @@ func TestBuildAgentDutyReportAsksForCrawlWhenNoRunExists(t *testing.T) {
 		t.Fatalf("expected run crawl action, got %#v", report.NextBestAction)
 	}
 }
+
+func TestAddPreferenceInsightsToDutyReportAddsPersonalizedRecommendations(t *testing.T) {
+	report := BuildAgentDutyReport(nil, nil, []domain.JobRun{{Status: "success"}})
+	report = AddPreferenceInsightsToDutyReport(report, AgentPreferenceInsights{
+		Summary: "Learned from 3 job decisions.",
+		Recommendations: []JobRecommendationInsight{
+			{Company: "Tencent", Title: "Go Backend Engineer", City: "Shenzhen", Score: 91, Reasons: []string{"Matches Go backend preference."}},
+		},
+	})
+
+	if report.LearningSummary == "" || len(report.Recommended) != 1 {
+		t.Fatalf("expected learning summary and recommendations, got %#v", report)
+	}
+	if len(report.TodaysWork) == 0 || report.TodaysWork[0].Kind != "review_recommended_jobs" {
+		t.Fatalf("expected personalized recommendation work item, got %#v", report.TodaysWork)
+	}
+}

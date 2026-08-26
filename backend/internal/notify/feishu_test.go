@@ -54,6 +54,27 @@ func TestBuildFeishuDutyReportIncludesTrendSummary(t *testing.T) {
 	}
 }
 
+func TestBuildFeishuDutyReportIncludesLearningAndRecommendations(t *testing.T) {
+	text := BuildFeishuDutyReport(jobs.AgentDutyReport{
+		Headline:        "I found work that needs your decision today.",
+		LearningSummary: "Learned from 3 job decisions.",
+		Recommended: []jobs.JobRecommendationInsight{
+			{Company: "Tencent", Title: "Go Backend Engineer", City: "Shenzhen", Score: 91, Reasons: []string{"Matches Go backend preference."}},
+		},
+		NextBestAction: jobs.AgentReportAction{
+			Label:  "Review recommendations",
+			Reason: "These are promising.",
+		},
+	})
+
+	wants := []string{"Learning:", "Learned from 3 job decisions.", "Personalized recommendations:", "Tencent - Go Backend Engineer - Shenzhen - score 91", "Matches Go backend preference."}
+	for _, want := range wants {
+		if !strings.Contains(text, want) {
+			t.Fatalf("expected duty report to contain %q, got:\n%s", want, text)
+		}
+	}
+}
+
 func TestBuildFeishuDutyReportWithCycleIncludesAgentWork(t *testing.T) {
 	cycle := jobs.AgentCycleRecord{
 		Summary:              "Ran 4 recruiting agents and proposed 2 approval-gated actions.",

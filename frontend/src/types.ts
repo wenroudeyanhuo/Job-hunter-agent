@@ -510,6 +510,34 @@ export interface AgentCycleRecord {
   created_at: string;
 }
 
+export interface AgentPreferenceInsights {
+  generated_at: string;
+  summary: string;
+  total_decisions: number;
+  interested_companies: PreferenceSignal[];
+  ignored_companies: PreferenceSignal[];
+  interested_directions: PreferenceSignal[];
+  ignored_directions: PreferenceSignal[];
+  recommended_jobs: JobRecommendationInsight[];
+}
+
+export interface PreferenceSignal {
+  label: string;
+  count: number;
+  evidence: string;
+}
+
+export interface JobRecommendationInsight {
+  job_id: number;
+  company: string;
+  title: string;
+  city: string;
+  score: number;
+  status: JobStatus;
+  reasons: string[];
+  warnings: string[];
+}
+
 export interface MultiAgentCycleResult {
   cycle: AgentCycleRecord;
   action_requests_created: number;
@@ -568,6 +596,8 @@ export interface AgentDutyReport {
   needs_decision: AgentDecisionItem[];
   source_issues: AgentSourceIssue[];
   tasks: AgentTask[];
+  recommended_jobs: JobRecommendationInsight[];
+  learning_summary: string;
   next_best_action: AgentReportAction;
   trend_summary: string;
   latest_run?: JobRun;

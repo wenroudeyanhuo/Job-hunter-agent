@@ -216,13 +216,27 @@ func DiscoverJobCards(ctx context.Context, rawURL string, client *http.Client, l
 		return nil, fmt.Errorf("fetch job-card page returned HTTP %d", resp.StatusCode)
 	}
 
-	doc, err := html.Parse(io.LimitReader(resp.Body, maxImportBodyBytes))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxImportBodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("read job-card page: %w", err)
+	}
+	doc, err := html.Parse(bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("parse job-card page: %w", err)
 	}
 	jobs := []domain.Job{}
 	seen := map[string]struct{}{}
 	for _, job := range jobsFromJSONLD(doc, parsed) {
+		if _, exists := seen[job.ApplyURL]; exists {
+			continue
+		}
+		seen[job.ApplyURL] = struct{}{}
+		jobs = append(jobs, job)
+		if len(jobs) >= limit {
+			return jobs, nil
+		}
+	}
+	for _, job := range jobsFromEmbeddedJSON(doc, parsed) {
 		if _, exists := seen[job.ApplyURL]; exists {
 			continue
 		}
@@ -262,6 +276,89 @@ func DiscoverJobCards(ctx context.Context, rawURL string, client *http.Client, l
 	}
 	walk(doc)
 	return jobs, nil
+}
+
+func jobsFromEmbeddedJSON(doc *html.Node, base *url.URL) []domain.Job {
+	out := []domain.Job{}
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if n.Type == html.ElementNode && n.Data == "script" && n.FirstChild != nil {
+			id := strings.ToLower(attrValue(n, "id"))
+			scriptType := strings.ToLower(attrValue(n, "type"))
+			if strings.Contains(scriptType, "json") || strings.Contains(id, "__next_data__") || strings.Contains(id, "initial") {
+				var payload any
+				if err := json.Unmarshal([]byte(strings.TrimSpace(n.FirstChild.Data)), &payload); err == nil {
+					out = append(out, parseGenericJobNodes(payload, base)...)
+				}
+			}
+		}
+		for child := n.FirstChild; child != nil; child = child.NextSibling {
+			walk(child)
+		}
+	}
+	walk(doc)
+	return out
+}
+
+func parseGenericJobNodes(value any, base *url.URL) []domain.Job {
+	switch typed := value.(type) {
+	case []any:
+		out := []domain.Job{}
+		for _, item := range typed {
+			out = append(out, parseGenericJobNodes(item, base)...)
+		}
+		return out
+	case map[string]any:
+		out := []domain.Job{}
+		if job, ok := jobFromGenericJSONMap(typed, base); ok {
+			out = append(out, job)
+		}
+		for _, item := range typed {
+			out = append(out, parseGenericJobNodes(item, base)...)
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func jobFromGenericJSONMap(payload map[string]any, base *url.URL) (domain.Job, bool) {
+	title := firstJSONString(payload, "title", "name", "jobName", "positionName", "position", "job_title")
+	applyURL := firstJSONString(payload, "url", "applyUrl", "apply_url", "jobUrl", "job_url", "detailUrl", "detail_url", "link", "href")
+	if title == "" || applyURL == "" {
+		return domain.Job{}, false
+	}
+	resolved, err := base.Parse(applyURL)
+	if err != nil || resolved.Host == "" || (resolved.Scheme != "http" && resolved.Scheme != "https") {
+		return domain.Job{}, false
+	}
+	resolved.Fragment = ""
+	description := strings.Join(nonEmptyStrings(
+		firstJSONString(payload, "description", "jobDesc", "job_desc", "desc"),
+		firstJSONString(payload, "responsibilities", "responsibility", "duty"),
+		firstJSONString(payload, "requirements", "requirement", "qualification"),
+	), " ")
+	company := firstJSONString(payload, "company", "companyName", "company_name", "department")
+	if company == "" {
+		company = companyFromHost(base.Hostname())
+	}
+	city := cityFromText(firstJSONString(payload, "city", "location", "workCity", "work_city", "workLocation", "work_location") + " " + title + " " + description)
+	job := domain.Job{
+		Company:       company,
+		Title:         title,
+		City:          city,
+		DirectionTags: directionTagsFromText(title + " " + description),
+		Description:   cardDescription(description, title),
+		SourceName:    base.Hostname(),
+		SourceURL:     base.String(),
+		ApplyURL:      resolved.String(),
+		DeadlineAt:    deadlineFromJSONString(firstJSONString(payload, "deadline", "validThrough", "endDate", "end_time", "expireTime")),
+		DiscoveredAt:  time.Now().UTC(),
+	}
+	if !LooksLikeConcreteJobPosting(job) {
+		return domain.Job{}, false
+	}
+	return job, true
 }
 
 func jobsFromJSONLD(doc *html.Node, base *url.URL) []domain.Job {
@@ -383,6 +480,27 @@ func jsonNestedString(value any, path ...string) string {
 		current = mapping[key]
 	}
 	return jsonString(current)
+}
+
+func firstJSONString(payload map[string]any, keys ...string) string {
+	for _, key := range keys {
+		value := jsonString(payload[key])
+		if value != "" {
+			return cleanText(value)
+		}
+	}
+	return ""
+}
+
+func nonEmptyStrings(values ...string) []string {
+	out := []string{}
+	for _, value := range values {
+		value = cleanText(value)
+		if value != "" {
+			out = append(out, value)
+		}
+	}
+	return out
 }
 
 func deadlineFromJSONString(value string) *time.Time {

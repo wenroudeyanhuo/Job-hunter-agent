@@ -31,6 +31,22 @@ docker compose up --build
 
 The backend stores SQLite data in the `job-hunter-data` volume. Keep that volume if you want the employee's memory, cycles, jobs, and decisions to persist.
 
+Recommended personal long-running setup:
+
+```powershell
+copy .env.example .env
+docker compose up -d --build
+docker compose logs -f backend
+```
+
+Use `docker compose down` to stop the service while keeping data. Avoid `docker compose down -v` unless you intentionally want to remove the SQLite database volume.
+
+SQLite backup example:
+
+```powershell
+docker compose exec backend sh -lc "cp /data/job-hunter-agent.db /data/job-hunter-agent.db.backup"
+```
+
 ## Optional Feishu
 
 Set `FEISHU_WEBHOOK_URL` or paste a webhook in Settings. Dashboard settings take priority over the environment variable.
@@ -77,6 +93,8 @@ The scheduler requires a long-lived backend process. It handles:
 - follow-up Agent Cycles after scheduled work.
 
 Static hosting such as Vercel is suitable for the frontend only. The backend needs persistent storage and an always-on process, or a hosted worker/database setup.
+
+For personal use, keep the backend process running through Docker Compose, a systemd service, or a small VPS process manager. Static frontend hosting alone is not enough because the scheduler, crawler, SQLite database, Feishu reports, and model calls live in the backend.
 
 ## Safety Boundaries
 

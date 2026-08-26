@@ -173,10 +173,31 @@ func mergeDiscoveredJobWithCard(job domain.Job, card domain.Job) domain.Job {
 	if job.Description == "" {
 		job.Description = card.Description
 	}
-	if job.Company == "" {
+	if job.Company == "" || job.Company == companyFromSourceHost(job.SourceName) {
 		job.Company = card.Company
 	}
+	if job.DeadlineAt == nil {
+		job.DeadlineAt = card.DeadlineAt
+	}
+	if len(job.DirectionTags) == 0 {
+		job.DirectionTags = card.DirectionTags
+	}
 	return job
+}
+
+func companyFromSourceHost(sourceName string) string {
+	sourceName = strings.TrimSpace(strings.ToLower(sourceName))
+	if sourceName == "" {
+		return ""
+	}
+	parts := strings.Split(sourceName, ".")
+	for _, part := range parts {
+		if part == "" || part == "www" || part == "jobs" || part == "careers" || part == "campus" || part == "apply" {
+			continue
+		}
+		return strings.ToUpper(part[:1]) + part[1:]
+	}
+	return sourceName
 }
 
 func betterCardTitle(current string, card string) bool {
