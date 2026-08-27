@@ -50,6 +50,7 @@ func (r *Runner) Run(ctx context.Context, trigger string) (RunSummary, error) {
 	if err != nil {
 		return RunSummary{}, err
 	}
+	persistCtx := context.WithoutCancel(ctx)
 
 	summary := RunSummary{SourcesTotal: len(r.collectors)}
 	errors := []string{}
@@ -67,7 +68,7 @@ func (r *Runner) Run(ctx context.Context, trigger string) (RunSummary, error) {
 		if err != nil {
 			summary.SourcesFailed++
 			errors = append(errors, fmt.Sprintf("%s: %v", collector.Name(), err))
-			_, _ = r.repo.CreateRunSourceResult(ctx, jobs.RunSourceResultInput{
+			_, _ = r.repo.CreateRunSourceResult(persistCtx, jobs.RunSourceResultInput{
 				JobRunID:     run.ID,
 				SourceName:   collector.Name(),
 				Status:       "failed",
@@ -94,7 +95,7 @@ func (r *Runner) Run(ctx context.Context, trigger string) (RunSummary, error) {
 				summary.ManualCheckCount++
 				stat.ManualCheckCount++
 			}
-			persisted, duplicated, err := r.repo.UpsertJob(ctx, scored.Job)
+			persisted, duplicated, err := r.repo.UpsertJob(persistCtx, scored.Job)
 			if err != nil {
 				errors = append(errors, fmt.Sprintf("%s upsert: %v", collector.Name(), err))
 				stat.Status = "partial_success"
@@ -121,10 +122,10 @@ func (r *Runner) Run(ctx context.Context, trigger string) (RunSummary, error) {
 			if stat.Status == "" {
 				stat.Status = "success"
 			}
-			if _, err := r.repo.CreateRunSourceResult(ctx, *stat); err != nil {
+			if _, err := r.repo.CreateRunSourceResult(persistCtx, *stat); err != nil {
 				errors = append(errors, fmt.Sprintf("%s source result: %v", collector.Name(), err))
 			}
-			if err := r.updateSourceHealth(ctx, *stat); err != nil {
+			if err := r.updateSourceHealth(persistCtx, *stat); err != nil {
 				errors = append(errors, fmt.Sprintf("%s source health: %v", collector.Name(), err))
 			}
 		}
@@ -135,7 +136,7 @@ func (r *Runner) Run(ctx context.Context, trigger string) (RunSummary, error) {
 	if summary.SourcesFailed > 0 || len(errors) > 0 {
 		status = "partial_success"
 	}
-	if err := r.repo.FinishRun(ctx, run.ID, jobs.RunUpdate{
+	if err := r.repo.FinishRun(persistCtx, run.ID, jobs.RunUpdate{
 		Status:           status,
 		SourcesTotal:     summary.SourcesTotal,
 		SourcesSuccess:   summary.SourcesSuccess,

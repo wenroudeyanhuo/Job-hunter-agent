@@ -51,6 +51,13 @@ func TestDBSourceCollectorReadsEnabledSources(t *testing.T) {
 	}
 }
 
+func TestDBSourceCollectorUsesTimeoutClientByDefault(t *testing.T) {
+	collector := NewDBSourceCollector(nil, nil)
+	if collector.client == nil || collector.client.Timeout <= 0 {
+		t.Fatalf("expected default timeout client, got %#v", collector.client)
+	}
+}
+
 func TestDBSourceCollectorUsesOfficialParserType(t *testing.T) {
 	sourceServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{

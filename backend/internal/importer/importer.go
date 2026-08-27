@@ -18,6 +18,7 @@ import (
 
 const maxImportBodyBytes = 1 << 20
 const defaultUserAgent = "JobHunterAgent/0.1 (+https://github.com/wenroudeyanhuo/Job-hunter-agent)"
+const defaultImportHTTPTimeout = 20 * time.Second
 
 var recruitmentLinkKeywords = []string{
 	"job",
@@ -61,7 +62,7 @@ func ImportURL(ctx context.Context, rawURL string, client *http.Client) (domain.
 		return domain.Job{}, err
 	}
 	if client == nil {
-		client = http.DefaultClient
+		client = &http.Client{Timeout: defaultImportHTTPTimeout}
 	}
 
 	job := domain.Job{
@@ -124,7 +125,7 @@ func DiscoverLinks(ctx context.Context, rawURL string, client *http.Client, limi
 		return []string{}, nil
 	}
 	if client == nil {
-		client = http.DefaultClient
+		client = &http.Client{Timeout: defaultImportHTTPTimeout}
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
@@ -199,7 +200,7 @@ func DiscoverJobCards(ctx context.Context, rawURL string, client *http.Client, l
 		return []domain.Job{}, nil
 	}
 	if client == nil {
-		client = http.DefaultClient
+		client = &http.Client{Timeout: defaultImportHTTPTimeout}
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
@@ -526,7 +527,7 @@ func DiscoverPaginationLinks(ctx context.Context, rawURL string, client *http.Cl
 		return []string{}, nil
 	}
 	if client == nil {
-		client = http.DefaultClient
+		client = &http.Client{Timeout: defaultImportHTTPTimeout}
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
 	if err != nil {

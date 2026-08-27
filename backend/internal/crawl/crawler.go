@@ -16,6 +16,7 @@ import (
 const discoveredLinksPerSource = 20
 const publicURLImportAttempts = 3
 const discoveredPaginationPagesPerSource = 3
+const defaultCollectorHTTPTimeout = 20 * time.Second
 
 type Collector interface {
 	Name() string
@@ -38,7 +39,7 @@ type PublicURLCollector struct {
 }
 
 func NewPublicURLCollector(urls []string, client *http.Client) PublicURLCollector {
-	return PublicURLCollector{urls: urls, client: client}
+	return PublicURLCollector{urls: urls, client: collectorHTTPClient(client)}
 }
 
 func (PublicURLCollector) Name() string {
@@ -225,7 +226,14 @@ type DBSourceCollector struct {
 }
 
 func NewDBSourceCollector(repo SourceLister, client *http.Client) DBSourceCollector {
-	return DBSourceCollector{repo: repo, client: client}
+	return DBSourceCollector{repo: repo, client: collectorHTTPClient(client)}
+}
+
+func collectorHTTPClient(client *http.Client) *http.Client {
+	if client != nil {
+		return client
+	}
+	return &http.Client{Timeout: defaultCollectorHTTPTimeout}
 }
 
 func (DBSourceCollector) Name() string {

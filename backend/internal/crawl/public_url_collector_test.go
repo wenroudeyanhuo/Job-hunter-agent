@@ -26,6 +26,13 @@ func TestPublicURLCollectorImportsConfiguredURLs(t *testing.T) {
 	}
 }
 
+func TestPublicURLCollectorUsesTimeoutClientByDefault(t *testing.T) {
+	collector := NewPublicURLCollector(nil, nil)
+	if collector.client == nil || collector.client.Timeout <= 0 {
+		t.Fatalf("expected default timeout client, got %#v", collector.client)
+	}
+}
+
 func TestPublicURLCollectorKeepsInvalidURLForManualCheck(t *testing.T) {
 	collector := NewPublicURLCollector([]string{"not-a-url"}, nil)
 	jobs, err := collector.Collect(context.Background())

@@ -191,6 +191,39 @@ func TestRunnerUpdatesSourceHealth(t *testing.T) {
 	}
 }
 
+func TestRunnerFinishesRunWhenCollectorContextIsCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	repo := jobs.NewRepository(conn)
+	runner := NewRunner(repo, []Collector{
+		cancelingCollector{cancel: cancel},
+	})
+
+	summary, err := runner.Run(ctx, "manual")
+	if err != nil {
+		t.Fatalf("run should persist partial failure summary after cancellation: %v", err)
+	}
+	if summary.SourcesFailed != 1 {
+		t.Fatalf("expected failed collector in summary, got %#v", summary)
+	}
+	runs, err := repo.ListRuns(context.Background())
+	if err != nil {
+		t.Fatalf("list runs: %v", err)
+	}
+	if len(runs) != 1 {
+		t.Fatalf("expected one run, got %#v", runs)
+	}
+	if runs[0].Status == "running" {
+		t.Fatalf("run should not remain running after cancellation: %#v", runs[0])
+	}
+	if runs[0].ErrorSummary == "" {
+		t.Fatalf("expected cancellation error summary, got %#v", runs[0])
+	}
+}
+
 type fakeCollector struct {
 	name string
 	jobs []domain.Job
@@ -203,4 +236,18 @@ func (f fakeCollector) Name() string {
 
 func (f fakeCollector) Collect(context.Context) ([]domain.Job, error) {
 	return f.jobs, f.err
+}
+
+type cancelingCollector struct {
+	cancel context.CancelFunc
+}
+
+func (c cancelingCollector) Name() string {
+	return "canceling"
+}
+
+func (c cancelingCollector) Collect(ctx context.Context) ([]domain.Job, error) {
+	c.cancel()
+	<-ctx.Done()
+	return nil, ctx.Err()
 }
