@@ -15,6 +15,10 @@ services:
       DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-chat}
       DISABLE_SCHEDULER: ${DISABLE_SCHEDULER:-0}
       AGENT_ORCHESTRATOR: ${AGENT_ORCHESTRATOR:-deterministic}
+      SEMANTIC_MEMORY_PROVIDER: ${SEMANTIC_MEMORY_PROVIDER:-local_hash}
+      QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-job_hunter_memory}
+      QDRANT_API_KEY: ${QDRANT_API_KEY:-}
     volumes:
       - job-hunter-data:/data
     ports:
@@ -28,5 +32,15 @@ services:
     ports:
       - "5173:80"
 
+  qdrant:
+    image: qdrant/qdrant:v1.12.6
+    profiles:
+      - qdrant
+    volumes:
+      - job-hunter-qdrant:/qdrant/storage
+    ports:
+      - "6333:6333"
+
 volumes:
   job-hunter-data:
+  job-hunter-qdrant:

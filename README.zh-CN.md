@@ -18,10 +18,29 @@ Job Hunter Agent 是一个面向秋招/校招场景的本地优先数字员工�
 - 数字员工侧边栏、全局聊天、指令中心、建议动作审批队列。
 - Agent Tool Registry，统一描述工具、风险等级、审批要求和执行预览。
 - DeepSeek/OpenAI-compatible 模型可选接入，本地规则兜底。
-- 多 Agent 运行时：Source Scout、Job Analyst、Memory Keeper、Planner。
+- 多 Agent 运行时：Source Scout、Job Analyst、Memory Keeper、Planner、Tool Planner、Observer。
 - 可选 Eino Graph 编排路径，默认 deterministic 编排保证零配置可运行。
 - 飞书机器人测试消息、采集摘要、值班日报和 Agent Cycle 摘要。
-- Docker Compose 本地部署，前端可单独静态部署。
+- Docker Compose 本地部署，Qdrant 可通过 profile 启动，前端可单独静态部署。
+
+## 架构图
+
+```mermaid
+flowchart LR
+  Sources["公开招聘来源<br/>公司官网、求职平台、手动 URL"] --> Backend["Go 后端<br/>采集、解析、评分、Agent runtime"]
+  Backend --> SQLite["SQLite<br/>岗位、任务、计划、Cycle、决策"]
+  SQLite --> Dashboard["React 看板<br/>机会、任务、审批、记忆"]
+  SQLite --> Agent["数字员工<br/>Source Scout / Job Analyst / Memory Keeper / Planner / Observer"]
+  Agent --> Approval["人工审批<br/>Suggested Actions"]
+  Approval --> Tools["Tool Executor<br/>采集、验证来源、刷新任务、发送报告"]
+  Tools --> SQLite
+  Agent -. 可选模型 .-> Model["DeepSeek / OpenAI-compatible"]
+  Agent -. 可选编排 .-> Eino["Eino Graph"]
+  SQLite -. 可选检索 .-> Qdrant["Qdrant 向量检索<br/>Docker Compose profile"]
+  Tools -. 可选通知 .-> Feishu["飞书机器人"]
+```
+
+完整架构说明见 [docs/architecture.md](docs/architecture.md)。
 
 ## 核心能力
 
@@ -101,6 +120,14 @@ Docker Compose：
 docker compose up --build
 ```
 
+可选 Qdrant 语义记忆：
+
+```powershell
+$env:SEMANTIC_MEMORY_PROVIDER="qdrant"
+$env:QDRANT_URL="http://qdrant:6333"
+docker compose --profile qdrant up --build
+```
+
 ## 环境变量
 
 ```env
@@ -145,10 +172,7 @@ DEEPSEEK_MODEL=deepseek-chat
 ## 可选 Eino Graph
 
 ```powershell
-cd backend
-go get github.com/cloudwego/eino@latest
-$env:AGENT_ORCHESTRATOR="eino_graph"
-go run -tags eino ./cmd/server
+.\scripts\run-eino.ps1
 ```
 
 验证：
@@ -158,6 +182,8 @@ go test -tags eino ./internal/jobs -run TestEinoRecruitingOrchestratorRunsGraph
 ```
 
 不开 `eino` build tag 时，即使配置了 `AGENT_ORCHESTRATOR=eino_graph`，项目也会安全回退到 deterministic 编排。
+
+简历相关能力和项目证据链见 [docs/resume-proof.md](docs/resume-proof.md)。
 
 ## 第一次使用建议
 

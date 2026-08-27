@@ -1826,6 +1826,8 @@ export default function App() {
               <span>{onboardingHealth.has_crawl_history ? t("onboarding.crawlReady") : t("onboarding.crawlMissing")}</span>
               <span>{onboardingHealth.feishu_configured ? t("label.webhookConfigured") : t("label.webhookMissing")}</span>
               <span>{onboardingHealth.model_configured ? t("chat.modelOnline") : t("chat.localRules")}</span>
+              <span>Orchestrator: {agentState?.cycle.orchestrator_provider || "deterministic"}</span>
+              <span>Memory: {agentState?.memory.semantic_provider || "local_hash"}</span>
             </div>
             {onboardingHealth.next_steps.length > 0 && (
               <div className="onboarding-next-steps">

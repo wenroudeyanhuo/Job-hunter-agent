@@ -47,6 +47,16 @@ SQLite backup example:
 docker compose exec backend sh -lc "cp /data/job-hunter-agent.db /data/job-hunter-agent.db.backup"
 ```
 
+Optional Qdrant semantic memory:
+
+```powershell
+$env:SEMANTIC_MEMORY_PROVIDER="qdrant"
+$env:QDRANT_URL="http://qdrant:6333"
+docker compose --profile qdrant up --build
+```
+
+The default `local_hash` provider remains zero-config. Qdrant is useful when a personal deployment wants external vector search while keeping SQLite as the local system of record.
+
 ## Optional Feishu
 
 Set `FEISHU_WEBHOOK_URL` or paste a webhook in Settings. Dashboard settings take priority over the environment variable.
@@ -70,10 +80,7 @@ The backend treats DeepSeek as an OpenAI-compatible chat-completions endpoint an
 The default agent orchestration is deterministic so the project works without optional dependencies. Users who want to try the Eino Graph path can install Eino and run the backend with the `eino` build tag:
 
 ```powershell
-cd backend
-go get github.com/cloudwego/eino@latest
-$env:AGENT_ORCHESTRATOR="eino_graph"
-go run -tags eino ./cmd/server
+.\scripts\run-eino.ps1
 ```
 
 Tagged verification:
@@ -81,6 +88,8 @@ Tagged verification:
 ```powershell
 go test -tags eino ./internal/jobs -run TestEinoRecruitingOrchestratorRunsGraph
 ```
+
+For a resume-facing mapping of claims to code and tests, see [docs/resume-proof.md](resume-proof.md).
 
 ## Scheduler Requirements
 
