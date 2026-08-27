@@ -18,7 +18,7 @@ The project is in an early productization phase and already provides a local end
 - Digital employee sidebar, global chat, command center, and suggested-action approval queue.
 - Agent Tool Registry with tool descriptions, risk levels, approval requirements, and execution previews.
 - Optional DeepSeek/OpenAI-compatible model mode with local-rule fallback.
-- Multi-agent runtime: Source Scout, Job Analyst, Memory Keeper, Planner, and Observer.
+- Multi-agent runtime: Source Scout, Job Analyst, Memory Keeper, Planner, Tool Planner, and Observer.
 - Optional Eino Graph orchestration path with deterministic fallback by default.
 - Feishu test notifications, crawl summaries, duty reports, and Agent Cycle summaries.
 - Docker Compose for local deployment; frontend can be deployed separately as static assets.
@@ -35,7 +35,8 @@ flowchart LR
   Approval --> Tools["Tool Executor<br/>crawl, validate sources, refresh tasks, send reports"]
   Tools --> SQLite
   Agent -. optional .-> Model["DeepSeek / OpenAI-compatible model"]
-  SQLite -. optional .-> Qdrant["Qdrant vector search"]
+  Agent -. optional graph .-> Eino["Eino Graph"]
+  SQLite -. optional .-> Qdrant["Qdrant vector search<br/>Docker Compose profile"]
   Tools -. optional .-> Feishu["Feishu bot"]
 ```
 
@@ -119,6 +120,14 @@ Docker Compose:
 docker compose up --build
 ```
 
+Optional Qdrant semantic memory:
+
+```powershell
+$env:SEMANTIC_MEMORY_PROVIDER="qdrant"
+$env:QDRANT_URL="http://qdrant:6333"
+docker compose --profile qdrant up --build
+```
+
 ## Environment
 
 ```env
@@ -163,10 +172,7 @@ DEEPSEEK_MODEL=deepseek-chat
 ## Optional Eino Graph
 
 ```powershell
-cd backend
-go get github.com/cloudwego/eino@latest
-$env:AGENT_ORCHESTRATOR="eino_graph"
-go run -tags eino ./cmd/server
+.\scripts\run-eino.ps1
 ```
 
 Verification:
@@ -176,6 +182,8 @@ go test -tags eino ./internal/jobs -run TestEinoRecruitingOrchestratorRunsGraph
 ```
 
 Without the `eino` build tag, `AGENT_ORCHESTRATOR=eino_graph` safely falls back to deterministic orchestration.
+
+The resume-facing proof checklist is kept in [docs/resume-proof.md](docs/resume-proof.md).
 
 ## First Run Checklist
 

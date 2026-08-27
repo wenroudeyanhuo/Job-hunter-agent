@@ -30,7 +30,8 @@ flowchart LR
   Approval --> Tools["Tool Executor<br/>crawl, validate sources, refresh tasks, send reports"]
   Tools --> SQLite
   Agent -. optional .-> Model["DeepSeek / OpenAI-compatible model"]
-  SQLite -. optional .-> Qdrant["Qdrant vector search"]
+  Agent -. optional graph .-> Eino["Eino Graph"]
+  SQLite -. optional .-> Qdrant["Qdrant vector search<br/>Docker Compose profile"]
   Tools -. optional .-> Feishu["Feishu bot"]
 ```
 
@@ -73,6 +74,7 @@ docker compose up --build
 - [Architecture](docs/architecture.md)
 - [Open source setup guide](docs/open-source-setup.md)
 - [Multi-Agent and Eino roadmap](docs/multi-agent-eino-roadmap.md)
+- [Resume proof checklist](docs/resume-proof.md)
 - [数字员工产品化路线图](docs/product-agent-roadmap.zh-CN.md)
 
 ## Safety Boundary / 安全边界

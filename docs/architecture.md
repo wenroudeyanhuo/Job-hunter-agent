@@ -25,13 +25,13 @@ flowchart LR
 
   subgraph Storage["Local-first Storage"]
     SQLite["SQLite<br/>jobs, sources, tasks, plans, cycles, decisions"]
-    SemanticMemory["Semantic Memory<br/>local_hash embeddings"]
-    Qdrant["Optional Qdrant<br/>external vector search"]
+    SemanticMemory["Semantic Memory<br/>local_hash provider by default"]
+    Qdrant["Optional Qdrant<br/>external vector search / Compose profile"]
   end
 
   subgraph OptionalAI["Optional AI Orchestration"]
     DeepSeek["DeepSeek or OpenAI-compatible chat"]
-    Eino["Optional Eino Graph"]
+    Eino["Optional Eino Graph<br/>-tags eino"]
   end
 
   subgraph Outputs["User Surfaces"]
@@ -115,11 +115,13 @@ flowchart TB
   Local["Required local stack<br/>Go backend + React frontend + SQLite"]
   Optional["Optional integrations"]
   Model["DeepSeek / OpenAI-compatible model"]
-  Vector["Qdrant vector search"]
+  Compose["Docker Compose<br/>backend + frontend + volumes"]
+  Vector["Qdrant vector search<br/>profile: qdrant"]
   Notify["Feishu incoming bot"]
   Graph["Eino Graph build tag"]
 
-  Local --> Optional
+  Local --> Compose
+  Compose --> Optional
   Optional --> Model
   Optional --> Vector
   Optional --> Notify
