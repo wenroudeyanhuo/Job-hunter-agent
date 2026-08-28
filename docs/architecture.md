@@ -18,14 +18,15 @@ flowchart LR
     Scheduler["Scheduler<br/>09:00 / 12:00 / 18:00"]
     Crawlers["Collectors and Importers<br/>official adapters + generic HTML + JSON-LD"]
     Scoring["Filtering and Scoring<br/>profile rules + decision feedback"]
-    AgentRuntime["Agent Runtime<br/>Source Scout / Job Analyst / Memory Keeper / Planner / Observer"]
-    ToolRegistry["Agent Tool Registry<br/>risk, approval, preview"]
+    AgentRuntime["Agent Runtime<br/>Source Scout / Job Analyst / Memory Keeper / Planner / Tool Planner / Observer"]
+    ToolRegistry["Structured Agent Tool Registry<br/>schema, risk, approval, preview"]
+    ApprovalQueue["Human Approval Queue<br/>Suggested Actions"]
     ToolExecutor["Tool Executor<br/>approved actions only"]
   end
 
   subgraph Storage["Local-first Storage"]
     SQLite["SQLite<br/>jobs, sources, tasks, plans, cycles, decisions"]
-    SemanticMemory["Semantic Memory<br/>local_hash provider by default"]
+    SemanticMemory["Semantic Memory<br/>jobs, decisions, preference reflections"]
     Qdrant["Optional Qdrant<br/>external vector search / Compose profile"]
   end
 
@@ -56,9 +57,11 @@ flowchart LR
   DeepSeek -. model-enhanced decisions .-> AgentRuntime
   Eino -. graph runner .-> AgentRuntime
   AgentRuntime --> ToolRegistry
-  ToolRegistry --> ToolExecutor
+  ToolRegistry --> ApprovalQueue
+  ApprovalQueue --> ToolExecutor
   ToolExecutor --> SQLite
   ToolExecutor --> Feishu
+  ToolExecutor --> AgentRuntime
   API --> Dashboard
   API --> Chat
   SQLite --> Dashboard
@@ -77,15 +80,16 @@ flowchart TD
   Planner["Planner<br/>daily work and safe next steps"]
   ToolPlanner["Tool Planner<br/>structured tool calls"]
   Approval["Human approval gate<br/>Suggested Actions"]
-  Executor["Tool Executor<br/>crawl, refresh tasks, send report, validate sources"]
+  Executor["Tool Executor<br/>crawl, inspect sources, generate plans, refresh tasks, send report, validate sources"]
   Observer["Observer<br/>execution receipt and re-plan signal"]
+  Replan["Re-plan Proposal<br/>next approval-gated actions"]
   Persist["Persist<br/>Agent Cycle + autonomy_plan"]
 
   Observe --> SourceScout --> JobAnalyst --> MemoryKeeper --> Planner --> ToolPlanner
   ToolPlanner --> Approval
   Approval -->|approved| Executor
   Approval -->|dismissed| Persist
-  Executor --> Observer --> Persist
+  Executor --> Observer --> Replan --> Persist
   Persist --> Observe
 ```
 
@@ -100,9 +104,11 @@ flowchart LR
   Normalize["Normalize<br/>company, title, city, apply URL"]
   Score["Score<br/>profile fit + feedback learning"]
   Store["Store<br/>SQLite jobs and semantic memory"]
+  Reflect["Reflect<br/>learned preferences from decisions"]
   Review["Review queue<br/>manual_check and parser gaps"]
 
   SourcePool --> Validate --> Crawl --> Parse --> Normalize --> Score --> Store
+  Store --> Reflect --> Store
   Parse -->|low confidence| Review
   Review -->|accepted signals| Score
   Review -->|parser gap| SourcePool

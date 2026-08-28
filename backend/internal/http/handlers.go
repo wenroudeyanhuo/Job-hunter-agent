@@ -259,10 +259,15 @@ func (h *Handlers) RebuildSemanticMemory(c *gin.Context) {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
+	reflections, err := h.Repo.RefreshMemoryReflections(c.Request.Context())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
 	h.recordAgentEvent(c, jobs.AgentEventInput{
 		Type:    "semantic_memory_rebuilt",
 		Title:   "Rebuilt semantic memory",
-		Summary: "Indexed " + strconv.Itoa(result.Created) + " job memories for semantic search.",
+		Summary: "Indexed " + strconv.Itoa(result.Created) + " job memories and refreshed " + strconv.Itoa(reflections.Created) + " preference reflections for semantic search.",
 		Level:   "success",
 	})
 	c.JSON(http.StatusOK, result)
@@ -351,7 +356,7 @@ func (h *Handlers) modelAgentInsights(ctx context.Context, input jobs.MultiAgent
 	}
 	cycle := jobs.RunRecruitingAgentCycle(input)
 	prompt := fmt.Sprintf(`Return JSON only with this shape:
-{"insights":[{"agent_key":"source_scout|job_analyst|memory_keeper|planner|observer","decision":"concise decision","tool_calls":[{"name":"tool_name","target":"...","detail":"...","arguments":{}}],"actions":[{"type":"legacy_tool_name","target":"...","detail":"..."}]}]}
+{"insights":[{"agent_key":"source_scout|job_analyst|memory_keeper|planner|observer","decision":"concise decision","tool_calls":[{"name":"registered_tool_name","target":"...","reason":"why this tool is needed","expected_observation":"what Observer should look for","arguments":{}}],"actions":[{"type":"legacy_tool_name","target":"...","detail":"..."}]}]}
 Use only these registered tools: %s.
 You are improving a recruiting multi-agent cycle. Keep actions safe and approval-gated. Current summary: %s. Trace: %s.`,
 		jobs.ModelToolSchemaPrompt(), cycle.Summary, formatMultiAgentTrace(cycle.Trace))
@@ -425,6 +430,12 @@ func (h *Handlers) recordToolObserverCycle(c *gin.Context, request jobs.AgentAct
 	if err != nil {
 		_ = c.Error(err)
 		return
+	}
+	if len(cycle.Actions) > 0 {
+		if err := h.Repo.RecordAgentActionRequests(c.Request.Context(), "tool_observer", cycle.Actions); err != nil {
+			_ = c.Error(err)
+			return
+		}
 	}
 	h.recordAgentEvent(c, jobs.AgentEventInput{
 		Type:    "tool_observer_cycle_completed",

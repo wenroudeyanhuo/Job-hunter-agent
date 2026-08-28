@@ -16,7 +16,8 @@ Job Hunter Agent 是一个面向秋招/校招场景的本地优先数字员工�
 - 岗位采集、来源发现、来源验证、去重、过滤和评分。
 - 候选人画像、岗位详情、投递看板、每日任务队列。
 - 数字员工侧边栏、全局聊天、指令中心、建议动作审批队列。
-- Agent Tool Registry，统一描述工具、风险等级、审批要求和执行预览。
+- 结构化 Agent Tool Registry，统一描述工具 schema、风险等级、审批要求和执行预览。
+- 审批动作执行后，Observer 会根据执行结果生成下一轮 re-plan 建议。
 - DeepSeek/OpenAI-compatible 模型可选接入，本地规则兜底。
 - 多 Agent 运行时：Source Scout、Job Analyst、Memory Keeper、Planner、Tool Planner、Observer。
 - 可选 Eino Graph 编排路径，默认 deterministic 编排保证零配置可运行。
@@ -30,10 +31,12 @@ flowchart LR
   Sources["公开招聘来源<br/>公司官网、求职平台、手动 URL"] --> Backend["Go 后端<br/>采集、解析、评分、Agent runtime"]
   Backend --> SQLite["SQLite<br/>岗位、任务、计划、Cycle、决策"]
   SQLite --> Dashboard["React 看板<br/>机会、任务、审批、记忆"]
-  SQLite --> Agent["数字员工<br/>Source Scout / Job Analyst / Memory Keeper / Planner / Observer"]
+  SQLite --> Agent["数字员工<br/>Source Scout / Job Analyst / Memory Keeper / Planner / Tool Planner / Observer"]
   Agent --> Approval["人工审批<br/>Suggested Actions"]
-  Approval --> Tools["Tool Executor<br/>采集、验证来源、刷新任务、发送报告"]
+  Approval --> Tools["Tool Executor<br/>采集、巡检来源、生成计划、刷新任务、发送报告"]
   Tools --> SQLite
+  Tools --> Observer["Observer<br/>执行回执 + re-plan"]
+  Observer --> Approval
   Agent -. 可选模型 .-> Model["DeepSeek / OpenAI-compatible"]
   Agent -. 可选编排 .-> Eino["Eino Graph"]
   SQLite -. 可选检索 .-> Qdrant["Qdrant 向量检索<br/>Docker Compose profile"]
@@ -71,10 +74,10 @@ flowchart LR
 
 - 全局数字员工聊天入口，支持本地规则回复和模型增强回复。
 - 聊天上下文会注入候选人画像、近期岗位、语义记忆和最近会话。
-- 模型建议不会直接执行，必须进入 Suggested Actions 等待人工审批。
+- 模型建议会先解析成结构化 tool call，通过 Tool Registry 校验后进入 Suggested Actions 等待人工审批。
 - 审批动作会经过统一 Agent Tool Executor 执行，并记录执行结果。
-- 每次采集/日报后可以触发 Agent Cycle，记录多 Agent 观察、决策和下一步动作。
-- 本地语义记忆默认使用 deterministic hash embeddings；个人部署可选启用 Qdrant 外部向量检索，DeepSeek embeddings / pgvector 保留 provider 扩展入口。
+- 每次采集/日报后可以触发 Agent Cycle，记录多 Agent 观察、决策、执行回执和 Observer re-plan 建议。
+- 本地语义记忆默认使用 deterministic hash embeddings，并会从用户 Interested / Ignore / Applied 决策中沉淀偏好反思；个人部署可选启用 Qdrant 外部向量检索，DeepSeek embeddings / pgvector 保留 provider 扩展入口。
 
 ### 5. 飞书通知
 
@@ -258,9 +261,9 @@ v1.0 的项目终点和验收标准见 [docs/v1.0-goal.md](docs/v1.0-goal.md)。
 
 - 提升更多公司官网和求职平台的岗位解析质量。
 - 扩大默认公司池和来源发现策略，让数据不固定在少量头部公司。
-- 将模型聊天升级为更结构化的工具调用和任务规划。
-- 将 Eino Graph 从可选适配推进到更完整的多 Agent 编排。
-- 引入可替换的向量数据库或外部 embedding provider。
+- 继续增强结构化 tool calling，补充更细的参数 schema 和 dry-run 预览。
+- 将审批、执行回执、记忆检索和 re-plan 状态更多沉淀到可选 Eino Graph 路径。
+- 在当前 local_hash 和可选 Qdrant 存储之外，继续接入可替换的外部 embedding provider。
 - 增加简历版本模板、投递草稿生成和更细的跟进提醒。
 - 探索 Feishu Base、表格或其他外部系统同步。
 

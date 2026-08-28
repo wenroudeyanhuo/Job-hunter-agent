@@ -13,6 +13,8 @@ var allowedModelActionTypes = map[string]AgentCommandAction{
 	"sync_application_plans":     {Type: "sync_application_plans", Target: "applications", Detail: "Sync application preparation plans."},
 	"send_feishu_report":         {Type: "send_feishu_report", Target: "notification", Detail: "Send the current duty report to Feishu."},
 	"discover_sources":           {Type: "discover_sources", Target: "sources", Detail: "Discover new source candidates."},
+	"generate_daily_plan":        {Type: "generate_daily_plan", Target: "daily_tasks", Detail: "Generate today's recruiting work plan."},
+	"inspect_source_health":      {Type: "inspect_source_health", Target: "sources", Detail: "Inspect source health and summarize issues."},
 	"validate_source_candidates": {Type: "validate_source_candidates", Target: "sources", Detail: "Validate pending source candidates."},
 	"review_parser_gaps":         {Type: "review_parser_gaps", Target: "opportunities", Detail: "Review pages that look like parser gaps."},
 	"rebuild_semantic_memory":    {Type: "rebuild_semantic_memory", Target: "memory", Detail: "Rebuild semantic memory from tracked jobs and decisions."},
@@ -52,30 +54,21 @@ func ModelToolSchemaPrompt() string {
 }
 
 func ParseModelToolCallReply(raw string) []AgentCommandAction {
+	return ParseModelStructuredToolCallReply(raw).Actions
+}
+
+func ParseModelStructuredToolCallReply(raw string) AgentToolCallValidationResult {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return nil
+		return AgentToolCallValidationResult{}
 	}
 	var payload struct {
-		ToolCalls []AgentToolCall `json:"tool_calls"`
+		ToolCalls []AgentStructuredToolCall `json:"tool_calls"`
 	}
 	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
-		return nil
+		return AgentToolCallValidationResult{}
 	}
-	registry := NewDefaultAgentToolRegistry()
-	actions := []AgentCommandAction{}
-	for _, call := range payload.ToolCalls {
-		name := strings.TrimSpace(call.Name)
-		if _, ok := registry.Get(name); !ok {
-			continue
-		}
-		actions = append(actions, AgentCommandAction{
-			Type:   name,
-			Target: strings.TrimSpace(call.Target),
-			Detail: strings.TrimSpace(call.Detail),
-		})
-	}
-	return safeAgentActions(actions)
+	return ValidateAgentToolCalls(payload.ToolCalls, NewDefaultAgentToolRegistry())
 }
 
 func ParseModelActionReply(raw string) AgentChatReply {

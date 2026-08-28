@@ -17,16 +17,17 @@ import (
 )
 
 const (
-	SemanticMemoryKindJob           = "job"
-	SemanticMemoryKindDecision      = "decision"
-	SemanticMemoryKindProfile       = "profile"
-	SemanticMemoryProviderLocalHash = "local_hash"
-	SemanticMemoryProviderDeepSeek  = "deepseek_embedding"
-	SemanticMemoryProviderQdrant    = "qdrant"
-	SemanticMemoryProviderPGVector  = "pgvector"
-	SemanticMemoryProvider          = SemanticMemoryProviderLocalHash
-	SemanticMemoryDimensions        = 64
-	semanticMemoryMaxContent        = 1600
+	SemanticMemoryKindJob                  = "job"
+	SemanticMemoryKindDecision             = "decision"
+	SemanticMemoryKindProfile              = "profile"
+	SemanticMemoryKindPreferenceReflection = "preference_reflection"
+	SemanticMemoryProviderLocalHash        = "local_hash"
+	SemanticMemoryProviderDeepSeek         = "deepseek_embedding"
+	SemanticMemoryProviderQdrant           = "qdrant"
+	SemanticMemoryProviderPGVector         = "pgvector"
+	SemanticMemoryProvider                 = SemanticMemoryProviderLocalHash
+	SemanticMemoryDimensions               = 64
+	semanticMemoryMaxContent               = 1600
 )
 
 type EmbeddingProvider interface {
@@ -114,13 +115,138 @@ type SemanticMemoryRebuildResult struct {
 	Skipped int `json:"skipped"`
 }
 
+func (r *Repository) RefreshMemoryReflections(ctx context.Context) (SemanticMemoryRebuildResult, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT d.id, d.job_id, d.action, d.reason, d.from_status, d.to_status, d.notes, d.created_at,
+		       j.company, j.title, j.city, j.direction_tags
+		FROM job_decisions d
+		JOIN jobs j ON j.id = d.job_id
+		WHERE d.to_status IN (?, ?, ?)
+		ORDER BY d.created_at DESC, d.id DESC
+		LIMIT 200
+	`, string(domain.StatusInterested), string(domain.StatusApplied), string(domain.StatusIgnored))
+	if err != nil {
+		return SemanticMemoryRebuildResult{}, fmt.Errorf("query memory reflection decisions: %w", err)
+	}
+	defer rows.Close()
+	interestedCompanies := map[string]int{}
+	ignoredCompanies := map[string]int{}
+	interestedDirections := map[string]int{}
+	ignoredDirections := map[string]int{}
+	reasons := []string{}
+	scanned := 0
+	for rows.Next() {
+		var decision JobDecision
+		var company, title, city, tagsJSON string
+		if err := rows.Scan(&decision.ID, &decision.JobID, &decision.Action, &decision.Reason, &decision.FromStatus, &decision.ToStatus, &decision.Notes, &decision.CreatedAt, &company, &title, &city, &tagsJSON); err != nil {
+			return SemanticMemoryRebuildResult{}, fmt.Errorf("scan memory reflection decision: %w", err)
+		}
+		scanned++
+		tags := unmarshalStrings(tagsJSON)
+		switch decision.ToStatus {
+		case string(domain.StatusInterested), string(domain.StatusApplied):
+			incrementMemorySignal(interestedCompanies, company)
+			for _, tag := range tags {
+				incrementMemorySignal(interestedDirections, tag)
+			}
+		case string(domain.StatusIgnored):
+			incrementMemorySignal(ignoredCompanies, company)
+			for _, tag := range tags {
+				incrementMemorySignal(ignoredDirections, tag)
+			}
+		}
+		if strings.TrimSpace(decision.Reason) != "" {
+			reasons = append(reasons, fmt.Sprintf("%s / %s / %s: %s", company, title, city, decision.Reason))
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return SemanticMemoryRebuildResult{}, fmt.Errorf("iterate memory reflection decisions: %w", err)
+	}
+	if scanned == 0 {
+		return SemanticMemoryRebuildResult{}, nil
+	}
+	content := strings.Join([]string{
+		"learned preference reflection",
+		"interested companies: " + strings.Join(topMemorySignals(interestedCompanies, 8), ", "),
+		"ignored companies: " + strings.Join(topMemorySignals(ignoredCompanies, 8), ", "),
+		"interested directions: " + strings.Join(topMemorySignals(interestedDirections, 8), ", "),
+		"ignored directions: " + strings.Join(topMemorySignals(ignoredDirections, 8), ", "),
+		"recent decision reasons: " + strings.Join(firstNStrings(reasons, 8), " | "),
+	}, "\n")
+	item := SemanticMemoryItem{
+		Kind:        SemanticMemoryKindPreferenceReflection,
+		ReferenceID: 1,
+		Title:       "Learned recruiting preferences from user decisions",
+		Content:     content,
+		Metadata: map[string]string{
+			"scanned_decisions": fmt.Sprintf("%d", scanned),
+			"source":            "job_decisions",
+		},
+	}
+	if _, err := r.UpsertSemanticMemoryItem(ctx, item); err != nil {
+		return SemanticMemoryRebuildResult{}, err
+	}
+	return SemanticMemoryRebuildResult{Scanned: scanned, Created: 1}, nil
+}
+
+func incrementMemorySignal(values map[string]int, name string) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return
+	}
+	values[name]++
+}
+
+func topMemorySignals(values map[string]int, limit int) []string {
+	if limit <= 0 {
+		limit = 5
+	}
+	type signal struct {
+		name  string
+		count int
+	}
+	signals := make([]signal, 0, len(values))
+	for name, count := range values {
+		signals = append(signals, signal{name: name, count: count})
+	}
+	sort.Slice(signals, func(i, j int) bool {
+		if signals[i].count == signals[j].count {
+			return strings.ToLower(signals[i].name) < strings.ToLower(signals[j].name)
+		}
+		return signals[i].count > signals[j].count
+	})
+	out := make([]string, 0, minInt(len(signals), limit))
+	for index, item := range signals {
+		if index >= limit {
+			break
+		}
+		out = append(out, item.name)
+	}
+	return out
+}
+
+func firstNStrings(values []string, limit int) []string {
+	if limit <= 0 || len(values) <= limit {
+		return values
+	}
+	return values[:limit]
+}
+
+func minInt(left int, right int) int {
+	if left < right {
+		return left
+	}
+	return right
+}
+
 type SemanticMemoryStats struct {
-	TotalItems    int    `json:"total_items"`
-	JobItems      int    `json:"job_items"`
-	DecisionItems int    `json:"decision_items"`
-	ProfileItems  int    `json:"profile_items"`
-	Provider      string `json:"provider"`
-	Dimension     int    `json:"dimension"`
+	TotalItems                int    `json:"total_items"`
+	JobItems                  int    `json:"job_items"`
+	DecisionItems             int    `json:"decision_items"`
+	ProfileItems              int    `json:"profile_items"`
+	PreferenceReflectionItems int    `json:"preference_reflection_items"`
+	Provider                  string `json:"provider"`
+	Dimension                 int    `json:"dimension"`
 }
 
 func (r *Repository) RebuildSemanticMemory(ctx context.Context) (SemanticMemoryRebuildResult, error) {
@@ -304,6 +430,9 @@ func (r *Repository) GetSemanticMemoryStats(ctx context.Context) (SemanticMemory
 	}
 	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM semantic_memory_items WHERE kind = ?`, SemanticMemoryKindProfile).Scan(&stats.ProfileItems); err != nil {
 		return SemanticMemoryStats{}, fmt.Errorf("count semantic profile memory items: %w", err)
+	}
+	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM semantic_memory_items WHERE kind = ?`, SemanticMemoryKindPreferenceReflection).Scan(&stats.PreferenceReflectionItems); err != nil {
+		return SemanticMemoryStats{}, fmt.Errorf("count semantic preference reflection memory items: %w", err)
 	}
 	return stats, nil
 }

@@ -110,6 +110,30 @@ func (e AgentToolExecutor) Execute(c *gin.Context, request jobs.AgentActionReque
 			return "", err
 		}
 		message = "Discovered " + strconv.Itoa(result.Created) + " new source candidates and skipped " + strconv.Itoa(result.Duplicated) + " duplicates."
+	case "generate_daily_plan":
+		review, err := h.buildAgentReview(ctx)
+		if err != nil {
+			return "", err
+		}
+		result, err := jobs.NewAgentRuntime(h.Repo).CreateReviewPlan(ctx, jobs.AgentReviewPlanRequest{
+			Review: review,
+			Source: "agent_tool",
+			Now:    time.Now().UTC(),
+		})
+		if err != nil {
+			return "", err
+		}
+		if !result.Created {
+			message = "No daily plan was created because there were no actionable steps."
+		} else {
+			message = "Generated daily plan " + strconv.FormatInt(result.Plan.ID, 10) + " with " + strconv.Itoa(len(result.Plan.Steps)) + " steps."
+		}
+	case "inspect_source_health":
+		summary, err := h.Repo.BuildSourceOperationsSummary(ctx)
+		if err != nil {
+			return "", err
+		}
+		message = "Inspected " + strconv.Itoa(summary.TotalSources) + " sources: " + strconv.Itoa(summary.HealthySources) + " healthy, " + strconv.Itoa(summary.WarningSources+summary.BrokenSources) + " unhealthy."
 	case "validate_source_candidates":
 		candidates, err := h.Repo.ListSourceCandidates(ctx, jobs.SourceCandidateFilter{Status: jobs.SourceCandidateStatusPending})
 		if err != nil {
@@ -132,7 +156,11 @@ func (e AgentToolExecutor) Execute(c *gin.Context, request jobs.AgentActionReque
 		if err != nil {
 			return "", err
 		}
-		message = "Rebuilt semantic memory with " + strconv.Itoa(result.Created) + " indexed items and skipped " + strconv.Itoa(result.Skipped) + "."
+		reflections, err := h.Repo.RefreshMemoryReflections(ctx)
+		if err != nil {
+			return "", err
+		}
+		message = "Rebuilt semantic memory with " + strconv.Itoa(result.Created) + " indexed items, refreshed " + strconv.Itoa(reflections.Created) + " preference reflections, and skipped " + strconv.Itoa(result.Skipped) + "."
 	case "review_strong_matches", "review_manual_check", "review_parser_gaps":
 		message = "Opened the requested review workflow."
 	default:

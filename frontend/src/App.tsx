@@ -1487,6 +1487,7 @@ export default function App() {
             <div className="summary-grid compact-grid">
               <Metric label={t("metric.memoryItems")} value={agentState?.memory.semantic_total_items ?? 0} />
               <Metric label={t("metric.jobMemories")} value={agentState?.memory.semantic_job_items ?? 0} />
+              <Metric label={t("metric.preferenceReflections")} value={agentState?.memory.semantic_reflections ?? 0} />
               <Metric label={t("metric.provider")} value={agentState?.memory.semantic_provider || "local_hash"} />
               <Metric label={t("metric.dimension")} value={agentState?.memory.semantic_dimension || 64} />
             </div>

@@ -14,9 +14,10 @@ Job Hunter Agent is a local-first recruiting digital employee. It discovers recr
 - Public source discovery, validation, crawling, deduplication, filtering, and scoring.
 - Candidate profile, job details, application Kanban, daily task queue, and Feishu reports.
 - Global digital employee chat with local-rule fallback and optional DeepSeek/OpenAI-compatible model mode.
-- Multi-agent runtime with Source Scout, Job Analyst, Memory Keeper, Planner, Observer, and an optional Eino Graph path.
-- Approval-gated Agent Tool Registry so suggested actions are reviewed before execution.
-- Local semantic memory by default, with optional Qdrant vector search for personal deployments and provider hooks for future DeepSeek embeddings / pgvector.
+- Multi-agent runtime with Source Scout, Job Analyst, Memory Keeper, Planner, Tool Planner, Observer, and an optional Eino Graph path.
+- Structured, approval-gated Agent Tool Registry so model/tool suggestions are validated before execution.
+- Observer-driven re-plan proposals after approved tool execution.
+- Local semantic memory with preference reflections by default, plus optional Qdrant vector search for personal deployments and provider hooks for future DeepSeek embeddings / pgvector.
 
 ## Architecture
 
@@ -25,10 +26,12 @@ flowchart LR
   Sources["Public sources<br/>career sites, job platforms, manual URLs"] --> Backend["Go backend<br/>crawl, parse, score, agent runtime"]
   Backend --> SQLite["SQLite<br/>jobs, tasks, plans, cycles, decisions"]
   SQLite --> Dashboard["React dashboard<br/>opportunities, tasks, approvals, memory"]
-  SQLite --> Agent["Digital employee<br/>Source Scout / Job Analyst / Memory Keeper / Planner / Observer"]
+  SQLite --> Agent["Digital employee<br/>Source Scout / Job Analyst / Memory Keeper / Planner / Tool Planner / Observer"]
   Agent --> Approval["Human approval gate<br/>Suggested Actions"]
-  Approval --> Tools["Tool Executor<br/>crawl, validate sources, refresh tasks, send reports"]
+  Approval --> Tools["Tool Executor<br/>crawl, inspect sources, generate plans, refresh tasks, send reports"]
   Tools --> SQLite
+  Tools --> Observer["Observer<br/>execution receipt + re-plan"]
+  Observer --> Approval
   Agent -. optional .-> Model["DeepSeek / OpenAI-compatible model"]
   Agent -. optional graph .-> Eino["Eino Graph"]
   SQLite -. optional .-> Qdrant["Qdrant vector search<br/>Docker Compose profile"]
