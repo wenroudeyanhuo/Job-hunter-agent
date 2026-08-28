@@ -474,7 +474,7 @@ export const translations = {
     "notice.sourceAdded": "Source added. It will be used by the next crawl run.",
     "notice.sourcesAdded": "Added {count} recommended sources.",
     "notice.sourcesAlreadyAdded": "Recommended sources were already added.",
-    "notice.discoveryFinished": "Source discovery finished. Proposed {created} new candidates and skipped {duplicated} duplicates.",
+    "notice.discoveryFinished": "Source discovery finished. Proposed {created} new candidates, found {webSearch} by active web search, and skipped {duplicated} duplicates.",
     "notice.candidateAccepted": "{name} accepted into active sources.",
     "notice.candidateRejected": "{name} rejected.",
     "notice.candidateValidated": "{name} checked: {status}.",

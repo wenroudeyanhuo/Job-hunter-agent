@@ -9,6 +9,7 @@ flowchart LR
   subgraph External["External Inputs"]
     PublicSources["Public career sites"]
     JobPlatforms["Job platforms and search pages"]
+    PublicSearch["Active public search results"]
     ManualURLs["Manual URL import"]
     UserFeedback["User decisions<br/>Interested / Applied / Ignore"]
   end
@@ -16,6 +17,7 @@ flowchart LR
   subgraph Backend["Go Backend"]
     API["HTTP API<br/>Gin"]
     Scheduler["Scheduler<br/>09:00 / 12:00 / 18:00"]
+    SourceScout["Active Source Scout<br/>profile queries + candidate extraction"]
     Crawlers["Collectors and Importers<br/>official adapters + generic HTML + JSON-LD"]
     Scoring["Filtering and Scoring<br/>profile rules + decision feedback"]
     AgentRuntime["Agent Runtime<br/>Source Scout / Job Analyst / Memory Keeper / Planner / Tool Planner / Observer"]
@@ -44,6 +46,8 @@ flowchart LR
 
   PublicSources --> Crawlers
   JobPlatforms --> Crawlers
+  PublicSearch --> SourceScout
+  SourceScout --> Crawlers
   ManualURLs --> API
   Scheduler --> Crawlers
   API --> Crawlers
@@ -74,7 +78,7 @@ flowchart LR
 ```mermaid
 flowchart TD
   Observe["Observe<br/>jobs, sources, tasks, plans, memory"]
-  SourceScout["Source Scout<br/>source health and expansion"]
+  SourceScout["Source Scout<br/>source health, active search, and expansion"]
   JobAnalyst["Job Analyst<br/>quality, parser gaps, strong matches"]
   MemoryKeeper["Memory Keeper<br/>semantic coverage and history"]
   Planner["Planner<br/>daily work and safe next steps"]
@@ -98,6 +102,7 @@ flowchart TD
 ```mermaid
 flowchart LR
   SourcePool["Source pool<br/>official + discovered candidates"]
+  ActiveSearch["Active public search<br/>city + direction queries"]
   Validate["Validate source<br/>reachable, signals, job cards"]
   Crawl["Crawl pages<br/>retry and source health"]
   Parse["Parse jobs<br/>official APIs, generic HTML, JSON-LD"]
@@ -107,7 +112,7 @@ flowchart LR
   Reflect["Reflect<br/>learned preferences from decisions"]
   Review["Review queue<br/>manual_check and parser gaps"]
 
-  SourcePool --> Validate --> Crawl --> Parse --> Normalize --> Score --> Store
+  ActiveSearch --> SourcePool --> Validate --> Crawl --> Parse --> Normalize --> Score --> Store
   Store --> Reflect --> Store
   Parse -->|low confidence| Review
   Review -->|accepted signals| Score

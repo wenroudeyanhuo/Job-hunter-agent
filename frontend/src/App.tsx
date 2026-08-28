@@ -759,7 +759,13 @@ export default function App() {
     setNotice("");
     try {
       const result = await runSourceDiscovery(settings.target_cities, settings.target_directions);
-      setNotice(t("notice.discoveryFinished", { created: result.created, duplicated: result.duplicated }));
+      setNotice(
+        t("notice.discoveryFinished", {
+          created: result.created,
+          duplicated: result.duplicated,
+          webSearch: result.web_search_candidates,
+        })
+      );
       await refreshSourceCandidates();
       await refreshSourceOperations();
       await refreshAgentEvents();
@@ -2677,6 +2683,7 @@ function SourceCandidatesPanel({
                 <b>{candidate.confidence}</b>
               </div>
               <div className="source-meta">
+                <span>{candidate.discovered_by || "rules"}</span>
                 <span>{categoryLabelKeys[candidate.category] ? t(categoryLabelKeys[candidate.category]) : candidate.category}</span>
                 <span>{candidate.parser_type || t("label.generic")}</span>
                 <span>{candidate.validation_status}</span>

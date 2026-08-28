@@ -51,7 +51,7 @@ flowchart LR
 
 - 支持手动 URL 导入和定时采集。
 - 默认采集时间支持 09:00、12:00、18:00。
-- 自动发现更多公司官网、社区入口、求职平台搜索入口。
+- 自动发现更多公司官网、社区入口、求职平台搜索入口，并可基于城市/方向主动搜索公开结果页。
 - 对候选来源进行页面验证，识别招聘信号和岗位链接。
 - 采集结果写入 SQLite，不只是临时显示在页面上。
 
@@ -139,6 +139,7 @@ APP_DB_PATH=data/job-hunter-agent.db
 FEISHU_WEBHOOK_URL=
 DISABLE_SCHEDULER=0
 SOURCE_URLS=
+ACTIVE_SOURCE_WEB_SEARCH=1
 AGENT_ORCHESTRATOR=deterministic
 SEMANTIC_MEMORY_PROVIDER=local_hash
 QDRANT_URL=
@@ -155,6 +156,7 @@ DEEPSEEK_MODEL=deepseek-chat
 常用配置：
 
 - `SOURCE_URLS`：逗号或换行分隔的公开招聘 URL。
+- `ACTIVE_SOURCE_WEB_SEARCH`：默认 `1`，Source Scout 会根据城市和方向搜索公开结果页来发现新的招聘入口；设为 `0` 可切换为离线/确定性运行。
 - `FEISHU_WEBHOOK_URL`：飞书机器人 webhook，页面 Settings 中保存的 webhook 优先级更高。
 - `AGENT_ORCHESTRATOR`：默认 `deterministic`；可选 `eino_graph`。
 - `SEMANTIC_MEMORY_PROVIDER`：默认 `local_hash`；设为 `qdrant` 并配置 `QDRANT_URL` 后会把语义记忆同步到 Qdrant 并优先用 Qdrant 相似检索。`deepseek_embedding`、`pgvector` 目前保留 provider 扩展入口。

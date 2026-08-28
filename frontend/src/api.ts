@@ -305,7 +305,12 @@ export async function listSources(): Promise<Source[]> {
 export async function runSourceDiscovery(targetCities: string[], targetDirections: string[]): Promise<SourceDiscoveryResult> {
   return request<SourceDiscoveryResult>("/api/sources/discovery/run", {
     method: "POST",
-    body: JSON.stringify({ target_cities: targetCities, target_directions: targetDirections }),
+    body: JSON.stringify({
+      target_cities: targetCities,
+      target_directions: targetDirections,
+      enable_web_search: true,
+      search_limit: 6,
+    }),
   });
 }
 

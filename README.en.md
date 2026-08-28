@@ -13,7 +13,7 @@ The project currently focuses on technical roles such as frontend, backend, Java
 The project is in an early productization phase and already provides a local end-to-end loop:
 
 - Go backend, React frontend, and SQLite persistence.
-- Job crawling, source discovery, source validation, deduplication, filtering, and scoring.
+- Job crawling, active public web source scouting, source validation, deduplication, filtering, and scoring.
 - Candidate profile, job details, application Kanban, and daily task queue.
 - Digital employee sidebar, global chat, command center, and suggested-action approval queue.
 - Structured Agent Tool Registry with tool descriptions, schemas, risk levels, approval requirements, and execution previews.
@@ -28,7 +28,7 @@ The project is in an early productization phase and already provides a local end
 
 ```mermaid
 flowchart LR
-  Sources["Public sources<br/>career sites, job platforms, manual URLs"] --> Backend["Go backend<br/>crawl, parse, score, agent runtime"]
+  Sources["Public sources<br/>career sites, job platforms, manual URLs, active search results"] --> Backend["Go backend<br/>crawl, parse, score, agent runtime"]
   Backend --> SQLite["SQLite<br/>jobs, tasks, plans, cycles, decisions"]
   SQLite --> Dashboard["React dashboard<br/>opportunities, tasks, approvals, memory"]
   SQLite --> Agent["Digital employee<br/>Source Scout / Job Analyst / Memory Keeper / Planner / Observer"]
@@ -49,7 +49,7 @@ See the full architecture guide: [docs/architecture.md](docs/architecture.md)
 
 - Manual URL import and scheduled crawling.
 - Default crawl schedule: 09:00, 12:00, and 18:00.
-- Automatic discovery of company career sites, community entrances, and job-platform search pages.
+- Automatic discovery of company career sites, community entrances, job-platform search pages, and optional public web search results based on the user's city and role directions.
 - Source validation for recruiting signals and discovered job links.
 - Persistent SQLite storage for collected jobs.
 
@@ -137,6 +137,7 @@ APP_DB_PATH=data/job-hunter-agent.db
 FEISHU_WEBHOOK_URL=
 DISABLE_SCHEDULER=0
 SOURCE_URLS=
+ACTIVE_SOURCE_WEB_SEARCH=1
 AGENT_ORCHESTRATOR=deterministic
 SEMANTIC_MEMORY_PROVIDER=local_hash
 QDRANT_URL=
@@ -153,6 +154,7 @@ DEEPSEEK_MODEL=deepseek-chat
 Common settings:
 
 - `SOURCE_URLS`: comma-separated or newline-separated public recruiting URLs.
+- `ACTIVE_SOURCE_WEB_SEARCH`: defaults to `1`; Source Scout can search public result pages for new recruiting entrances. Set to `0` for offline-only operation.
 - `FEISHU_WEBHOOK_URL`: Feishu incoming bot webhook. Dashboard Settings take priority.
 - `AGENT_ORCHESTRATOR`: defaults to `deterministic`; optional value: `eino_graph`.
 - `SEMANTIC_MEMORY_PROVIDER`: defaults to `local_hash`; set it to `qdrant` with `QDRANT_URL` to sync semantic memory into Qdrant and prefer Qdrant similarity search. `deepseek_embedding` and `pgvector` remain provider extension points.

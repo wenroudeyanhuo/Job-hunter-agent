@@ -12,6 +12,7 @@ import (
 )
 
 func TestSourceCandidateDiscoveryAPI(t *testing.T) {
+	t.Setenv("ACTIVE_SOURCE_WEB_SEARCH", "0")
 	_, handler := testRouter(t, nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/sources/discovery/run", strings.NewReader(`{"target_cities":["Shenzhen"],"target_directions":["go"]}`))

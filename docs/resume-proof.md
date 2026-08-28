@@ -57,7 +57,8 @@ Project evidence:
 - `backend/internal/jobs/public_url_crawler.go` handles public URL collection, timeouts, retries, source health updates, and landing-page filtering.
 - `backend/internal/jobs/importer.go` normalizes imported jobs and stores parser gap metadata.
 - `backend/internal/jobs/scorer.go` scores jobs with settings and decision feedback.
-- `backend/internal/jobs/source_discovery.go` expands the source pool from curated and discovered sources.
+- `backend/internal/jobs/source_candidates.go` expands the source pool from curated rules, profile-derived platform searches, and active public web search candidates.
+- `backend/internal/jobs/active_source_discovery_test.go` verifies Source Scout can build profile-aware search queries, extract public recruiting URLs, and persist them as `web_search` candidates.
 
 Verify:
 

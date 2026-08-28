@@ -86,6 +86,7 @@ func TestAutomationRunnerSendsDueDutyReportOnce(t *testing.T) {
 }
 
 func TestAutomationRunnerDiscoversSourcesWhenDue(t *testing.T) {
+	t.Setenv("ACTIVE_SOURCE_WEB_SEARCH", "0")
 	conn, err := db.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open db: %v", err)

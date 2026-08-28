@@ -33,6 +33,8 @@ func (r *automationRunner) Tick(ctx context.Context, now time.Time) (bool, error
 		result, err := r.repo.DiscoverSourceCandidates(ctx, jobs.SourceDiscoveryInput{
 			TargetCities:     settings.TargetCities,
 			TargetDirections: settings.TargetDirections,
+			EnableWebSearch:  true,
+			SearchLimit:      6,
 		})
 		if err != nil {
 			return false, err
@@ -46,7 +48,7 @@ func (r *automationRunner) Tick(ctx context.Context, now time.Time) (bool, error
 		_, _ = r.repo.CreateAgentEvent(ctx, jobs.AgentEventInput{
 			Type:    "auto_source_discovery",
 			Title:   "Ran automatic source discovery",
-			Summary: "I proposed " + itoa(result.Created) + " new source candidates and skipped " + itoa(result.Duplicated) + " duplicates.",
+			Summary: "I proposed " + itoa(result.Created) + " new source candidates, found " + itoa(result.WebSearchCandidates) + " via active web search, and skipped " + itoa(result.Duplicated) + " duplicates.",
 			Level:   "success",
 		})
 	}

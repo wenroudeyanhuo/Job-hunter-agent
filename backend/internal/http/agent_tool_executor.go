@@ -105,11 +105,13 @@ func (e AgentToolExecutor) Execute(c *gin.Context, request jobs.AgentActionReque
 		result, err := h.Repo.DiscoverSourceCandidates(ctx, jobs.SourceDiscoveryInput{
 			TargetCities:     settings.TargetCities,
 			TargetDirections: settings.TargetDirections,
+			EnableWebSearch:  true,
+			SearchLimit:      6,
 		})
 		if err != nil {
 			return "", err
 		}
-		message = "Discovered " + strconv.Itoa(result.Created) + " new source candidates and skipped " + strconv.Itoa(result.Duplicated) + " duplicates."
+		message = "Discovered " + strconv.Itoa(result.Created) + " new source candidates, found " + strconv.Itoa(result.WebSearchCandidates) + " via active web search, and skipped " + strconv.Itoa(result.Duplicated) + " duplicates."
 	case "generate_daily_plan":
 		review, err := h.buildAgentReview(ctx)
 		if err != nil {
