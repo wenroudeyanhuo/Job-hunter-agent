@@ -4,13 +4,15 @@ This document maps the resume-facing claims of TalentPilot / Job Hunter Agent to
 
 ## Multi-Agent Runtime
 
-Resume claim: Eino-based Multi-Agent workflow with Source Scout, Job Analyst, Memory Keeper, Planner, Observer, and auditable Agent Cycle records.
+Resume claim: Eino-based Multi-Agent workflow with Source Scout, Job Analyst, Memory Keeper, Planner, Tool Planner, Observer, and auditable Agent Cycle records.
 
 Project evidence:
 
 - `backend/internal/jobs/multi_agent_runtime.go` defines the specialist agents and deterministic orchestration contract.
 - `backend/internal/jobs/eino_graph_orchestrator.go` maps the specialist flow into an optional Eino Graph behind the `eino` build tag.
 - `backend/internal/jobs/agent_cycle.go` persists cycle metadata, observations, plan steps, action proposals, and re-plan guidance.
+- `backend/internal/jobs/agent_tools.go` validates structured tool calls against the registered tool schema before they can become executable actions.
+- `backend/internal/jobs/multi_agent_runtime.go` builds Observer re-plan actions from execution receipts so approved tool results can feed the next cycle.
 - `backend/internal/jobs/orchestrator_config_eino.go` enables `AGENT_ORCHESTRATOR=eino_graph` when the binary is built with `-tags eino`.
 
 Verify:
@@ -33,6 +35,7 @@ Resume claim: Qdrant vector retrieval is available for profile-aware recommendat
 Project evidence:
 
 - `backend/internal/jobs/semantic_memory.go` keeps semantic memory behind provider boundaries.
+- `backend/internal/jobs/semantic_memory.go` also builds preference reflection memories from user decisions so later recommendations can cite learned behavior.
 - `backend/internal/jobs/qdrant_memory.go` implements the external Qdrant provider.
 - `backend/internal/jobs/semantic_memory_test.go` verifies the repository uses Qdrant when `SEMANTIC_MEMORY_PROVIDER=qdrant` and `QDRANT_URL` are configured.
 - `docker-compose.yml` includes an optional Qdrant profile for personal deployments.
@@ -65,12 +68,13 @@ go test ./...
 
 ## Tool Registry And HITL Approval
 
-Resume claim: Tool Registry plus human-in-the-loop approval queue for risky actions.
+Resume claim: structured Tool Calling plus human-in-the-loop approval queue for risky actions.
 
 Project evidence:
 
 - `backend/internal/jobs/agent_tools.go` exposes agent tool definitions, approval requirements, and execution contracts.
-- `backend/internal/jobs/agent_actions.go` stores approval requests and execution status.
+- `backend/internal/jobs/agent_tools.go` defines `AgentStructuredToolCall` and validates `reason` plus `expected_observation` before generating actions.
+- `backend/internal/jobs/agent_action_requests.go` stores approval requests and execution status.
 - `backend/internal/jobs/agent_command.go` routes user commands through model/local planning and safe actions.
 
 ## DeepSeek / OpenAI-Compatible Dialogue

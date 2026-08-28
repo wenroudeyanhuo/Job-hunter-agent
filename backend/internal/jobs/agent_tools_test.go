@@ -37,3 +37,16 @@ func TestAttachAgentToolMetadataToActionRequest(t *testing.T) {
 		t.Fatalf("expected tool preview and description, got %#v", request)
 	}
 }
+
+func TestAgentToolRegistryIncludesAutonomyV2Tools(t *testing.T) {
+	registry := NewDefaultAgentToolRegistry()
+	for _, name := range []string{"generate_daily_plan", "inspect_source_health"} {
+		tool, ok := registry.Get(name)
+		if !ok {
+			t.Fatalf("expected %s to be registered", name)
+		}
+		if !tool.RequiresApproval || tool.RiskLevel == "" || tool.Preview == "" {
+			t.Fatalf("expected complete metadata for %s, got %#v", name, tool)
+		}
+	}
+}

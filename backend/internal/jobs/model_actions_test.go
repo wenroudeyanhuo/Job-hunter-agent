@@ -60,7 +60,7 @@ func TestModelActionPromptListIncludesEveryAllowedAction(t *testing.T) {
 }
 
 func TestParseModelToolCallReplyUsesRegisteredToolSchema(t *testing.T) {
-	raw := `{"tool_calls":[{"name":"run_crawl","target":"sources","detail":"Run a crawl.","arguments":{}},{"name":"submit_resume","target":"external","detail":"unsafe","arguments":{}}]}`
+	raw := `{"tool_calls":[{"name":"run_crawl","target":"sources","reason":"Run a crawl.","expected_observation":"A fresh run summary exists.","arguments":{}},{"name":"submit_resume","target":"external","reason":"unsafe","expected_observation":"unsafe","arguments":{}}]}`
 
 	actions := ParseModelToolCallReply(raw)
 

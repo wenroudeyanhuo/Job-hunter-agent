@@ -41,16 +41,17 @@ type AgentWorkload struct {
 }
 
 type AgentMemory struct {
-	LastReviewAt       *time.Time `json:"last_review_at,omitempty"`
-	LastTriggerType    string     `json:"last_trigger_type"`
-	LastFocusTitle     string     `json:"last_focus_title"`
-	LastFocusAction    string     `json:"last_focus_action"`
-	TrendSummary       string     `json:"trend_summary"`
-	RecentActionCount  int        `json:"recent_action_count"`
-	SemanticTotalItems int        `json:"semantic_total_items"`
-	SemanticJobItems   int        `json:"semantic_job_items"`
-	SemanticProvider   string     `json:"semantic_provider"`
-	SemanticDimension  int        `json:"semantic_dimension"`
+	LastReviewAt        *time.Time `json:"last_review_at,omitempty"`
+	LastTriggerType     string     `json:"last_trigger_type"`
+	LastFocusTitle      string     `json:"last_focus_title"`
+	LastFocusAction     string     `json:"last_focus_action"`
+	TrendSummary        string     `json:"trend_summary"`
+	RecentActionCount   int        `json:"recent_action_count"`
+	SemanticTotalItems  int        `json:"semantic_total_items"`
+	SemanticJobItems    int        `json:"semantic_job_items"`
+	SemanticReflections int        `json:"semantic_reflections"`
+	SemanticProvider    string     `json:"semantic_provider"`
+	SemanticDimension   int        `json:"semantic_dimension"`
 }
 
 type AgentCycleState struct {
@@ -277,11 +278,12 @@ func BuildAgentMemory(snapshots []AgentReviewSnapshot, events []AgentEvent) Agen
 
 func BuildAgentMemoryWithSemanticStats(snapshots []AgentReviewSnapshot, events []AgentEvent, semanticStats SemanticMemoryStats) AgentMemory {
 	memory := AgentMemory{
-		TrendSummary:       "No review memory yet. Save or generate a review snapshot after meaningful work.",
-		SemanticProvider:   defaultText(semanticStats.Provider, SemanticMemoryProvider),
-		SemanticDimension:  semanticStats.Dimension,
-		SemanticTotalItems: semanticStats.TotalItems,
-		SemanticJobItems:   semanticStats.JobItems,
+		TrendSummary:        "No review memory yet. Save or generate a review snapshot after meaningful work.",
+		SemanticProvider:    defaultText(semanticStats.Provider, SemanticMemoryProvider),
+		SemanticDimension:   semanticStats.Dimension,
+		SemanticTotalItems:  semanticStats.TotalItems,
+		SemanticJobItems:    semanticStats.JobItems,
+		SemanticReflections: semanticStats.PreferenceReflectionItems,
 	}
 	if memory.SemanticDimension == 0 {
 		memory.SemanticDimension = SemanticMemoryDimensions

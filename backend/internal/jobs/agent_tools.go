@@ -1,6 +1,9 @@
 package jobs
 
-import "sort"
+import (
+	"sort"
+	"strings"
+)
 
 const (
 	AgentToolRiskLow    = "low"
@@ -15,6 +18,23 @@ type AgentToolDefinition struct {
 	RiskLevel        string `json:"risk_level"`
 	RequiresApproval bool   `json:"requires_approval"`
 	Preview          string `json:"preview"`
+}
+
+type AgentStructuredToolCall struct {
+	Name                string            `json:"name"`
+	Target              string            `json:"target"`
+	Arguments           map[string]string `json:"arguments"`
+	Reason              string            `json:"reason"`
+	ExpectedObservation string            `json:"expected_observation"`
+	RiskLevel           string            `json:"risk_level"`
+	RequiresApproval    bool              `json:"requires_approval"`
+	RejectedReason      string            `json:"rejected_reason,omitempty"`
+}
+
+type AgentToolCallValidationResult struct {
+	Valid    []AgentStructuredToolCall `json:"valid"`
+	Rejected []AgentStructuredToolCall `json:"rejected"`
+	Actions  []AgentCommandAction      `json:"actions"`
 }
 
 type AgentToolRegistry struct {
@@ -71,6 +91,22 @@ func NewDefaultAgentToolRegistry() AgentToolRegistry {
 			RiskLevel:        AgentToolRiskLow,
 			RequiresApproval: true,
 			Preview:          "Generates and stores source candidates for later validation and acceptance.",
+		},
+		{
+			Name:             "generate_daily_plan",
+			Description:      "Generate today's recruiting work plan from the latest review.",
+			InputSchema:      `{"type":"object","properties":{},"additionalProperties":false}`,
+			RiskLevel:        AgentToolRiskLow,
+			RequiresApproval: true,
+			Preview:          "Creates a local plan and suggested actions; it does not contact external services.",
+		},
+		{
+			Name:             "inspect_source_health",
+			Description:      "Inspect enabled source health and summarize broken or warning sources.",
+			InputSchema:      `{"type":"object","properties":{},"additionalProperties":false}`,
+			RiskLevel:        AgentToolRiskLow,
+			RequiresApproval: true,
+			Preview:          "Reads local source health and records an audit event without crawling.",
 		},
 		{
 			Name:             "validate_source_candidates",
@@ -142,6 +178,57 @@ func (r AgentToolRegistry) List() []AgentToolDefinition {
 		out = append(out, r.tools[name])
 	}
 	return out
+}
+
+func ValidateAgentToolCalls(calls []AgentStructuredToolCall, registry AgentToolRegistry) AgentToolCallValidationResult {
+	if registry.tools == nil {
+		registry = NewDefaultAgentToolRegistry()
+	}
+	result := AgentToolCallValidationResult{
+		Valid:    []AgentStructuredToolCall{},
+		Rejected: []AgentStructuredToolCall{},
+		Actions:  []AgentCommandAction{},
+	}
+	for _, call := range calls {
+		call.Name = strings.TrimSpace(call.Name)
+		call.Target = strings.TrimSpace(call.Target)
+		call.Reason = strings.TrimSpace(call.Reason)
+		call.ExpectedObservation = strings.TrimSpace(call.ExpectedObservation)
+		tool, ok := registry.Get(call.Name)
+		if !ok {
+			call.RejectedReason = "tool is not registered"
+			result.Rejected = append(result.Rejected, call)
+			continue
+		}
+		if call.Reason == "" {
+			call.RejectedReason = "reason is required"
+			result.Rejected = append(result.Rejected, call)
+			continue
+		}
+		if call.ExpectedObservation == "" {
+			call.RejectedReason = "expected_observation is required"
+			result.Rejected = append(result.Rejected, call)
+			continue
+		}
+		allowed := allowedModelActionTypes[call.Name]
+		if call.Target == "" {
+			call.Target = allowed.Target
+		}
+		call.RiskLevel = tool.RiskLevel
+		call.RequiresApproval = tool.RequiresApproval
+		result.Valid = append(result.Valid, call)
+		detail := call.Reason
+		if strings.TrimSpace(allowed.Detail) != "" {
+			detail = allowed.Detail + " " + call.Reason
+		}
+		result.Actions = append(result.Actions, AgentCommandAction{
+			Type:   call.Name,
+			Target: call.Target,
+			Detail: strings.TrimSpace(detail),
+		})
+	}
+	result.Actions = safeAgentActions(result.Actions)
+	return result
 }
 
 func AttachAgentToolMetadata(request AgentActionRequest, registry AgentToolRegistry) AgentActionRequest {

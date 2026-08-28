@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/crawl"
+	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/domain"
 	"github.com/wenroudeyanhuo/job-hunter-agent/backend/internal/jobs"
 )
 
@@ -98,6 +99,9 @@ func TestAgentActionRequestApprovalExecutesRunCrawl(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list requests: %v", err)
 	}
+	if len(requests) == 0 {
+		t.Fatal("expected inspect_source_health action request to be recorded")
+	}
 
 	req := httptest.NewRequest(http.MethodPatch, "/api/agent/actions/"+strconv.FormatInt(requests[0].ID, 10), strings.NewReader(`{"status":"approved"}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -129,6 +133,113 @@ func TestAgentActionRequestApprovalExecutesRunCrawl(t *testing.T) {
 	}
 	if len(cycles) == 0 || cycles[0].OrchestratorProvider != "tool_observer" {
 		t.Fatalf("expected observer cycle after tool execution, got %#v", cycles)
+	}
+}
+
+func TestAgentActionRequestApprovalCreatesObserverReplanRequests(t *testing.T) {
+	runner := &countingRunner{summary: crawl.RunSummary{JobsCreated: 0}}
+	repo, handler := testRouter(t, runner)
+	if err := repo.RecordAgentActionRequests(t.Context(), "chat", []jobs.AgentCommandAction{
+		{Type: "run_crawl", Target: "sources", Detail: "Run a manual crawl."},
+	}); err != nil {
+		t.Fatalf("seed action request: %v", err)
+	}
+	requests, err := repo.ListAgentActionRequests(t.Context(), jobs.AgentActionRequestStatusPending)
+	if err != nil {
+		t.Fatalf("list requests: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/agent/actions/"+strconv.FormatInt(requests[0].ID, 10), strings.NewReader(`{"status":"approved"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 approve, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	pending, err := repo.ListAgentActionRequests(t.Context(), jobs.AgentActionRequestStatusPending)
+	if err != nil {
+		t.Fatalf("list pending requests: %v", err)
+	}
+	if !hasActionRequest(pending, "discover_sources") || !hasActionRequest(pending, "validate_source_candidates") {
+		t.Fatalf("expected observer re-plan requests after empty crawl, got %#v", pending)
+	}
+}
+
+func TestAgentActionRequestApprovalRebuildsMemoryReflections(t *testing.T) {
+	repo, handler := testRouter(t, nil)
+	created, err := repo.CreateJob(t.Context(), domain.Job{
+		Company:       "Tencent",
+		Title:         "Go Backend Engineer",
+		City:          "Shenzhen",
+		DirectionTags: []string{"go", "backend"},
+		Status:        domain.StatusNew,
+	})
+	if err != nil {
+		t.Fatalf("create job: %v", err)
+	}
+	if _, err := repo.RecordJobDecision(t.Context(), jobs.JobDecisionInput{JobID: created.ID, ToStatus: string(domain.StatusInterested), Reason: "prefer go backend"}); err != nil {
+		t.Fatalf("record decision: %v", err)
+	}
+	if err := repo.RecordAgentActionRequests(t.Context(), "chat", []jobs.AgentCommandAction{
+		{Type: "rebuild_semantic_memory", Target: "memory", Detail: "Rebuild memory."},
+	}); err != nil {
+		t.Fatalf("seed action request: %v", err)
+	}
+	requests, err := repo.ListAgentActionRequests(t.Context(), jobs.AgentActionRequestStatusPending)
+	if err != nil {
+		t.Fatalf("list requests: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/agent/actions/"+strconv.FormatInt(requests[0].ID, 10), strings.NewReader(`{"status":"approved"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 approve, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	matches, err := repo.SearchSemanticMemory(t.Context(), jobs.SemanticMemoryQuery{Kind: jobs.SemanticMemoryKindPreferenceReflection, Query: "go backend preference", Limit: 3})
+	if err != nil {
+		t.Fatalf("search memory: %v", err)
+	}
+	if len(matches) == 0 || !strings.Contains(strings.ToLower(matches[0].Content), "tencent") {
+		t.Fatalf("expected preference reflection after rebuild, got %#v", matches)
+	}
+}
+
+func TestAgentActionRequestApprovalExecutesSourceHealthInspection(t *testing.T) {
+	repo, handler := testRouter(t, nil)
+	source, err := repo.CreateSource(t.Context(), jobs.SourceInput{Name: "Broken Source", URL: "https://example.com/jobs", Enabled: true})
+	if err != nil {
+		t.Fatalf("create source: %v", err)
+	}
+	if err := repo.UpdateSourceHealthByURL(t.Context(), source.URL, jobs.SourceHealthInput{Status: jobs.SourceHealthBroken, Reason: "HTTP 500", Success: false}); err != nil {
+		t.Fatalf("update source health: %v", err)
+	}
+	if err := repo.RecordAgentActionRequests(t.Context(), "chat", []jobs.AgentCommandAction{
+		{Type: "inspect_source_health", Target: "sources", Detail: "Inspect health."},
+	}); err != nil {
+		t.Fatalf("seed action request: %v", err)
+	}
+	requests, err := repo.ListAgentActionRequests(t.Context(), jobs.AgentActionRequestStatusPending)
+	if err != nil {
+		t.Fatalf("list requests: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/agent/actions/"+strconv.FormatInt(requests[0].ID, 10), strings.NewReader(`{"status":"approved"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 approve, got %d: %s", rec.Code, rec.Body.String())
+	}
+	approved, err := repo.ListAgentActionRequests(t.Context(), jobs.AgentActionRequestStatusApproved)
+	if err != nil {
+		t.Fatalf("list approved: %v", err)
+	}
+	if len(approved) != 1 || !strings.Contains(approved[0].ExecutionMessage, "1 unhealthy") {
+		t.Fatalf("expected source health execution receipt, got %#v", approved)
 	}
 }
 
@@ -219,6 +330,15 @@ func TestAgentActionRequestApprovalKeepsPendingWhenExecutionFails(t *testing.T) 
 	if after[0].ExecutionStatus != jobs.AgentActionExecutionFailed || !strings.Contains(after[0].ExecutionMessage, "source is busy") {
 		t.Fatalf("expected failed execution receipt, got %#v", after[0])
 	}
+}
+
+func hasActionRequest(requests []jobs.AgentActionRequest, actionType string) bool {
+	for _, request := range requests {
+		if request.ActionType == actionType {
+			return true
+		}
+	}
+	return false
 }
 
 func TestAgentChatRecordsSuggestedActionRequests(t *testing.T) {

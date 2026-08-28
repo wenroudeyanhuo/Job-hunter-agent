@@ -282,6 +282,7 @@ export interface AgentMemory {
   recent_action_count: number;
   semantic_total_items: number;
   semantic_job_items: number;
+  semantic_reflections: number;
   semantic_provider: string;
   semantic_dimension: number;
 }

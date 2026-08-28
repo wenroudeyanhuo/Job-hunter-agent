@@ -163,6 +163,7 @@ export const translations = {
     "metric.nextRuns": "Next runs",
     "metric.memoryItems": "Memory items",
     "metric.jobMemories": "Job memories",
+    "metric.preferenceReflections": "Preference reflections",
     "metric.provider": "Provider",
     "metric.dimension": "Dimension",
 
@@ -686,6 +687,7 @@ export const translations = {
     "metric.nextRuns": "下次运行",
     "metric.memoryItems": "记忆条目",
     "metric.jobMemories": "职位记忆",
+    "metric.preferenceReflections": "偏好反思",
     "metric.provider": "提供商",
     "metric.dimension": "维度",
 

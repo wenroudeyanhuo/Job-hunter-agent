@@ -87,10 +87,10 @@ type MultiAgentTrace struct {
 }
 
 type ModelAgentInsight struct {
-	AgentKey  string               `json:"agent_key"`
-	Decision  string               `json:"decision"`
-	ToolCalls []AgentToolCall      `json:"tool_calls"`
-	Actions   []AgentCommandAction `json:"actions"`
+	AgentKey  string                    `json:"agent_key"`
+	Decision  string                    `json:"decision"`
+	ToolCalls []AgentStructuredToolCall `json:"tool_calls"`
+	Actions   []AgentCommandAction      `json:"actions"`
 }
 
 type AgentAutonomyPlan struct {
@@ -136,21 +136,8 @@ func ParseModelAgentInsights(raw string) []ModelAgentInsight {
 	return out
 }
 
-func actionsFromToolCalls(calls []AgentToolCall) []AgentCommandAction {
-	registry := NewDefaultAgentToolRegistry()
-	actions := []AgentCommandAction{}
-	for _, call := range calls {
-		name := strings.TrimSpace(call.Name)
-		if _, ok := registry.Get(name); !ok {
-			continue
-		}
-		actions = append(actions, AgentCommandAction{
-			Type:   name,
-			Target: strings.TrimSpace(call.Target),
-			Detail: strings.TrimSpace(call.Detail),
-		})
-	}
-	return safeAgentActions(actions)
+func actionsFromToolCalls(calls []AgentStructuredToolCall) []AgentCommandAction {
+	return ValidateAgentToolCalls(calls, NewDefaultAgentToolRegistry()).Actions
 }
 
 func BuildRecruitingAgentTeam() MultiAgentTeam {
@@ -247,24 +234,65 @@ func BuildAgentToolObserverCycle(request AgentActionRequest, executionStatus str
 		cycle.ReadinessScore = 55
 		cycle.Actions = append(cycle.Actions, AgentCommandAction{Type: request.ActionType, Target: request.Target, Detail: "Review failed execution before retrying: " + executionMessage})
 	}
+	cycle.Actions = appendUniqueAgentActions(cycle.Actions, BuildObserverReplanActions(request, executionStatus, executionMessage, now)...)
 	cycle.AutonomyPlan = BuildAgentAutonomyPlan(cycle.Actions, "observe_replan")
 	if success {
 		cycle.AutonomyPlan = AgentAutonomyPlan{
 			Mode:                 "observe_replan",
-			Summary:              "Observer recorded a successful tool result; the next planning cycle can continue from fresh state.",
+			Summary:              "Observer recorded a successful tool result and prepared a re-plan proposal from the execution receipt.",
 			ReplanAfterExecution: true,
-			Steps: []AgentAutonomyStep{{
+			Steps:                BuildAgentAutonomyPlan(cycle.Actions, "observe_replan").Steps,
+		}
+		if len(cycle.AutonomyPlan.Steps) == 0 {
+			cycle.AutonomyPlan.Steps = []AgentAutonomyStep{{
 				Order:        1,
 				Tool:         request.ActionType,
 				Target:       request.Target,
 				Detail:       executionMessage,
 				Status:       AgentAutonomyStepObserved,
 				ObserverHint: "Use this receipt as context for the next plan.",
-			}},
+			}}
 		}
 	}
 	cycle.Summary = "Observer reviewed " + request.ActionType + " execution: " + executionStatus + "."
 	return cycle
+}
+
+func BuildObserverReplanActions(request AgentActionRequest, executionStatus string, executionMessage string, _ time.Time) []AgentCommandAction {
+	executionStatus = normalizeAgentActionExecutionStatus(executionStatus)
+	message := strings.ToLower(executionMessage)
+	if executionStatus == AgentActionExecutionFailed {
+		return safeAgentActions([]AgentCommandAction{
+			{Type: "review_parser_gaps", Target: "opportunities", Detail: "Inspect the failed tool receipt before retrying: " + executionMessage},
+		})
+	}
+	switch strings.TrimSpace(request.ActionType) {
+	case "run_crawl", "add_recommended_and_crawl":
+		if strings.Contains(message, "created 0") || strings.Contains(message, "0 jobs") || strings.Contains(message, "found 0") {
+			return safeAgentActions([]AgentCommandAction{
+				{Type: "discover_sources", Target: "sources", Detail: "Crawl produced no new jobs; expand the source pool before the next run."},
+				{Type: "validate_source_candidates", Target: "sources", Detail: "Validate pending sources so the next crawl has better inputs."},
+			})
+		}
+		return safeAgentActions([]AgentCommandAction{
+			{Type: "review_strong_matches", Target: "opportunities", Detail: "Review newly collected strong matches before they go stale."},
+			{Type: "sync_application_plans", Target: "applications", Detail: "Prepare application plans for promising jobs after the latest crawl."},
+		})
+	case "discover_sources":
+		return safeAgentActions([]AgentCommandAction{
+			{Type: "validate_source_candidates", Target: "sources", Detail: "Validate newly discovered source candidates before adding them to the crawl pool."},
+		})
+	case "refresh_tasks":
+		return safeAgentActions([]AgentCommandAction{
+			{Type: "send_feishu_report", Target: "notification", Detail: "Send the refreshed daily work queue to Feishu if configured."},
+		})
+	case "rebuild_semantic_memory":
+		return safeAgentActions([]AgentCommandAction{
+			{Type: "review_strong_matches", Target: "opportunities", Detail: "Use refreshed memory to review the best matching opportunities."},
+		})
+	default:
+		return nil
+	}
 }
 
 func RunRecruitingAgentCycle(input MultiAgentCycleInput) MultiAgentCycle {
@@ -349,6 +377,7 @@ func ApplyModelAgentInsights(cycle MultiAgentCycle, insights []ModelAgentInsight
 	if cycle.ReadinessScore < 0 {
 		cycle.ReadinessScore = 0
 	}
+	cycle.AutonomyPlan = BuildAgentAutonomyPlan(cycle.Actions, "model_enhanced_replan")
 	cycle.Summary = cycle.Summary + " Model insights were applied to specialist decisions."
 	return cycle
 }
@@ -389,6 +418,7 @@ func runSourceScoutAgent(input MultiAgentCycleInput) MultiAgentTrace {
 	}
 	if enabled == 0 || unhealthy > 0 || enabled < 8 {
 		trace.Decision = "Source pool should be expanded or repaired."
+		trace.Actions = append(trace.Actions, AgentCommandAction{Type: "inspect_source_health", Target: "sources", Detail: "Inspect source health before deciding whether to repair or expand the source pool."})
 		trace.Actions = append(trace.Actions, AgentCommandAction{Type: "discover_sources", Target: "sources", Detail: "Find additional recruiting source candidates."})
 	}
 	if unhealthy > 0 || enabled < 8 {
@@ -460,6 +490,7 @@ func runPlannerAgent(input MultiAgentCycleInput) MultiAgentTrace {
 		Decision:    "Planning loop is under control.",
 	}
 	if openTasks == 0 {
+		trace.Actions = append(trace.Actions, AgentCommandAction{Type: "generate_daily_plan", Target: "daily_tasks", Detail: "Generate today's recruiting plan from latest jobs, sources, and memory."})
 		trace.Actions = append(trace.Actions, AgentCommandAction{Type: "refresh_tasks", Target: "daily_tasks", Detail: "Refresh today's task queue."})
 	}
 	if activePlans == 0 {

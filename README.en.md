@@ -16,7 +16,8 @@ The project is in an early productization phase and already provides a local end
 - Job crawling, source discovery, source validation, deduplication, filtering, and scoring.
 - Candidate profile, job details, application Kanban, and daily task queue.
 - Digital employee sidebar, global chat, command center, and suggested-action approval queue.
-- Agent Tool Registry with tool descriptions, risk levels, approval requirements, and execution previews.
+- Structured Agent Tool Registry with tool descriptions, schemas, risk levels, approval requirements, and execution previews.
+- Observer-driven re-plan proposals after approved tool execution.
 - Optional DeepSeek/OpenAI-compatible model mode with local-rule fallback.
 - Multi-agent runtime: Source Scout, Job Analyst, Memory Keeper, Planner, Tool Planner, and Observer.
 - Optional Eino Graph orchestration path with deterministic fallback by default.
@@ -71,10 +72,10 @@ See the full architecture guide: [docs/architecture.md](docs/architecture.md)
 
 - Global digital employee chat with local-rule and model-enhanced replies.
 - Chat context includes candidate profile, recent jobs, semantic memory, and recent conversation history.
-- Model suggestions are persisted as Suggested Actions and require human approval before execution.
+- Model suggestions are parsed as structured tool calls, validated against the Tool Registry, persisted as Suggested Actions, and require human approval before execution.
 - Approved actions go through a unified Agent Tool Executor and store execution receipts.
-- Agent Cycles record multi-agent observations, decisions, and proposed next steps.
-- Local semantic memory uses deterministic hash embeddings by default. Personal deployments can optionally enable Qdrant vector search; DeepSeek embeddings and pgvector remain provider extension points.
+- Agent Cycles record multi-agent observations, decisions, proposed next steps, execution receipts, and Observer re-plan proposals.
+- Local semantic memory uses deterministic hash embeddings by default and now includes preference reflections from user decisions. Personal deployments can optionally enable Qdrant vector search; DeepSeek embeddings and pgvector remain provider extension points.
 
 ### 5. Feishu Notifications
 
@@ -258,9 +259,9 @@ Product-agent roadmap: [docs/product-agent-roadmap.zh-CN.md](docs/product-agent-
 
 - Improve company-specific and job-platform parsers.
 - Expand the default company pool and source discovery strategy.
-- Upgrade model chat into structured tool-calling planning.
-- Move Eino Graph from optional adapter to a fuller multi-agent orchestration path.
-- Add replaceable vector database or external embedding providers.
+- Deepen structured tool-calling with richer argument schemas and dry-run previews.
+- Move more approval, execution receipt, memory retrieval, and re-plan state into the optional Eino Graph path.
+- Add replaceable external embedding providers beyond the current local_hash and optional Qdrant store.
 - Add resume-version templates, application draft generation, and richer follow-up reminders.
 - Explore Feishu Base, spreadsheet, or other external system sync.
 
