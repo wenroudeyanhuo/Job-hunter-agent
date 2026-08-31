@@ -6,14 +6,15 @@ This project is local-first by default. A new user should be able to run it with
 
 1. Copy `.env.example` to `.env`.
 2. Adjust `APP_DB_PATH`, `SOURCE_URLS`, and optional notification/model keys.
-3. Run the backend:
+3. Keep `ACTIVE_SOURCE_WEB_SEARCH=1` if you want Source Scout to discover new public recruiting entrances from search results. Set it to `0` for offline-only or deterministic tests.
+4. Run the backend:
 
 ```powershell
 cd backend
 go run ./cmd/server
 ```
 
-4. Run the frontend:
+5. Run the frontend:
 
 ```powershell
 cd frontend
@@ -21,7 +22,7 @@ npm install
 npm run dev
 ```
 
-5. Open `http://localhost:5173`.
+6. Open `http://localhost:5173`.
 
 ## Docker Compose
 
@@ -62,6 +63,12 @@ The default `local_hash` provider remains zero-config. Qdrant is useful when a p
 Set `FEISHU_WEBHOOK_URL` or paste a webhook in Settings. Dashboard settings take priority over the environment variable.
 
 Feishu reports include the duty report and, when available, the latest Agent Cycle summary so users can see what the digital employee just decided.
+
+## Active Source Scout
+
+`ACTIVE_SOURCE_WEB_SEARCH=1` lets Source Scout build search queries from the configured cities and role directions, read public search result pages, extract recruiting-looking URLs, and store them as source candidates. Candidates still go through validation and manual acceptance before they become active crawl sources.
+
+Disable it with `ACTIVE_SOURCE_WEB_SEARCH=0` when you want a fully offline local run. Rule-generated company, community, and job-platform candidates remain available either way.
 
 ## Optional DeepSeek
 

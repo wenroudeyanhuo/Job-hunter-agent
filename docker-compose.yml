@@ -7,6 +7,7 @@ services:
       APP_DB_PATH: /data/job-hunter-agent.db
       FEISHU_WEBHOOK_URL: ${FEISHU_WEBHOOK_URL:-}
       SOURCE_URLS: ${SOURCE_URLS:-}
+      ACTIVE_SOURCE_WEB_SEARCH: ${ACTIVE_SOURCE_WEB_SEARCH:-1}
       LLM_PROVIDER: ${LLM_PROVIDER:-}
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_BASE_URL: ${LLM_BASE_URL:-https://api.openai.com/v1}

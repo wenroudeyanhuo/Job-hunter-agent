@@ -11,7 +11,7 @@ Job Hunter Agent is a local-first recruiting digital employee. It discovers recr
 ## Highlights / 核心亮点
 
 - Go backend, React dashboard, SQLite local persistence.
-- Public source discovery, validation, crawling, deduplication, filtering, and scoring.
+- Public source discovery with active search scouting, validation, crawling, deduplication, filtering, and scoring.
 - Candidate profile, job details, application Kanban, daily task queue, and Feishu reports.
 - Global digital employee chat with local-rule fallback and optional DeepSeek/OpenAI-compatible model mode.
 - Multi-agent runtime with Source Scout, Job Analyst, Memory Keeper, Planner, Tool Planner, Observer, and an optional Eino Graph path.
@@ -23,7 +23,7 @@ Job Hunter Agent is a local-first recruiting digital employee. It discovers recr
 
 ```mermaid
 flowchart LR
-  Sources["Public sources<br/>career sites, job platforms, manual URLs"] --> Backend["Go backend<br/>crawl, parse, score, agent runtime"]
+  Sources["Public sources<br/>career sites, job platforms, manual URLs, active search results"] --> Backend["Go backend<br/>crawl, parse, score, agent runtime"]
   Backend --> SQLite["SQLite<br/>jobs, tasks, plans, cycles, decisions"]
   SQLite --> Dashboard["React dashboard<br/>opportunities, tasks, approvals, memory"]
   SQLite --> Agent["Digital employee<br/>Source Scout / Job Analyst / Memory Keeper / Planner / Tool Planner / Observer"]

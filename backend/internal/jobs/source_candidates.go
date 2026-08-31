@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -30,6 +32,11 @@ const (
 const maxSourceCandidateValidationBytes = 512 << 10
 const sourceCandidateUserAgent = "JobHunterAgent/0.1 (+https://github.com/wenroudeyanhuo/Job-hunter-agent)"
 
+const (
+	SourceCandidateDiscoveredByRules     = "rules"
+	SourceCandidateDiscoveredByWebSearch = "web_search"
+)
+
 type SourceCandidate struct {
 	ID               int64      `json:"id"`
 	Name             string     `json:"name"`
@@ -51,6 +58,9 @@ type SourceCandidate struct {
 type SourceDiscoveryInput struct {
 	TargetCities     []string `json:"target_cities"`
 	TargetDirections []string `json:"target_directions"`
+	EnableWebSearch  bool     `json:"enable_web_search"`
+	SearchLimit      int      `json:"search_limit"`
+	SearchEndpoint   string   `json:"-"`
 }
 
 type SourceCandidateFilter struct {
@@ -58,24 +68,37 @@ type SourceCandidateFilter struct {
 }
 
 type SourceDiscoveryResult struct {
-	Total      int `json:"total"`
-	Created    int `json:"created"`
-	Duplicated int `json:"duplicated"`
+	Total               int `json:"total"`
+	Created             int `json:"created"`
+	Duplicated          int `json:"duplicated"`
+	WebSearchCandidates int `json:"web_search_candidates"`
 }
 
 type sourceCandidateInput struct {
-	Name       string
-	URL        string
-	Category   string
-	ParserType string
-	Reason     string
-	Confidence int
+	Name         string
+	URL          string
+	Category     string
+	ParserType   string
+	Reason       string
+	Confidence   int
+	DiscoveredBy string
 }
 
 func (r *Repository) DiscoverSourceCandidates(ctx context.Context, input SourceDiscoveryInput) (SourceDiscoveryResult, error) {
 	candidates := BuildSourceDiscoveryCandidates(input)
+	if input.EnableWebSearch && activeSourceWebSearchEnabled(input.SearchEndpoint) {
+		discovered, err := DiscoverActiveSourceCandidates(ctx, input, &http.Client{Timeout: 8 * time.Second})
+		if err != nil {
+			discovered = nil
+		}
+		candidates = append(candidates, discovered...)
+		candidates = dedupeSourceCandidateInputs(candidates)
+	}
 	result := SourceDiscoveryResult{Total: len(candidates)}
 	for _, candidate := range candidates {
+		if candidate.DiscoveredBy == SourceCandidateDiscoveredByWebSearch {
+			result.WebSearchCandidates++
+		}
 		created, err := r.createSourceCandidateIfMissing(ctx, candidate)
 		if err != nil {
 			return SourceDiscoveryResult{}, err
@@ -87,6 +110,210 @@ func (r *Repository) DiscoverSourceCandidates(ctx context.Context, input SourceD
 		}
 	}
 	return result, nil
+}
+
+func activeSourceWebSearchEnabled(searchEndpoint string) bool {
+	if strings.TrimSpace(searchEndpoint) != "" {
+		return true
+	}
+	return strings.TrimSpace(os.Getenv("ACTIVE_SOURCE_WEB_SEARCH")) != "0"
+}
+
+func BuildActiveSourceSearchQueries(input SourceDiscoveryInput) []string {
+	cities := cleanStringList(input.TargetCities)
+	if len(cities) == 0 {
+		cities = []string{"Shenzhen"}
+	}
+	directions := cleanStringList(input.TargetDirections)
+	if len(directions) == 0 {
+		directions = []string{"go", "backend", "ai_application"}
+	}
+	limit := input.SearchLimit
+	if limit <= 0 || limit > 8 {
+		limit = 6
+	}
+	queries := []string{}
+	for _, city := range cities {
+		for _, direction := range directions {
+			label := directionLabel(direction)
+			queries = append(queries,
+				city+" "+label+" 校招 招聘 官网",
+				city+" "+label+" 实习生 campus careers",
+			)
+			if len(queries) >= limit {
+				return queries
+			}
+		}
+	}
+	return queries
+}
+
+func DiscoverActiveSourceCandidates(ctx context.Context, input SourceDiscoveryInput, client *http.Client) ([]sourceCandidateInput, error) {
+	if client == nil {
+		client = http.DefaultClient
+	}
+	queries := BuildActiveSourceSearchQueries(input)
+	out := []sourceCandidateInput{}
+	for _, query := range queries {
+		results, err := fetchPublicSearchResults(ctx, client, input.SearchEndpoint, query)
+		if err != nil {
+			continue
+		}
+		for _, result := range results {
+			candidate, ok := sourceCandidateFromSearchResult(result, query)
+			if !ok {
+				continue
+			}
+			out = append(out, candidate)
+		}
+	}
+	return dedupeSourceCandidateInputs(out), nil
+}
+
+type publicSearchResult struct {
+	Title string
+	URL   string
+}
+
+func fetchPublicSearchResults(ctx context.Context, client *http.Client, endpoint string, query string) ([]publicSearchResult, error) {
+	endpoint = strings.TrimSpace(endpoint)
+	if endpoint == "" {
+		endpoint = "https://www.bing.com/search"
+	}
+	parsed, err := url.Parse(endpoint)
+	if err != nil {
+		return nil, err
+	}
+	values := parsed.Query()
+	values.Set("q", query)
+	parsed.RawQuery = values.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", sourceCandidateUserAgent)
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("search returned HTTP %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxSourceCandidateValidationBytes))
+	if err != nil {
+		return nil, err
+	}
+	return parsePublicSearchResults(string(body)), nil
+}
+
+var searchAnchorPattern = regexp.MustCompile(`(?is)<a[^>]+href=["']([^"']+)["'][^>]*>(.*?)</a>`)
+var htmlTagPattern = regexp.MustCompile(`(?is)<[^>]+>`)
+
+func parsePublicSearchResults(html string) []publicSearchResult {
+	matches := searchAnchorPattern.FindAllStringSubmatch(html, -1)
+	out := []publicSearchResult{}
+	for _, match := range matches {
+		if len(match) < 3 {
+			continue
+		}
+		link := normalizeSearchResultURL(match[1])
+		if link == "" {
+			continue
+		}
+		title := strings.TrimSpace(htmlTagPattern.ReplaceAllString(match[2], " "))
+		title = strings.Join(strings.Fields(title), " ")
+		out = append(out, publicSearchResult{Title: title, URL: link})
+	}
+	return out
+}
+
+func normalizeSearchResultURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || strings.HasPrefix(raw, "#") {
+		return ""
+	}
+	if strings.HasPrefix(raw, "/url?") || strings.HasPrefix(raw, "/search?") {
+		if parsed, err := url.Parse(raw); err == nil {
+			for _, key := range []string{"q", "url", "u"} {
+				if value := parsed.Query().Get(key); value != "" {
+					raw = value
+					break
+				}
+			}
+		}
+	}
+	raw = strings.TrimSpace(raw)
+	if decoded, err := url.QueryUnescape(raw); err == nil {
+		raw = decoded
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return ""
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return ""
+	}
+	if isSearchEngineHost(parsed.Host) {
+		return ""
+	}
+	parsed.Fragment = ""
+	return parsed.String()
+}
+
+func sourceCandidateFromSearchResult(result publicSearchResult, query string) (sourceCandidateInput, bool) {
+	link := normalizeSearchResultURL(result.URL)
+	if link == "" {
+		return sourceCandidateInput{}, false
+	}
+	text := strings.ToLower(result.Title + " " + link)
+	if !looksLikeRecruitingSearchResult(text) {
+		return sourceCandidateInput{}, false
+	}
+	parsed, _ := url.Parse(link)
+	name := strings.TrimSpace(result.Title)
+	if name == "" {
+		name = parsed.Host
+	}
+	if len(name) > 80 {
+		name = name[:80]
+	}
+	return sourceCandidateInput{
+		Name:         name + " discovery",
+		URL:          link,
+		Category:     "web_search",
+		ParserType:   "generic",
+		Reason:       "Active Source Scout found this public recruiting result from query: " + query,
+		Confidence:   activeSearchConfidence(text),
+		DiscoveredBy: SourceCandidateDiscoveredByWebSearch,
+	}, true
+}
+
+func looksLikeRecruitingSearchResult(text string) bool {
+	if countContainsAny(text, "校招", "招聘", "实习", "职位") > 0 &&
+		!strings.Contains(text, "培训") &&
+		!strings.Contains(text, "课程") {
+		return true
+	}
+	return countContainsAny(text, "career", "careers", "campus", "job", "jobs", "hiring", "recruit", "recruitment", "校招", "招聘", "实习", "职位") > 0 &&
+		!strings.Contains(text, "培训") &&
+		!strings.Contains(text, "课程")
+}
+
+func activeSearchConfidence(text string) int {
+	score := 45 + countContainsAny(text, "career", "careers", "campus", "job", "jobs", "hiring", "recruit", "校招", "招聘", "职位")*5
+	if strings.Contains(text, "official") || strings.Contains(text, "官网") {
+		score += 8
+	}
+	if score > 82 {
+		score = 82
+	}
+	return score
+}
+
+func isSearchEngineHost(host string) bool {
+	host = strings.ToLower(host)
+	return strings.Contains(host, "bing.com") || strings.Contains(host, "google.com") || strings.Contains(host, "baidu.com") || strings.Contains(host, "sogou.com")
 }
 
 func BuildSourceDiscoveryCandidates(input SourceDiscoveryInput) []sourceCandidateInput {
@@ -102,22 +329,24 @@ func BuildSourceDiscoveryCandidates(input SourceDiscoveryInput) []sourceCandidat
 	out := []sourceCandidateInput{}
 	for _, source := range expandableRecommendedSources() {
 		out = append(out, sourceCandidateInput{
-			Name:       source.Name + " discovery",
-			URL:        source.URL,
-			Category:   source.Category,
-			ParserType: source.ParserType,
-			Reason:     "Official career source adjacent to the configured company pool.",
-			Confidence: 72,
+			Name:         source.Name + " discovery",
+			URL:          source.URL,
+			Category:     source.Category,
+			ParserType:   source.ParserType,
+			Reason:       "Official career source adjacent to the configured company pool.",
+			Confidence:   72,
+			DiscoveredBy: SourceCandidateDiscoveredByRules,
 		})
 	}
 	for _, source := range broaderCompanyCareerCandidates() {
 		out = append(out, sourceCandidateInput{
-			Name:       source.Name,
-			URL:        source.URL,
-			Category:   source.Category,
-			ParserType: source.ParserType,
-			Reason:     "Broader official career entrance for personal source expansion beyond top-tier companies.",
-			Confidence: source.Confidence,
+			Name:         source.Name,
+			URL:          source.URL,
+			Category:     source.Category,
+			ParserType:   source.ParserType,
+			Reason:       "Broader official career entrance for personal source expansion beyond top-tier companies.",
+			Confidence:   source.Confidence,
+			DiscoveredBy: SourceCandidateDiscoveredByRules,
 		})
 	}
 	for _, city := range cities {
@@ -125,52 +354,58 @@ func BuildSourceDiscoveryCandidates(input SourceDiscoveryInput) []sourceCandidat
 			query := city + " " + directionLabel(direction) + " \u6821\u62db \u5b9e\u4e60 \u62db\u8058"
 			out = append(out,
 				sourceCandidateInput{
-					Name:       "Nowcoder search - " + city + " " + directionLabel(direction),
-					URL:        "https://www.nowcoder.com/search?query=" + url.QueryEscape(query),
-					Category:   "community",
-					ParserType: "generic",
-					Reason:     "Community search can surface fresh campus openings beyond fixed official sources.",
-					Confidence: 62,
+					Name:         "Nowcoder search - " + city + " " + directionLabel(direction),
+					URL:          "https://www.nowcoder.com/search?query=" + url.QueryEscape(query),
+					Category:     "community",
+					ParserType:   "generic",
+					Reason:       "Community search can surface fresh campus openings beyond fixed official sources.",
+					Confidence:   62,
+					DiscoveredBy: SourceCandidateDiscoveredByRules,
 				},
 				sourceCandidateInput{
-					Name:       "Boss search - " + city + " " + directionLabel(direction),
-					URL:        "https://www.zhipin.com/web/geek/job?query=" + url.QueryEscape(directionLabel(direction)) + "&city=101280600",
-					Category:   "job_platform",
-					ParserType: "generic",
-					Reason:     "Job-platform query candidate derived from current city and direction preferences.",
-					Confidence: 55,
+					Name:         "Boss search - " + city + " " + directionLabel(direction),
+					URL:          "https://www.zhipin.com/web/geek/job?query=" + url.QueryEscape(directionLabel(direction)) + "&city=101280600",
+					Category:     "job_platform",
+					ParserType:   "generic",
+					Reason:       "Job-platform query candidate derived from current city and direction preferences.",
+					Confidence:   55,
+					DiscoveredBy: SourceCandidateDiscoveredByRules,
 				},
 				sourceCandidateInput{
-					Name:       "Lagou search - " + city + " " + directionLabel(direction),
-					URL:        "https://www.lagou.com/wn/jobs?kd=" + url.QueryEscape(directionLabel(direction)),
-					Category:   "job_platform",
-					ParserType: "generic",
-					Reason:     "Platform search candidate for broadening non-official source coverage.",
-					Confidence: 52,
+					Name:         "Lagou search - " + city + " " + directionLabel(direction),
+					URL:          "https://www.lagou.com/wn/jobs?kd=" + url.QueryEscape(directionLabel(direction)),
+					Category:     "job_platform",
+					ParserType:   "generic",
+					Reason:       "Platform search candidate for broadening non-official source coverage.",
+					Confidence:   52,
+					DiscoveredBy: SourceCandidateDiscoveredByRules,
 				},
 				sourceCandidateInput{
-					Name:       "Liepin search - " + city + " " + directionLabel(direction),
-					URL:        "https://www.liepin.com/zhaopin/?key=" + url.QueryEscape(city+" "+directionLabel(direction)+" 校招"),
-					Category:   "job_platform",
-					ParserType: "generic",
-					Reason:     "Liepin search can broaden mid-size company coverage beyond campus-only official sites.",
-					Confidence: 50,
+					Name:         "Liepin search - " + city + " " + directionLabel(direction),
+					URL:          "https://www.liepin.com/zhaopin/?key=" + url.QueryEscape(city+" "+directionLabel(direction)+" 校招"),
+					Category:     "job_platform",
+					ParserType:   "generic",
+					Reason:       "Liepin search can broaden mid-size company coverage beyond campus-only official sites.",
+					Confidence:   50,
+					DiscoveredBy: SourceCandidateDiscoveredByRules,
 				},
 				sourceCandidateInput{
-					Name:       "Maimai search - " + city + " " + directionLabel(direction),
-					URL:        "https://maimai.cn/web/search_center?type=feed&query=" + url.QueryEscape(city+" "+directionLabel(direction)+" 招聘 校招"),
-					Category:   "community",
-					ParserType: "generic",
-					Reason:     "Professional community search can surface team-level recruiting posts and referral links.",
-					Confidence: 48,
+					Name:         "Maimai search - " + city + " " + directionLabel(direction),
+					URL:          "https://maimai.cn/web/search_center?type=feed&query=" + url.QueryEscape(city+" "+directionLabel(direction)+" 招聘 校招"),
+					Category:     "community",
+					ParserType:   "generic",
+					Reason:       "Professional community search can surface team-level recruiting posts and referral links.",
+					Confidence:   48,
+					DiscoveredBy: SourceCandidateDiscoveredByRules,
 				},
 				sourceCandidateInput{
-					Name:       "GitHub topic search - " + city + " " + directionLabel(direction),
-					URL:        "https://github.com/search?q=" + url.QueryEscape(city+" "+directionLabel(direction)+" campus hiring jobs"),
-					Category:   "community",
-					ParserType: "generic",
-					Reason:     "GitHub search can discover open-source or startup hiring pages relevant to technical roles.",
-					Confidence: 45,
+					Name:         "GitHub topic search - " + city + " " + directionLabel(direction),
+					URL:          "https://github.com/search?q=" + url.QueryEscape(city+" "+directionLabel(direction)+" campus hiring jobs"),
+					Category:     "community",
+					ParserType:   "generic",
+					Reason:       "GitHub search can discover open-source or startup hiring pages relevant to technical roles.",
+					Confidence:   45,
+					DiscoveredBy: SourceCandidateDiscoveredByRules,
 				},
 			)
 		}
@@ -295,10 +530,10 @@ func (r *Repository) createSourceCandidateIfMissing(ctx context.Context, input s
 	if err == nil {
 		_, err = r.db.ExecContext(ctx, `
 			UPDATE source_candidates
-			SET name = ?, category = ?, parser_type = ?, reason = ?, confidence = ?,
+			SET name = ?, category = ?, parser_type = ?, discovered_by = ?, reason = ?, confidence = ?,
 				validation_status = ?, validation_reason = ?, last_checked_at = ?, updated_at = CURRENT_TIMESTAMP
 			WHERE id = ? AND status = ?
-		`, input.Name, input.Category, input.ParserType, input.Reason, input.Confidence,
+		`, input.Name, input.Category, input.ParserType, input.DiscoveredBy, input.Reason, input.Confidence,
 			validateCandidateURL(input.URL), validationReason(input.URL), time.Now().UTC(), existingID, SourceCandidateStatusPending)
 		if err != nil {
 			return false, fmt.Errorf("refresh source candidate: %w", err)
@@ -312,8 +547,8 @@ func (r *Repository) createSourceCandidateIfMissing(ctx context.Context, input s
 		INSERT INTO source_candidates (
 			name, url, category, parser_type, discovered_by, reason, confidence, status,
 			validation_status, validation_reason, last_checked_at
-		) VALUES (?, ?, ?, ?, 'agent', ?, ?, ?, ?, ?, ?)
-	`, input.Name, input.URL, input.Category, input.ParserType, input.Reason, input.Confidence,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, input.Name, input.URL, input.Category, input.ParserType, input.DiscoveredBy, input.Reason, input.Confidence,
 		SourceCandidateStatusPending, validateCandidateURL(input.URL), validationReason(input.URL), time.Now().UTC())
 	if err != nil {
 		return false, fmt.Errorf("insert source candidate: %w", err)
@@ -348,6 +583,10 @@ func normalizeSourceCandidateInput(input sourceCandidateInput) sourceCandidateIn
 	}
 	if input.Confidence <= 0 {
 		input.Confidence = 50
+	}
+	input.DiscoveredBy = strings.TrimSpace(input.DiscoveredBy)
+	if input.DiscoveredBy == "" {
+		input.DiscoveredBy = SourceCandidateDiscoveredByRules
 	}
 	parsed, err := url.ParseRequestURI(input.URL)
 	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {

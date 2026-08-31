@@ -1495,6 +1495,10 @@ func (h *Handlers) RunSourceDiscovery(c *gin.Context) {
 			req.TargetDirections = settings.TargetDirections
 		}
 	}
+	req.EnableWebSearch = true
+	if req.SearchLimit <= 0 {
+		req.SearchLimit = 6
+	}
 	result, err := h.Repo.DiscoverSourceCandidates(c.Request.Context(), req)
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, err)
@@ -1503,7 +1507,7 @@ func (h *Handlers) RunSourceDiscovery(c *gin.Context) {
 	h.recordAgentEvent(c, jobs.AgentEventInput{
 		Type:    "source_candidates_discovered",
 		Title:   "Discovered source candidates",
-		Summary: "I proposed " + strconv.Itoa(result.Created) + " new source candidates and skipped " + strconv.Itoa(result.Duplicated) + " duplicates.",
+		Summary: "I proposed " + strconv.Itoa(result.Created) + " new source candidates, found " + strconv.Itoa(result.WebSearchCandidates) + " via active web search, and skipped " + strconv.Itoa(result.Duplicated) + " duplicates.",
 		Level:   "success",
 	})
 	c.JSON(http.StatusCreated, result)

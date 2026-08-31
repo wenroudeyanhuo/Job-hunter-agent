@@ -182,6 +182,7 @@ export interface SourceDiscoveryResult {
   total: number;
   created: number;
   duplicated: number;
+  web_search_candidates: number;
 }
 
 export interface Company {
